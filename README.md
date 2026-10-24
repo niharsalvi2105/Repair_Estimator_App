@@ -7,9 +7,8 @@ store, or selectable demo roles.
 ## Local development
 
 ```powershell
-npm run build
-npm run lint
-npm test
+npx playwright install chromium
+npm run validate
 pa app run
 ```
 
@@ -19,6 +18,11 @@ authenticated player context. Requests time out explicitly rather than remain
 in an indefinite loading state. A CLI sign-in is not a browser sign-in.
 
 ## Current integration
+
+- Header avatar: initials from the signed-in user's name, in a fixed 44px
+  circle with the full name as its accessible label and tooltip. No profile
+  photos are requested or stored; the app has no Office 365 Users connector
+  dependency. Missing names use a neutral `?` marker.
 
 - Signed-in identity: `getContext()` from the Power Apps SDK. A linked Dataverse
   user ID and Entra object ID are required.
@@ -46,6 +50,22 @@ Generated files under `src/generated` and `.power` must be regenerated with the
 CLI, not edited by hand.
 
 ## New request workflow (unsaved input capture)
+
+Desktop navigation uses a compact 240px sidebar, reduced branding, 44px action
+targets and consistent outline SVG icons. Narrow screens retain bottom navigation.
+Navigation has no independent scroll container. Only widths up to 640px use
+compact bottom navigation for the three available workspaces. Wider windows
+keep left navigation with icons and labels horizontally aligned, including on
+short laptops and landscape tablets. At heights up to 800px, branding and spacing
+compact; at heights up to 640px, already-disabled future sections are hidden to
+keep available workspaces accessible. Disabled sections are also hidden on mobile.
+Bottom safe-area padding keeps navigation and page content clear of device
+gesture areas.
+
+Opportunity details use two labelled field groups, a bounded reading width and
+compact 44px controls. Signed-in salesperson is visually read-only, distinct
+from editable fields. Fields stack on narrow/tablet screens, with 16px mobile
+input text for legibility and to avoid focus zoom in mobile Safari.
 
 The header includes an MKO / CKE / CKQ market selector (initially MKO).
 Branches are limited to that market and request lists apply the corresponding
@@ -203,9 +223,27 @@ follow-up work; the existing equipment query is branch-scoped.
 
 ## Validation and rollout
 
-`npm test` uses Node's built-in test runner (Node 24+) for role resolution,
-privilege-response validation, query selection/filtering/paging, errors and
-timeouts. Build and lint validate the application and generated integrations.
+Run `npm run validate` after each change: it builds, lints and runs both test
+suites. `npm test` also runs both suites:
+
+- `npm run test:unit`: Node's built-in test runner (Node 24+) checks role
+  resolution, privilege-response validation, query selection/filtering/paging,
+  user preferences, errors and timeouts.
+- `npm run test:responsive`: Playwright Chromium checks ten viewports from
+  320px phones through 1440px desktops, including the 640/641px breakpoint and
+  short landscape windows, in English/French and light/dark mode. Journeys cover
+  the dashboard, paged request list, searchable branches, equipment/package
+  results and selections, all five form stages, expanded review and retained
+  inputs. Additional cases cover empty/error request lists. Assertions check
+  horizontal overflow, sidebar fit without independent scrolling, navigation
+  placement, unclipped navigation labels and minimum navigation/header targets.
+
+Install Chromium once with `npx playwright install chromium` after installing
+dependencies. The suite starts and stops its own Vite server on port 5186; keep
+that port free. Failure screenshots and traces are written to ignored
+`test-results`. Browser tests use synthetic identity and Dataverse fixtures at
+service boundaries, not live tenant data; they do not verify live authorization,
+Dataverse writes, submission or pricing.
 
 Before operational use, sign in through Local Play with separate accounts:
 

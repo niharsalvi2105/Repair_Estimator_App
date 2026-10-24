@@ -16,6 +16,7 @@ import { RequestFields, type RequestInputs } from './RequestFields'
 import type { Market } from './data/estimateQuery'
 import { useUserPreferences } from './useUserPreferences'
 import { BranchSelect } from './BranchSelect'
+import { UserAvatar } from './UserAvatar'
 
 type Language = 'en' | 'fr'
 type View = 'estimates' | 'requests' | 'new'
@@ -88,6 +89,7 @@ const copy = {
     stepPricing: 'Pricing & margin',
     requestDetails: 'Repair request details',
     salesperson: 'Salesperson (signed-in user)',
+    locationAssignment: 'Location & assignment',
     opportunityHint: 'Estimator header inputs for the selected market. Supervisor is optional; customer contact details are confirmed at review.',
     nextEquipment: 'Continue to equipment & packages',
     costsHint: 'Inputs only. No costs, margins or incentives are calculated or saved in this browser.',
@@ -226,6 +228,7 @@ const copy = {
     stepPricing: 'Prix et marge',
     requestDetails: 'Détails de la réparation',
     salesperson: 'Vendeur (utilisateur connecté)',
+    locationAssignment: 'Emplacement et affectation',
     opportunityHint: 'En-tête de l’estimateur pour le marché sélectionné. Le superviseur est facultatif ; les coordonnées du client sont confirmées à la vérification.',
     nextEquipment: 'Continuer vers les équipements et forfaits',
     costsHint: 'Saisie uniquement. Aucun coût, marge ou incitatif n’est calculé ou enregistré dans le navigateur.',
@@ -321,6 +324,27 @@ function localizePackage(
     return repairPackage.re_packagenamefr
   }
   return repairPackage.re_packagenameen
+}
+
+function NavigationIcon({ name }: { name: string }) {
+  const paths: Record<string, string> = {
+    dashboard: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
+    new: 'M12 5v14 M5 12h14',
+    requests: 'M5 3h14v18H5z M8 8h8 M8 12h8 M8 16h5',
+    estimator: 'M5 3h14v18H5z M8 7h8 M8 12h1 M12 12h1 M16 12h0 M8 16h1 M12 16h1 M16 16h0',
+    pricing: 'M16 7H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H7 M12 3v18',
+    quotes: 'M5 3h10l4 4v14H5z M14 3v5h5 M8 12h8 M8 16h5',
+    approvals: 'M4 12l5 5L20 6',
+    data: 'M4 4h16v16H4z M4 9h16 M4 14h16 M10 4v16',
+    reports: 'M4 3v18h17 M8 17v-5 M13 17V7 M18 17V4',
+    settings: 'M4 7h16 M4 17h16 M8 4v6 M16 14v6',
+  }
+  return (
+    <svg className="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d={paths[name]} />
+    </svg>
+  )
 }
 
 function App() {
@@ -628,8 +652,8 @@ function App() {
           </svg>
           <img className="brand-logo" src="/kone-logo.jpg" alt="KONE" />
           <span className="brand-copy">
-            <strong>{t.workspace}</strong>
-            <small>{t.appName}</small>
+            <strong>{t.appName}</strong>
+            <small>KTOC PSR</small>
           </span>
         </a>
         <nav aria-label="Main navigation" className="main-nav">
@@ -637,7 +661,7 @@ function App() {
             className={`nav-item ${view === 'estimates' ? 'active' : ''}`}
             onClick={() => setView('estimates')}
           >
-            <span className="nav-icon" aria-hidden="true">▦</span>
+            <NavigationIcon name="dashboard" />
             {t.estimates}
           </button>
           <button
@@ -645,7 +669,7 @@ function App() {
             onClick={beginEstimate}
             disabled={!canStart}
           >
-            <span className="nav-icon plus" aria-hidden="true">+</span>
+            <NavigationIcon name="new" />
             {t.newEstimate}
           </button>
           <button
@@ -653,18 +677,18 @@ function App() {
             onClick={() => setView('requests')}
             disabled={!session?.canReadEstimates}
           >
-            <span className="nav-icon" aria-hidden="true">▤</span>
+            <NavigationIcon name="requests" />
             {t.repairRequests}
           </button>
           {[
-            [t.estimatorNav, '▦'],
-            [t.pricingNav, '$'],
-            [t.quotesNav, '▧'],
+            [t.estimatorNav, 'estimator'],
+            [t.pricingNav, 'pricing'],
+            [t.quotesNav, 'quotes'],
             ...(session?.role === 'admin' ? [
-              [t.approvalsNav, '✓'],
-              [t.masterDataNav, '▥'],
-              [t.reportsNav, '▨'],
-              [t.settingsNav, '⚙'],
+              [t.approvalsNav, 'approvals'],
+              [t.masterDataNav, 'data'],
+              [t.reportsNav, 'reports'],
+              [t.settingsNav, 'settings'],
             ] : []),
           ].map(([label, icon]) => (
             <button
@@ -673,7 +697,7 @@ function App() {
               key={label}
               title={t.comingSoon}
             >
-              <span className="nav-icon" aria-hidden="true">{icon}</span>
+              <NavigationIcon name={icon} />
               {label}
             </button>
           ))}
@@ -736,7 +760,7 @@ function App() {
                 <option value="fr">FR</option>
               </select>
             </label>
-            <span className="user-avatar small-avatar" aria-hidden="true">K</span>
+            {session && <UserAvatar name={session.displayName} language={language} />}
           </div>
         </header>
 
@@ -891,7 +915,7 @@ function App() {
               {step <= 2 && (
                 <div className={`form-layout ${step === 1 ? 'single-column' : ''}`}>
                   <div className="form-main">
-                    <section className="form-card">
+                    <section className={`form-card ${step === 1 ? 'opportunity-card' : ''}`}>
                       <div className="section-heading">
                         <span className="section-icon">{step === 1 ? '01' : '02'}</span>
                         <div>
@@ -900,6 +924,8 @@ function App() {
                         </div>
                       </div>
                       {step === 1 && <>
+                      <fieldset className="opportunity-group">
+                      <legend>{t.locationAssignment}</legend>
                       {branchLoading ? (
                         <div className="inline-state" role="status">{t.loadBranches}</div>
                       ) : branchError ? (
@@ -928,12 +954,12 @@ function App() {
                         ) : !references ? <p role="status">{t.loadingReferences}</p> : (
                           <div className="input-grid">
                             {[
-                              { id: 'equipment-type', label: `${t.equipmentType} *`, value: equipmentTypeId, update: setEquipmentTypeId, options: references.equipmentTypes },
+                              { id: 'equipment-type', label: t.equipmentType, value: equipmentTypeId, update: setEquipmentTypeId, options: references.equipmentTypes },
                               { id: 'job-type', label: t.jobType, value: jobTypeId, update: setJobTypeId, options: references.jobTypes },
                             ].map((field) => (
                               <div className="field-label" key={field.id}>
-                                <label htmlFor={field.id}>{field.label}</label>
-                                <select id={field.id} className="text-input" value={field.value} onChange={(event) => field.update(event.target.value)}>
+                                <label htmlFor={field.id}>{field.label}{field.id === 'equipment-type' && <span className="required">*</span>}</label>
+                                <select id={field.id} className="text-input" aria-required={field.id === 'equipment-type'} value={field.value} onChange={(event) => field.update(event.target.value)}>
                                   <option value="">{t.chooseReference}</option>
                                   {field.options.map((option) => <option key={option.id} value={option.id}>
                                     {language === 'fr' ? option.fr || option.en : option.en}
@@ -951,12 +977,15 @@ function App() {
                         </div>
                         <div className="field-label">
                           <label htmlFor="opportunity-building">{t.buildingName}<span className="required">*</span></label>
-                          <input id="opportunity-building" className="text-input" value={buildingName}
+                          <input id="opportunity-building" className="text-input" aria-required="true" value={buildingName}
                             maxLength={300} onChange={(event) => setBuildingName(event.target.value)} />
                         </div>
                       </div>
-                      <h3>{t.requestDetails}</h3>
+                      </fieldset>
+                      <fieldset className="opportunity-group">
+                      <legend>{t.requestDetails}</legend>
                       <RequestFields stage="request" language={language} value={requestInputs} onChange={updateRequestInput} />
+                      </fieldset>
                       </>}
                       {step === 2 && <>
                       <label className="field-label search-label" htmlFor="equipment-search">{t.equipment}<span className="required">*</span></label>
