@@ -57,7 +57,12 @@ committing typed text. Unmatched text cannot become a branch lookup.
 If a draft has a branch, switching market asks for confirmation before clearing
 its branch/equipment/package selections and returning to opportunity details.
 Other entered fields are retained for review. Market selection is a workspace
-filter, never an authorization boundary or a change to UI/proposal language.
+filter, never an authorization boundary. Selecting CKQ automatically switches
+the UI language to French and saves French / `fr-CA` in user preferences,
+preserving the theme. Cancelling a market switch changes neither preference nor
+market. MKO and CKE preserve the current UI language; users can still change it
+manually. Proposal language remains independent. Market selection is disabled
+while preferences are loading or saving so the automatic change is not lost.
 
 The header theme selector supports System, Light and Dark across the entire
 workspace. System follows device theme changes.

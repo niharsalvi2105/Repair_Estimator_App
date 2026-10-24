@@ -570,11 +570,15 @@ function App() {
   }
 
   function changeMarket(nextMarket: Market) {
+    if (!preferences.ready || preferences.busy) return
     if (market === nextMarket) return
     if (branchId && !window.confirm(t.marketChangeWarning)) return
     resetBranch('')
     setMarket(nextMarket)
     setStep(1)
+    if (nextMarket === 126110002) {
+      void preferences.save({ language: 'fr', locale: 'fr-CA', theme: preferences.theme })
+    }
   }
 
   function changeEquipmentQuery(value: string) {
@@ -693,7 +697,7 @@ function App() {
           <div className="topbar-actions">
             <label className="market-control">
               <span className="sr-only">{t.market}</span>
-              <select aria-label={t.market} value={market} onChange={(event) => {
+              <select aria-label={t.market} value={market} disabled={!preferences.ready || preferences.busy} onChange={(event) => {
                 const value = Number(event.target.value)
                 if (value === 126110000 || value === 126110001 || value === 126110002) changeMarket(value)
               }}>
