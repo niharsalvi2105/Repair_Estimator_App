@@ -1,0 +1,45 @@
+{
+  "name": "RetrieveUserPrivileges",
+  "title": "RetrieveUserPrivileges",
+  "type": "Microsoft.PowerApps/dataverseOperation",
+  "properties": {
+    "displayName": "RetrieveUserPrivileges",
+    "swagger": {
+      "swagger": "2.0",
+      "info": {
+        "title": "RetrieveUserPrivileges",
+        "version": "1.0"
+      },
+      "basePath": "/api/data/v9.2",
+      "paths": {
+        "/systemusers({id})/Microsoft.Dynamics.CRM.RetrieveUserPrivileges": {
+          "get": {
+            "operationId": "RetrieveUserPrivileges",
+            "parameters": [
+              {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "type": "string",
+                "format": "guid",
+                "x-ms-dataverse-type": "UniqueidentifierType",
+                "x-ms-csdl-type": "Edm.Guid"
+              }
+            ],
+            "responses": {
+              "200": {
+                "description": "Success",
+                "schema": {
+                  "type": "object",
+                  "x-ms-dataverse-type": "LookupType",
+                  "x-ms-csdl-type": "mscrm.RetrieveUserPrivilegesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "entitySetName": "systemusers"
+}

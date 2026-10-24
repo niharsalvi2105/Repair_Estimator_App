@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "appId": "57cf4aaa-7af2-4a3d-9a44-ef067d0b44d1",
+  "appDisplayName": "Repair Estimator App",
+  "region": "prod",
+  "appType": "CodeApp",
+  "environmentId": "294703ba-95fe-eca6-b3bb-dfadad011f06",
+  "description": " ",
+  "buildPath": "./dist",
+  "buildEntryPoint": "index.html",
+  "localAppUrl": "http://localhost:3000",
+  "logoPath": "Default",
+  "connectionReferences": {},
+  "databaseReferences": {
+    "default.cds": {
+      "dataSources": {
+        "equipment": {
+          "entitySetName": "re_equipments",
+          "logicalName": "re_equipment",
+          "isHidden": false
+        },
+        "branches": {
+          "entitySetName": "re_branchs",
+          "logicalName": "re_branch",
+          "isHidden": false
+        },
+        "repairpackages": {
+          "entitySetName": "re_repairpackages",
+          "logicalName": "re_repairpackage",
+          "isHidden": false
+        },
+        "repairestimates": {
+          "entitySetName": "re_repairestimates",
+          "logicalName": "re_repairestimate",
+          "isHidden": false
+        },
+        "estimateequipments": {
+          "entitySetName": "re_estimateequipments",
+          "logicalName": "re_estimateequipment",
+          "isHidden": false
+        },
+        "estimatepackages": {
+          "entitySetName": "re_estimatepackages",
+          "logicalName": "re_estimatepackage",
+          "isHidden": false
+        },
+        "securityroles": {
+          "entitySetName": "roles",
+          "logicalName": "role",
+          "isHidden": false
+        },
+        "environment_39a902ba": {
+          "entitySetName": "Environment",
+          "logicalName": "environment_39a902ba",
+          "isHidden": false
+        },
+        "user": {
+          "entitySetName": "systemusers",
+          "logicalName": "systemuser",
+          "isHidden": false
+        },
+        "equipmenttypes": {
+          "entitySetName": "re_equipmenttypes",
+          "logicalName": "re_equipmenttype",
+          "isHidden": false
+        },
+        "jobtypes": {
+          "entitySetName": "re_jobtypes",
+          "logicalName": "re_jobtype",
+          "isHidden": false
+        },
+        "appuserpreferences": {
+          "entitySetName": "re_appuserpreferences",
+          "logicalName": "re_appuserpreference",
+          "isHidden": false
+        }
+      },
+      "environmentVariableName": ""
+    }
+  }
+}

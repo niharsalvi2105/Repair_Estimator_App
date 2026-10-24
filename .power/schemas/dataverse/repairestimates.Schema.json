@@ -1,0 +1,2480 @@
+{
+  "name": "re_repairestimate",
+  "title": "Repair Estimates",
+  "schema": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "x-ms-dataverse-entity": true,
+      "x-ms-dataverse-entityset": "re_repairestimates",
+      "x-ms-dataverse-primary-id": "re_repairestimateid",
+      "x-ms-dataverse-primary-name": "re_name",
+      "properties": {
+        "createdby": {
+          "type": "string",
+          "title": "Created By",
+          "x-ms-dataverse-attribute": "createdby",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "CreatedBy",
+          "x-ms-dataverse-navigation-properties": [
+            "createdby"
+          ],
+          "x-ms-read-only": true
+        },
+        "createdbyname": {
+          "type": "string",
+          "title": "createdbyname",
+          "x-ms-dataverse-attribute": "createdbyname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "CreatedByName",
+          "x-ms-dataverse-attribute-of": "createdby",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "createdbyyominame": {
+          "type": "string",
+          "title": "createdbyyominame",
+          "x-ms-dataverse-attribute": "createdbyyominame",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "CreatedByYomiName",
+          "x-ms-dataverse-attribute-of": "createdby",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 100
+        },
+        "createdon": {
+          "type": "string",
+          "title": "Created On",
+          "x-ms-dataverse-attribute": "createdon",
+          "x-ms-dataverse-type": "DateTimeType",
+          "x-ms-schema-name": "CreatedOn",
+          "x-ms-read-only": true
+        },
+        "createdonbehalfby": {
+          "type": "string",
+          "title": "Created By (Delegate)",
+          "x-ms-dataverse-attribute": "createdonbehalfby",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "CreatedOnBehalfBy",
+          "x-ms-dataverse-navigation-properties": [
+            "createdonbehalfby"
+          ],
+          "x-ms-read-only": true
+        },
+        "createdonbehalfbyname": {
+          "type": "string",
+          "title": "createdonbehalfbyname",
+          "x-ms-dataverse-attribute": "createdonbehalfbyname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "CreatedOnBehalfByName",
+          "x-ms-dataverse-attribute-of": "createdonbehalfby",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "createdonbehalfbyyominame": {
+          "type": "string",
+          "title": "createdonbehalfbyyominame",
+          "x-ms-dataverse-attribute": "createdonbehalfbyyominame",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "CreatedOnBehalfByYomiName",
+          "x-ms-dataverse-attribute-of": "createdonbehalfby",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 100
+        },
+        "exchangerate": {
+          "type": "string",
+          "title": "Exchange Rate",
+          "x-ms-dataverse-attribute": "exchangerate",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "ExchangeRate",
+          "x-ms-read-only": true
+        },
+        "importsequencenumber": {
+          "type": "string",
+          "title": "Import Sequence Number",
+          "x-ms-dataverse-attribute": "importsequencenumber",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "ImportSequenceNumber"
+        },
+        "modifiedby": {
+          "type": "string",
+          "title": "Modified By",
+          "x-ms-dataverse-attribute": "modifiedby",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "ModifiedBy",
+          "x-ms-dataverse-navigation-properties": [
+            "modifiedby"
+          ],
+          "x-ms-read-only": true
+        },
+        "modifiedbyname": {
+          "type": "string",
+          "title": "modifiedbyname",
+          "x-ms-dataverse-attribute": "modifiedbyname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "ModifiedByName",
+          "x-ms-dataverse-attribute-of": "modifiedby",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "modifiedbyyominame": {
+          "type": "string",
+          "title": "modifiedbyyominame",
+          "x-ms-dataverse-attribute": "modifiedbyyominame",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "ModifiedByYomiName",
+          "x-ms-dataverse-attribute-of": "modifiedby",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 100
+        },
+        "modifiedon": {
+          "type": "string",
+          "title": "Modified On",
+          "x-ms-dataverse-attribute": "modifiedon",
+          "x-ms-dataverse-type": "DateTimeType",
+          "x-ms-schema-name": "ModifiedOn",
+          "x-ms-read-only": true
+        },
+        "modifiedonbehalfby": {
+          "type": "string",
+          "title": "Modified By (Delegate)",
+          "x-ms-dataverse-attribute": "modifiedonbehalfby",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "ModifiedOnBehalfBy",
+          "x-ms-dataverse-navigation-properties": [
+            "modifiedonbehalfby"
+          ],
+          "x-ms-read-only": true
+        },
+        "modifiedonbehalfbyname": {
+          "type": "string",
+          "title": "modifiedonbehalfbyname",
+          "x-ms-dataverse-attribute": "modifiedonbehalfbyname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "ModifiedOnBehalfByName",
+          "x-ms-dataverse-attribute-of": "modifiedonbehalfby",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "modifiedonbehalfbyyominame": {
+          "type": "string",
+          "title": "modifiedonbehalfbyyominame",
+          "x-ms-dataverse-attribute": "modifiedonbehalfbyyominame",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "ModifiedOnBehalfByYomiName",
+          "x-ms-dataverse-attribute-of": "modifiedonbehalfby",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 100
+        },
+        "overriddencreatedon": {
+          "type": "string",
+          "title": "Record Created On",
+          "x-ms-dataverse-attribute": "overriddencreatedon",
+          "x-ms-dataverse-type": "DateTimeType",
+          "x-ms-schema-name": "OverriddenCreatedOn"
+        },
+        "ownerid": {
+          "type": "string",
+          "title": "Owner",
+          "x-ms-dataverse-attribute": "ownerid",
+          "x-ms-dataverse-type": "OwnerType",
+          "x-ms-schema-name": "OwnerId",
+          "required": true
+        },
+        "owneridname": {
+          "type": "string",
+          "title": "owneridname",
+          "x-ms-dataverse-attribute": "owneridname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "OwnerIdName",
+          "x-ms-dataverse-attribute-of": "ownerid",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 100
+        },
+        "owneridtype": {
+          "type": "string",
+          "title": "owneridtype",
+          "x-ms-dataverse-attribute": "owneridtype",
+          "x-ms-dataverse-type": "EntityNameType",
+          "x-ms-schema-name": "OwnerIdType",
+          "x-ms-dataverse-attribute-of": "ownerid",
+          "required": true
+        },
+        "owneridyominame": {
+          "type": "string",
+          "title": "owneridyominame",
+          "x-ms-dataverse-attribute": "owneridyominame",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "OwnerIdYomiName",
+          "x-ms-dataverse-attribute-of": "ownerid",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 100
+        },
+        "owningbusinessunit": {
+          "type": "string",
+          "title": "Owning Business Unit",
+          "x-ms-dataverse-attribute": "owningbusinessunit",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "OwningBusinessUnit",
+          "x-ms-dataverse-navigation-properties": [
+            "owningbusinessunit"
+          ],
+          "x-ms-read-only": true
+        },
+        "owningbusinessunitname": {
+          "type": "string",
+          "title": "owningbusinessunitname",
+          "x-ms-dataverse-attribute": "owningbusinessunitname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "OwningBusinessUnitName",
+          "x-ms-dataverse-attribute-of": "owningbusinessunit",
+          "x-ms-read-only": true,
+          "required": true,
+          "maxLength": 100
+        },
+        "owningteam": {
+          "type": "string",
+          "title": "Owning Team",
+          "x-ms-dataverse-attribute": "owningteam",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "OwningTeam",
+          "x-ms-dataverse-navigation-properties": [
+            "owningteam"
+          ],
+          "x-ms-read-only": true
+        },
+        "owninguser": {
+          "type": "string",
+          "title": "Owning User",
+          "x-ms-dataverse-attribute": "owninguser",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "OwningUser",
+          "x-ms-dataverse-navigation-properties": [
+            "owninguser"
+          ],
+          "x-ms-read-only": true
+        },
+        "re_actualcmii": {
+          "type": "string",
+          "title": "Actual CMII",
+          "x-ms-dataverse-attribute": "re_actualcmii",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_ActualCMII"
+        },
+        "re_additionalequipmentnumbers": {
+          "type": "string",
+          "title": "Additional Equipment Numbers",
+          "x-ms-dataverse-attribute": "re_additionalequipmentnumbers",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_AdditionalEquipmentNumbers",
+          "maxLength": 2000
+        },
+        "re_additionallaborcost": {
+          "type": "string",
+          "title": "Additional Labor Cost",
+          "x-ms-dataverse-attribute": "re_additionallaborcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_AdditionalLaborCost"
+        },
+        "re_additionallaborcost_base": {
+          "type": "string",
+          "title": "Additional Labor Cost (Base)",
+          "x-ms-dataverse-attribute": "re_additionallaborcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_additionallaborcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_additionallaborhours": {
+          "type": "string",
+          "title": "Additional Labor Hours",
+          "x-ms-dataverse-attribute": "re_additionallaborhours",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_AdditionalLaborHours"
+        },
+        "re_additionalmaterial": {
+          "type": "string",
+          "title": "Additional Material",
+          "x-ms-dataverse-attribute": "re_additionalmaterial",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_AdditionalMaterial"
+        },
+        "re_additionalmaterial_base": {
+          "type": "string",
+          "title": "Additional Material (Base)",
+          "x-ms-dataverse-attribute": "re_additionalmaterial_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_additionalmaterial_Base",
+          "x-ms-read-only": true
+        },
+        "re_additionalmiscellaneous": {
+          "type": "string",
+          "title": "Additional Miscellaneous",
+          "x-ms-dataverse-attribute": "re_additionalmiscellaneous",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_AdditionalMiscellaneous"
+        },
+        "re_additionalmiscellaneous_base": {
+          "type": "string",
+          "title": "Additional Miscellaneous (Base)",
+          "x-ms-dataverse-attribute": "re_additionalmiscellaneous_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_additionalmiscellaneous_Base",
+          "x-ms-read-only": true
+        },
+        "re_additionalscope": {
+          "type": "string",
+          "title": "Additional Scope",
+          "x-ms-dataverse-attribute": "re_additionalscope",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_AdditionalScope",
+          "maxLength": 10000
+        },
+        "re_adjustedtargetcmii": {
+          "type": "string",
+          "title": "Adjusted Target CMII",
+          "x-ms-dataverse-attribute": "re_adjustedtargetcmii",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_AdjustedTargetCMII"
+        },
+        "re_amincentive": {
+          "type": "string",
+          "title": "AM Incentive",
+          "x-ms-dataverse-attribute": "re_amincentive",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_AMIncentive"
+        },
+        "re_amincentive_base": {
+          "type": "string",
+          "title": "AM Incentive (Base)",
+          "x-ms-dataverse-attribute": "re_amincentive_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_amincentive_Base",
+          "x-ms-read-only": true
+        },
+        "re_approvallevel": {
+          "type": "string",
+          "title": "Approval Level",
+          "x-ms-dataverse-attribute": "re_approvallevel",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_ApprovalLevel",
+          "enum": [
+            "None",
+            "District",
+            "Regional"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "585e43a1-5bca-f111-a05c-00224809bc74",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "approvalLevel",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_approvallevelname": {
+          "type": "string",
+          "title": "re_approvallevelname",
+          "x-ms-dataverse-attribute": "re_approvallevelname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_approvallevelName",
+          "x-ms-dataverse-attribute-of": "re_approvallevel",
+          "x-ms-read-only": true
+        },
+        "re_basetargetcm2": {
+          "type": "string",
+          "title": "Base Target CM2",
+          "x-ms-dataverse-attribute": "re_basetargetcm2",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_BaseTargetCM2"
+        },
+        "re_basetargetcmii": {
+          "type": "string",
+          "title": "Base Target CMII",
+          "x-ms-dataverse-attribute": "re_basetargetcmii",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_BaseTargetCMII"
+        },
+        "re_bdincentive": {
+          "type": "string",
+          "title": "BD Incentive",
+          "x-ms-dataverse-attribute": "re_bdincentive",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_BDIncentive"
+        },
+        "re_bdincentive_base": {
+          "type": "string",
+          "title": "BD Incentive (Base)",
+          "x-ms-dataverse-attribute": "re_bdincentive_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_bdincentive_Base",
+          "x-ms-read-only": true
+        },
+        "re_billingplan": {
+          "type": "string",
+          "title": "Billing Plan",
+          "x-ms-dataverse-attribute": "re_billingplan",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_BillingPlan",
+          "enum": [
+            "50% / 50%",
+            "60% / 40%",
+            "Final 100%",
+            "Other: See Notes"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002,
+            126110003
+          ],
+          "Color": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "9c8e2470-5bca-f111-a05c-00224809bc74",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "billingplan",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_billingplanname": {
+          "type": "string",
+          "title": "re_billingplanname",
+          "x-ms-dataverse-attribute": "re_billingplanname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_billingplanName",
+          "x-ms-dataverse-attribute-of": "re_billingplan",
+          "x-ms-read-only": true
+        },
+        "re_billto": {
+          "type": "string",
+          "title": "Bill-to",
+          "x-ms-dataverse-attribute": "re_billto",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_Billto",
+          "maxLength": 50
+        },
+        "re_branch": {
+          "type": "string",
+          "title": "Branch",
+          "x-ms-dataverse-attribute": "re_branch",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_Branch",
+          "x-ms-dataverse-navigation-properties": [
+            "re_Branch"
+          ],
+          "required": true
+        },
+        "re_branchname": {
+          "type": "string",
+          "title": "re_branchname",
+          "x-ms-dataverse-attribute": "re_branchname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_BranchName",
+          "x-ms-dataverse-attribute-of": "re_branch",
+          "x-ms-read-only": true,
+          "maxLength": 850
+        },
+        "re_buildingaddress": {
+          "type": "string",
+          "title": "Building Address",
+          "x-ms-dataverse-attribute": "re_buildingaddress",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_BuildingAddress",
+          "maxLength": 2000
+        },
+        "re_buildingcity": {
+          "type": "string",
+          "title": "Building City",
+          "x-ms-dataverse-attribute": "re_buildingcity",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_BuildingCity",
+          "maxLength": 100
+        },
+        "re_buildingname": {
+          "type": "string",
+          "title": "Building Name",
+          "x-ms-dataverse-attribute": "re_buildingname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_BuildingName",
+          "required": true,
+          "maxLength": 300
+        },
+        "re_buildingprovincestate": {
+          "type": "string",
+          "title": "Building Province / State",
+          "x-ms-dataverse-attribute": "re_buildingprovincestate",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_BuildingProvinceState",
+          "x-ms-dataverse-navigation-properties": [
+            "re_BuildingProvinceState"
+          ],
+          "required": true
+        },
+        "re_buildingprovincestatename": {
+          "type": "string",
+          "title": "re_buildingprovincestatename",
+          "x-ms-dataverse-attribute": "re_buildingprovincestatename",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_BuildingProvinceStateName",
+          "x-ms-dataverse-attribute-of": "re_buildingprovincestate",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "re_calculatedon": {
+          "type": "string",
+          "title": "Calculated On",
+          "x-ms-dataverse-attribute": "re_calculatedon",
+          "x-ms-dataverse-type": "DateTimeType",
+          "x-ms-schema-name": "re_CalculatedOn"
+        },
+        "re_calculationversion": {
+          "type": "string",
+          "title": "Calculation Version",
+          "x-ms-dataverse-attribute": "re_calculationversion",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_CalculationVersion",
+          "maxLength": 50
+        },
+        "re_cmiivariance": {
+          "type": "string",
+          "title": "CMII Variance",
+          "x-ms-dataverse-attribute": "re_cmiivariance",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_CMIIVariance"
+        },
+        "re_cmiiwithkonematerial": {
+          "type": "string",
+          "title": "CMII with KONE Material",
+          "x-ms-dataverse-attribute": "re_cmiiwithkonematerial",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_CMIIwithKONEMaterial"
+        },
+        "re_competingbids": {
+          "type": "string",
+          "title": "Competing Bids",
+          "x-ms-dataverse-attribute": "re_competingbids",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_CompetingBids",
+          "enum": [
+            "None",
+            "Known",
+            "Suspected",
+            "Unknown"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002,
+            126110003
+          ],
+          "Color": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "7b76de52-e6c6-f111-aaaf-000d3a5ae30c",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Competing Bids",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_competingbidsname": {
+          "type": "string",
+          "title": "re_competingbidsname",
+          "x-ms-dataverse-attribute": "re_competingbidsname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_competingbidsName",
+          "x-ms-dataverse-attribute-of": "re_competingbids",
+          "x-ms-read-only": true
+        },
+        "re_consultantinvolved": {
+          "type": "string",
+          "title": "Consultant Involved",
+          "x-ms-dataverse-attribute": "re_consultantinvolved",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_ConsultantInvolved",
+          "enum": [
+            "Yes",
+            "No"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "701b3e3e-52ca-f111-a05c-6045bd04efb9",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "yesno",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_consultantinvolvedname": {
+          "type": "string",
+          "title": "re_consultantinvolvedname",
+          "x-ms-dataverse-attribute": "re_consultantinvolvedname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_consultantinvolvedName",
+          "x-ms-dataverse-attribute-of": "re_consultantinvolved",
+          "x-ms-read-only": true
+        },
+        "re_country": {
+          "type": "string",
+          "title": "Country",
+          "x-ms-dataverse-attribute": "re_country",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_Country",
+          "x-ms-dataverse-navigation-properties": [
+            "re_Country"
+          ]
+        },
+        "re_countryname": {
+          "type": "string",
+          "title": "re_countryname",
+          "x-ms-dataverse-attribute": "re_countryname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_CountryName",
+          "x-ms-dataverse-attribute-of": "re_country",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "re_customerband": {
+          "type": "string",
+          "title": "Customer Band",
+          "x-ms-dataverse-attribute": "re_customerband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_CustomerBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_customerbandname": {
+          "type": "string",
+          "title": "re_customerbandname",
+          "x-ms-dataverse-attribute": "re_customerbandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_customerbandName",
+          "x-ms-dataverse-attribute-of": "re_customerband",
+          "x-ms-read-only": true
+        },
+        "re_customerbaseband": {
+          "type": "string",
+          "title": "Customer Base Band",
+          "x-ms-dataverse-attribute": "re_customerbaseband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_CustomerBaseBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_customerbasebandname": {
+          "type": "string",
+          "title": "re_customerbasebandname",
+          "x-ms-dataverse-attribute": "re_customerbasebandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_customerbasebandName",
+          "x-ms-dataverse-attribute-of": "re_customerbaseband",
+          "x-ms-read-only": true
+        },
+        "re_customerbudgeted": {
+          "type": "string",
+          "title": "Customer Budgeted",
+          "x-ms-dataverse-attribute": "re_customerbudgeted",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_CustomerBudgeted",
+          "enum": [
+            "Yes",
+            "No"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "701b3e3e-52ca-f111-a05c-6045bd04efb9",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "yesno",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_customerbudgetedname": {
+          "type": "string",
+          "title": "re_customerbudgetedname",
+          "x-ms-dataverse-attribute": "re_customerbudgetedname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_customerbudgetedName",
+          "x-ms-dataverse-attribute-of": "re_customerbudgeted",
+          "x-ms-read-only": true
+        },
+        "re_customeremail": {
+          "type": "string",
+          "title": "Customer Email",
+          "x-ms-dataverse-attribute": "re_customeremail",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_CustomerEmail",
+          "maxLength": 100
+        },
+        "re_customername": {
+          "type": "string",
+          "title": "Customer Name",
+          "x-ms-dataverse-attribute": "re_customername",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_CustomerName",
+          "required": true,
+          "maxLength": 100
+        },
+        "re_customerphone": {
+          "type": "string",
+          "title": "Customer Phone",
+          "x-ms-dataverse-attribute": "re_customerphone",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_CustomerPhone",
+          "maxLength": 50
+        },
+        "re_customervertical": {
+          "type": "string",
+          "title": "Customer Vertical",
+          "x-ms-dataverse-attribute": "re_customervertical",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_CustomerVertical",
+          "x-ms-dataverse-navigation-properties": [
+            "re_CustomerVertical"
+          ]
+        },
+        "re_customerverticalname": {
+          "type": "string",
+          "title": "re_customerverticalname",
+          "x-ms-dataverse-attribute": "re_customerverticalname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_CustomerVerticalName",
+          "x-ms-dataverse-attribute-of": "re_customervertical",
+          "x-ms-read-only": true,
+          "maxLength": 50
+        },
+        "re_customlaborcost": {
+          "type": "string",
+          "title": "Custom Labor Cost",
+          "x-ms-dataverse-attribute": "re_customlaborcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_CustomLaborCost"
+        },
+        "re_customlaborcost_base": {
+          "type": "string",
+          "title": "Custom Labor Cost (Base)",
+          "x-ms-dataverse-attribute": "re_customlaborcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_customlaborcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_custommaterialcost": {
+          "type": "string",
+          "title": "Custom Material Cost",
+          "x-ms-dataverse-attribute": "re_custommaterialcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_CustomMaterialCost"
+        },
+        "re_custommaterialcost_base": {
+          "type": "string",
+          "title": "Custom Material Cost (Base)",
+          "x-ms-dataverse-attribute": "re_custommaterialcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_custommaterialcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_emergency": {
+          "type": "string",
+          "title": "Emergency",
+          "x-ms-dataverse-attribute": "re_emergency",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_Emergency",
+          "enum": [
+            "Yes",
+            "No"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "701b3e3e-52ca-f111-a05c-6045bd04efb9",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "yesno",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_emergencyname": {
+          "type": "string",
+          "title": "re_emergencyname",
+          "x-ms-dataverse-attribute": "re_emergencyname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_emergencyName",
+          "x-ms-dataverse-attribute-of": "re_emergency",
+          "x-ms-read-only": true
+        },
+        "re_equipmentageband": {
+          "type": "string",
+          "title": "Equipment Age Band",
+          "x-ms-dataverse-attribute": "re_equipmentageband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_EquipmentAgeBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_equipmentagebandname": {
+          "type": "string",
+          "title": "re_equipmentagebandname",
+          "x-ms-dataverse-attribute": "re_equipmentagebandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_equipmentagebandName",
+          "x-ms-dataverse-attribute-of": "re_equipmentageband",
+          "x-ms-read-only": true
+        },
+        "re_equipmentband": {
+          "type": "string",
+          "title": "Equipment Band",
+          "x-ms-dataverse-attribute": "re_equipmentband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_EquipmentBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_equipmentbandname": {
+          "type": "string",
+          "title": "re_equipmentbandname",
+          "x-ms-dataverse-attribute": "re_equipmentbandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_equipmentbandName",
+          "x-ms-dataverse-attribute-of": "re_equipmentband",
+          "x-ms-read-only": true
+        },
+        "re_equipmenttype": {
+          "type": "string",
+          "title": "Equipment Type",
+          "x-ms-dataverse-attribute": "re_equipmenttype",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_EquipmentType",
+          "x-ms-dataverse-navigation-properties": [
+            "re_EquipmentType"
+          ],
+          "required": true
+        },
+        "re_equipmenttypename": {
+          "type": "string",
+          "title": "re_equipmenttypename",
+          "x-ms-dataverse-attribute": "re_equipmenttypename",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_EquipmentTypeName",
+          "x-ms-dataverse-attribute-of": "re_equipmenttype",
+          "x-ms-read-only": true,
+          "maxLength": 850
+        },
+        "re_estimatelanguage": {
+          "type": "string",
+          "title": "Estimate Language",
+          "x-ms-dataverse-attribute": "re_estimatelanguage",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_EstimateLanguage",
+          "enum": [
+            "English",
+            "French"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "5210f43e-e4c6-f111-aaaf-7ced8d3c9af7",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Estimate Language",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_estimatelanguagename": {
+          "type": "string",
+          "title": "re_estimatelanguagename",
+          "x-ms-dataverse-attribute": "re_estimatelanguagename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_estimatelanguageName",
+          "x-ms-dataverse-attribute-of": "re_estimatelanguage",
+          "x-ms-read-only": true
+        },
+        "re_estimatename": {
+          "type": "string",
+          "title": "Estimate Name",
+          "x-ms-dataverse-attribute": "re_estimatename",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_EstimateName",
+          "required": true,
+          "maxLength": 100
+        },
+        "re_estimatepath": {
+          "type": "string",
+          "title": "Estimate Path",
+          "x-ms-dataverse-attribute": "re_estimatepath",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_EstimatePath",
+          "required": true,
+          "enum": [
+            "Standard Package",
+            "Custom Estimate"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "c1b6f177-47ca-f111-a05c-00224809bc74",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "estimate path choice",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_estimatepathname": {
+          "type": "string",
+          "title": "re_estimatepathname",
+          "x-ms-dataverse-attribute": "re_estimatepathname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_estimatepathName",
+          "x-ms-dataverse-attribute-of": "re_estimatepath",
+          "x-ms-read-only": true
+        },
+        "re_estimatestatus": {
+          "type": "string",
+          "title": "Estimate Status",
+          "x-ms-dataverse-attribute": "re_estimatestatus",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_EstimateStatus",
+          "required": true,
+          "enum": [
+            "Draft",
+            "Pending",
+            "Submitted"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "6ba56a74-7983-4c37-8d9a-32dff7bcaf18",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Estimate Status Choice",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_estimatestatusname": {
+          "type": "string",
+          "title": "re_estimatestatusname",
+          "x-ms-dataverse-attribute": "re_estimatestatusname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_estimatestatusName",
+          "x-ms-dataverse-attribute-of": "re_estimatestatus",
+          "x-ms-read-only": true
+        },
+        "re_estimatetype": {
+          "type": "string",
+          "title": "Estimate Type",
+          "x-ms-dataverse-attribute": "re_estimatetype",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_EstimateType",
+          "required": true,
+          "enum": [
+            "Standard Estimate",
+            "Custom Estimate"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "1cbc691f-22e9-4810-b15d-097bc629587f",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "estimate Type Choice",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_estimatetypename": {
+          "type": "string",
+          "title": "re_estimatetypename",
+          "x-ms-dataverse-attribute": "re_estimatetypename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_estimatetypeName",
+          "x-ms-dataverse-attribute-of": "re_estimatetype",
+          "x-ms-read-only": true
+        },
+        "re_finalsellprice": {
+          "type": "string",
+          "title": "Final Sell Price",
+          "x-ms-dataverse-attribute": "re_finalsellprice",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_FinalSellPrice"
+        },
+        "re_finalsellprice_base": {
+          "type": "string",
+          "title": "Final Sell Price (Base)",
+          "x-ms-dataverse-attribute": "re_finalsellprice_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_finalsellprice_Base",
+          "x-ms-read-only": true
+        },
+        "re_freight": {
+          "type": "string",
+          "title": "Freight %",
+          "x-ms-dataverse-attribute": "re_freight",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_Freight",
+          "required": true
+        },
+        "re_freightamount": {
+          "type": "string",
+          "title": "Freight Amount",
+          "x-ms-dataverse-attribute": "re_freightamount",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_FreightAmount"
+        },
+        "re_freightamount_base": {
+          "type": "string",
+          "title": "Freight Amount (Base)",
+          "x-ms-dataverse-attribute": "re_freightamount_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_freightamount_Base",
+          "x-ms-read-only": true
+        },
+        "re_freightpercentage": {
+          "type": "string",
+          "title": "Freight Percentage",
+          "x-ms-dataverse-attribute": "re_freightpercentage",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_FreightPercentage"
+        },
+        "re_hasbeenapproved": {
+          "type": "string",
+          "title": "Has Been Approved",
+          "x-ms-dataverse-attribute": "re_hasbeenapproved",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_HasBeenApproved",
+          "enum": [
+            "Yes",
+            "No",
+            "Unknown"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "8c6e520e-51ca-f111-a05c-000d3a5ae30c",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "yesnounknow",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_hasbeenapprovedname": {
+          "type": "string",
+          "title": "re_hasbeenapprovedname",
+          "x-ms-dataverse-attribute": "re_hasbeenapprovedname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_hasbeenapprovedName",
+          "x-ms-dataverse-attribute-of": "re_hasbeenapproved",
+          "x-ms-read-only": true
+        },
+        "re_internalcomments": {
+          "type": "string",
+          "title": "Internal Comments",
+          "x-ms-dataverse-attribute": "re_internalcomments",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_InternalComments",
+          "maxLength": 2000
+        },
+        "re_jobsizeband": {
+          "type": "string",
+          "title": "Job Size Band",
+          "x-ms-dataverse-attribute": "re_jobsizeband",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_JobSizeBand",
+          "x-ms-dataverse-navigation-properties": [
+            "re_JobSizeBand"
+          ]
+        },
+        "re_jobsizebandname": {
+          "type": "string",
+          "title": "re_jobsizebandname",
+          "x-ms-dataverse-attribute": "re_jobsizebandname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_JobSizeBandName",
+          "x-ms-dataverse-attribute-of": "re_jobsizeband",
+          "x-ms-read-only": true,
+          "maxLength": 50
+        },
+        "re_jobtype": {
+          "type": "string",
+          "title": "Job Type",
+          "x-ms-dataverse-attribute": "re_jobtype",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_JobType",
+          "x-ms-dataverse-navigation-properties": [
+            "re_JobType"
+          ]
+        },
+        "re_jobtypeband": {
+          "type": "string",
+          "title": "Job Type Band",
+          "x-ms-dataverse-attribute": "re_jobtypeband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_JobTypeBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_jobtypebandname": {
+          "type": "string",
+          "title": "re_jobtypebandname",
+          "x-ms-dataverse-attribute": "re_jobtypebandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_jobtypebandName",
+          "x-ms-dataverse-attribute-of": "re_jobtypeband",
+          "x-ms-read-only": true
+        },
+        "re_jobtypename": {
+          "type": "string",
+          "title": "re_jobtypename",
+          "x-ms-dataverse-attribute": "re_jobtypename",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_JobTypeName",
+          "x-ms-dataverse-attribute-of": "re_jobtype",
+          "x-ms-read-only": true,
+          "maxLength": 850
+        },
+        "re_jobtyperating": {
+          "type": "string",
+          "title": "Job Type Rating",
+          "x-ms-dataverse-attribute": "re_jobtyperating",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_JobTypeRating",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_jobtyperatingname": {
+          "type": "string",
+          "title": "re_jobtyperatingname",
+          "x-ms-dataverse-attribute": "re_jobtyperatingname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_jobtyperatingName",
+          "x-ms-dataverse-attribute-of": "re_jobtyperating",
+          "x-ms-read-only": true
+        },
+        "re_konematerialcost": {
+          "type": "string",
+          "title": "KONE Material Cost",
+          "x-ms-dataverse-attribute": "re_konematerialcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_KONEMaterialCost"
+        },
+        "re_konematerialcost_base": {
+          "type": "string",
+          "title": "KONE Material Cost (Base)",
+          "x-ms-dataverse-attribute": "re_konematerialcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_konematerialcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_konesparessalespricevk13": {
+          "type": "string",
+          "title": "KONE Spares Sales Price (VK13)",
+          "x-ms-dataverse-attribute": "re_konesparessalespricevk13",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_KONESparesSalesPriceVK13"
+        },
+        "re_konesparessalespricevk13_base": {
+          "type": "string",
+          "title": "KONE Spares Sales Price (VK13) (Base)",
+          "x-ms-dataverse-attribute": "re_konesparessalespricevk13_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_konesparessalespricevk13_Base",
+          "x-ms-read-only": true
+        },
+        "re_laborcost": {
+          "type": "string",
+          "title": "Labor Cost",
+          "x-ms-dataverse-attribute": "re_laborcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_LaborCost"
+        },
+        "re_laborcost_base": {
+          "type": "string",
+          "title": "Labor Cost (Base)",
+          "x-ms-dataverse-attribute": "re_laborcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_laborcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_languagelocale": {
+          "type": "string",
+          "title": "Language Locale",
+          "x-ms-dataverse-attribute": "re_languagelocale",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_LanguageLocale",
+          "maxLength": 100
+        },
+        "re_margincomments": {
+          "type": "string",
+          "title": "Margin Comments",
+          "x-ms-dataverse-attribute": "re_margincomments",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_MarginComments",
+          "maxLength": 2000
+        },
+        "re_margingroup": {
+          "type": "string",
+          "title": "Margin Group",
+          "x-ms-dataverse-attribute": "re_margingroup",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_MarginGroup",
+          "x-ms-dataverse-navigation-properties": [
+            "re_MarginGroup"
+          ]
+        },
+        "re_margingroupname": {
+          "type": "string",
+          "title": "re_margingroupname",
+          "x-ms-dataverse-attribute": "re_margingroupname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_MarginGroupName",
+          "x-ms-dataverse-attribute-of": "re_margingroup",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "re_marginrule": {
+          "type": "string",
+          "title": "Margin Rule",
+          "x-ms-dataverse-attribute": "re_marginrule",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_MarginRule",
+          "x-ms-dataverse-navigation-properties": [
+            "re_MarginRule"
+          ]
+        },
+        "re_marginrulename": {
+          "type": "string",
+          "title": "re_marginrulename",
+          "x-ms-dataverse-attribute": "re_marginrulename",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_MarginRuleName",
+          "x-ms-dataverse-attribute-of": "re_marginrule",
+          "x-ms-read-only": true,
+          "maxLength": 200
+        },
+        "re_market": {
+          "type": "string",
+          "title": "Market",
+          "x-ms-dataverse-attribute": "re_market",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_Market",
+          "required": true,
+          "enum": [
+            "MKO - United States",
+            "CKE - Canada (English)",
+            "CKQ - Québec"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "724c775e-4eca-f111-a05c-00224809b41c",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "market choice",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_marketname": {
+          "type": "string",
+          "title": "re_marketname",
+          "x-ms-dataverse-attribute": "re_marketname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_marketName",
+          "x-ms-dataverse-attribute-of": "re_market",
+          "x-ms-read-only": true
+        },
+        "re_materialcost": {
+          "type": "string",
+          "title": "Material Cost",
+          "x-ms-dataverse-attribute": "re_materialcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_MaterialCost"
+        },
+        "re_materialcost_base": {
+          "type": "string",
+          "title": "Material Cost (Base)",
+          "x-ms-dataverse-attribute": "re_materialcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_materialcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_mechaniclaborrate": {
+          "type": "string",
+          "title": "Mechanic Labor Rate",
+          "x-ms-dataverse-attribute": "re_mechaniclaborrate",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_MechanicLaborRate"
+        },
+        "re_mechaniclaborrate_base": {
+          "type": "string",
+          "title": "Mechanic Labor Rate (Base)",
+          "x-ms-dataverse-attribute": "re_mechaniclaborrate_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_mechaniclaborrate_Base",
+          "x-ms-read-only": true
+        },
+        "re_medianmarginsellprice": {
+          "type": "string",
+          "title": "Median Margin Sell Price",
+          "x-ms-dataverse-attribute": "re_medianmarginsellprice",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_MedianMarginSellPrice"
+        },
+        "re_medianmarginsellprice_base": {
+          "type": "string",
+          "title": "Median Margin Sell Price (Base)",
+          "x-ms-dataverse-attribute": "re_medianmarginsellprice_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_medianmarginsellprice_Base",
+          "x-ms-read-only": true
+        },
+        "re_miscellaneouscost": {
+          "type": "string",
+          "title": "Miscellaneous Cost",
+          "x-ms-dataverse-attribute": "re_miscellaneouscost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_MiscellaneousCost"
+        },
+        "re_miscellaneouscost_base": {
+          "type": "string",
+          "title": "Miscellaneous Cost (Base)",
+          "x-ms-dataverse-attribute": "re_miscellaneouscost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_miscellaneouscost_Base",
+          "x-ms-read-only": true
+        },
+        "re_name": {
+          "type": "string",
+          "title": "Estimate Number",
+          "x-ms-dataverse-attribute": "re_name",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_Name",
+          "x-ms-dataverse-primary-name": true,
+          "required": true,
+          "maxLength": 850
+        },
+        "re_nationalaccount": {
+          "type": "string",
+          "title": "National Account",
+          "x-ms-dataverse-attribute": "re_nationalaccount",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_NationalAccount",
+          "enum": [
+            "Yes",
+            "No",
+            "Unknown"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "8c6e520e-51ca-f111-a05c-000d3a5ae30c",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "yesnounknow",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_nationalaccountband": {
+          "type": "string",
+          "title": "National Account Band",
+          "x-ms-dataverse-attribute": "re_nationalaccountband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_NationalAccountBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_nationalaccountbandname": {
+          "type": "string",
+          "title": "re_nationalaccountbandname",
+          "x-ms-dataverse-attribute": "re_nationalaccountbandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_nationalaccountbandName",
+          "x-ms-dataverse-attribute-of": "re_nationalaccountband",
+          "x-ms-read-only": true
+        },
+        "re_nationalaccountname": {
+          "type": "string",
+          "title": "re_nationalaccountname",
+          "x-ms-dataverse-attribute": "re_nationalaccountname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_nationalaccountName",
+          "x-ms-dataverse-attribute-of": "re_nationalaccount",
+          "x-ms-read-only": true
+        },
+        "re_notesforcttteam": {
+          "type": "string",
+          "title": "Notes for CTT Team",
+          "x-ms-dataverse-attribute": "re_notesforcttteam",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_NotesforCTTTeam",
+          "maxLength": 4000
+        },
+        "re_numberofequipment": {
+          "type": "string",
+          "title": "Number of Equipment",
+          "x-ms-dataverse-attribute": "re_numberofequipment",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "re_NumberofEquipment"
+        },
+        "re_numberoftechs": {
+          "type": "string",
+          "title": "Number of Techs",
+          "x-ms-dataverse-attribute": "re_numberoftechs",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "re_NumberofTechs"
+        },
+        "re_oemband": {
+          "type": "string",
+          "title": "OEM Band",
+          "x-ms-dataverse-attribute": "re_oemband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_OEMBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_oembandname": {
+          "type": "string",
+          "title": "re_oembandname",
+          "x-ms-dataverse-attribute": "re_oembandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_oembandName",
+          "x-ms-dataverse-attribute-of": "re_oemband",
+          "x-ms-read-only": true
+        },
+        "re_packageestimatedcost": {
+          "type": "string",
+          "title": "Package Estimated Cost",
+          "x-ms-dataverse-attribute": "re_packageestimatedcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_PackageEstimatedCost"
+        },
+        "re_packageestimatedcost_base": {
+          "type": "string",
+          "title": "Package Estimated Cost (Base)",
+          "x-ms-dataverse-attribute": "re_packageestimatedcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_packageestimatedcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_packagelaborcost": {
+          "type": "string",
+          "title": "Package Labor Cost",
+          "x-ms-dataverse-attribute": "re_packagelaborcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_PackageLaborCost"
+        },
+        "re_packagelaborcost_base": {
+          "type": "string",
+          "title": "Package Labor Cost (Base)",
+          "x-ms-dataverse-attribute": "re_packagelaborcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_packagelaborcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_packagelaborhours": {
+          "type": "string",
+          "title": "Package Labor Hours",
+          "x-ms-dataverse-attribute": "re_packagelaborhours",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_PackageLaborHours"
+        },
+        "re_packagematerialcost": {
+          "type": "string",
+          "title": "Package Material Cost",
+          "x-ms-dataverse-attribute": "re_packagematerialcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_PackageMaterialCost"
+        },
+        "re_packagematerialcost_base": {
+          "type": "string",
+          "title": "Package Material Cost (Base)",
+          "x-ms-dataverse-attribute": "re_packagematerialcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_packagematerialcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_packagenames": {
+          "type": "string",
+          "title": "Package Names",
+          "x-ms-dataverse-attribute": "re_packagenames",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_PackageNames",
+          "maxLength": 4000
+        },
+        "re_papertype": {
+          "type": "string",
+          "title": "Paper Type",
+          "x-ms-dataverse-attribute": "re_papertype",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_PaperType",
+          "enum": [
+            "Customer Paper",
+            "Kone Paper",
+            "NA"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "621be6f3-e5c6-f111-aaaf-00224809b41c",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Paper Type",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_papertypename": {
+          "type": "string",
+          "title": "re_papertypename",
+          "x-ms-dataverse-attribute": "re_papertypename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_papertypeName",
+          "x-ms-dataverse-attribute-of": "re_papertype",
+          "x-ms-read-only": true
+        },
+        "re_parentestimate": {
+          "type": "string",
+          "title": "Parent Estimate",
+          "x-ms-dataverse-attribute": "re_parentestimate",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_ParentEstimate",
+          "x-ms-dataverse-navigation-properties": [
+            "re_ParentEstimate"
+          ]
+        },
+        "re_parentestimatename": {
+          "type": "string",
+          "title": "re_parentestimatename",
+          "x-ms-dataverse-attribute": "re_parentestimatename",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_ParentEstimateName",
+          "x-ms-dataverse-attribute-of": "re_parentestimate",
+          "x-ms-read-only": true,
+          "maxLength": 850
+        },
+        "re_payer": {
+          "type": "string",
+          "title": "Payer",
+          "x-ms-dataverse-attribute": "re_payer",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_Payer",
+          "maxLength": 50
+        },
+        "re_pricingjustification": {
+          "type": "string",
+          "title": "Pricing Justification",
+          "x-ms-dataverse-attribute": "re_pricingjustification",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_PricingJustification",
+          "maxLength": 2000
+        },
+        "re_primaryequipmentfound": {
+          "type": "string",
+          "title": "Primary Equipment Found",
+          "x-ms-dataverse-attribute": "re_primaryequipmentfound",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_PrimaryEquipmentFound",
+          "enum": [
+            "Yes",
+            "No"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "701b3e3e-52ca-f111-a05c-6045bd04efb9",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "yesno",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_primaryequipmentfoundname": {
+          "type": "string",
+          "title": "re_primaryequipmentfoundname",
+          "x-ms-dataverse-attribute": "re_primaryequipmentfoundname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_primaryequipmentfoundName",
+          "x-ms-dataverse-attribute-of": "re_primaryequipmentfound",
+          "x-ms-read-only": true
+        },
+        "re_proposallanguage": {
+          "type": "string",
+          "title": "Proposal Language",
+          "x-ms-dataverse-attribute": "re_proposallanguage",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_ProposalLanguage",
+          "required": true,
+          "enum": [
+            "English",
+            "French"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "262ef69f-4eca-f111-a05c-00224809b41c",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "language choice",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_proposallanguagename": {
+          "type": "string",
+          "title": "re_proposallanguagename",
+          "x-ms-dataverse-attribute": "re_proposallanguagename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_proposallanguageName",
+          "x-ms-dataverse-attribute-of": "re_proposallanguage",
+          "x-ms-read-only": true
+        },
+        "re_prospectaccount": {
+          "type": "string",
+          "title": "Prospect Account",
+          "x-ms-dataverse-attribute": "re_prospectaccount",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_ProspectAccount",
+          "maxLength": 50
+        },
+        "re_quotetype": {
+          "type": "string",
+          "title": "Quote Type",
+          "x-ms-dataverse-attribute": "re_quotetype",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_QuoteType",
+          "enum": [
+            "QR",
+            "QQ"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "298f2d80-e2c6-f111-aaaf-00224809bc74",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "Quote Type",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_quotetypename": {
+          "type": "string",
+          "title": "re_quotetypename",
+          "x-ms-dataverse-attribute": "re_quotetypename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_quotetypeName",
+          "x-ms-dataverse-attribute-of": "re_quotetype",
+          "x-ms-read-only": true
+        },
+        "re_recommendedcmii": {
+          "type": "string",
+          "title": "Recommended CMII",
+          "x-ms-dataverse-attribute": "re_recommendedcmii",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_RecommendedCMII"
+        },
+        "re_redundancyband": {
+          "type": "string",
+          "title": "Redundancy Band",
+          "x-ms-dataverse-attribute": "re_redundancyband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_RedundancyBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_redundancybandname": {
+          "type": "string",
+          "title": "re_redundancybandname",
+          "x-ms-dataverse-attribute": "re_redundancybandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_redundancybandName",
+          "x-ms-dataverse-attribute-of": "re_redundancyband",
+          "x-ms-read-only": true
+        },
+        "re_redundancycount": {
+          "type": "string",
+          "title": "Redundancy Count",
+          "x-ms-dataverse-attribute": "re_redundancycount",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "re_RedundancyCount"
+        },
+        "re_repairestimateid": {
+          "type": "string",
+          "title": "Repair Estimate",
+          "x-ms-dataverse-attribute": "re_repairestimateid",
+          "x-ms-dataverse-type": "UniqueidentifierType",
+          "x-ms-schema-name": "re_RepairEstimateId",
+          "x-ms-dataverse-primary-id": true,
+          "required": true,
+          "x-ms-keyType": "primary"
+        },
+        "re_requiresapproval": {
+          "type": "string",
+          "title": "Requires Approval",
+          "x-ms-dataverse-attribute": "re_requiresapproval",
+          "x-ms-dataverse-type": "BooleanType",
+          "x-ms-schema-name": "re_RequiresApproval",
+          "enum": [
+            "No",
+            "Yes"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "a0818236-e9c6-f111-aaaf-000d3a5ae717",
+          "x-ms-isGlobal": false,
+          "x-ms-optionsetdisplayname": "Requires Approval",
+          "x-ms-optionSetType": "Boolean"
+        },
+        "re_requiresapprovalname": {
+          "type": "string",
+          "title": "re_requiresapprovalname",
+          "x-ms-dataverse-attribute": "re_requiresapprovalname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_requiresapprovalName",
+          "x-ms-dataverse-attribute-of": "re_requiresapproval",
+          "x-ms-read-only": true
+        },
+        "re_revisionnumber": {
+          "type": "string",
+          "title": "Revision Number",
+          "x-ms-dataverse-attribute": "re_revisionnumber",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "re_RevisionNumber",
+          "required": true
+        },
+        "re_salesperson": {
+          "type": "string",
+          "title": "Salesperson",
+          "x-ms-dataverse-attribute": "re_salesperson",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_Salesperson",
+          "x-ms-dataverse-navigation-properties": [
+            "re_Salesperson"
+          ],
+          "required": true
+        },
+        "re_salespersonname": {
+          "type": "string",
+          "title": "re_salespersonname",
+          "x-ms-dataverse-attribute": "re_salespersonname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_SalespersonName",
+          "x-ms-dataverse-attribute-of": "re_salesperson",
+          "x-ms-read-only": true,
+          "maxLength": 200
+        },
+        "re_salespersonyominame": {
+          "type": "string",
+          "title": "re_salespersonyominame",
+          "x-ms-dataverse-attribute": "re_salespersonyominame",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_SalespersonYomiName",
+          "x-ms-dataverse-attribute-of": "re_salesperson",
+          "x-ms-read-only": true,
+          "maxLength": 200
+        },
+        "re_scopelibraryitem": {
+          "type": "string",
+          "title": "Scope Library Item",
+          "x-ms-dataverse-attribute": "re_scopelibraryitem",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_ScopeLibraryItem",
+          "x-ms-dataverse-navigation-properties": [
+            "re_ScopeLibraryItem"
+          ]
+        },
+        "re_scopelibraryitemname": {
+          "type": "string",
+          "title": "re_scopelibraryitemname",
+          "x-ms-dataverse-attribute": "re_scopelibraryitemname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_ScopeLibraryItemName",
+          "x-ms-dataverse-attribute-of": "re_scopelibraryitem",
+          "x-ms-read-only": true,
+          "maxLength": 300
+        },
+        "re_scopeofwork": {
+          "type": "string",
+          "title": "Scope of Work",
+          "x-ms-dataverse-attribute": "re_scopeofwork",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_ScopeofWork",
+          "maxLength": 10000
+        },
+        "re_sellprice": {
+          "type": "string",
+          "title": "Sell Price",
+          "x-ms-dataverse-attribute": "re_sellprice",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_SellPrice"
+        },
+        "re_sellprice_base": {
+          "type": "string",
+          "title": "Sell Price (Base)",
+          "x-ms-dataverse-attribute": "re_sellprice_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_sellprice_Base",
+          "x-ms-read-only": true
+        },
+        "re_situationaladjustment": {
+          "type": "string",
+          "title": "Situational Adjustment",
+          "x-ms-dataverse-attribute": "re_situationaladjustment",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_SituationalAdjustment"
+        },
+        "re_soldto": {
+          "type": "string",
+          "title": "Sold-to",
+          "x-ms-dataverse-attribute": "re_soldto",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_Soldto",
+          "maxLength": 50
+        },
+        "re_statedlaborrate": {
+          "type": "string",
+          "title": "Stated Labor Rate",
+          "x-ms-dataverse-attribute": "re_statedlaborrate",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_StatedLaborRate"
+        },
+        "re_statedlaborrate_base": {
+          "type": "string",
+          "title": "Stated Labor Rate (Base)",
+          "x-ms-dataverse-attribute": "re_statedlaborrate_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_statedlaborrate_Base",
+          "x-ms-read-only": true
+        },
+        "re_statedratemargin": {
+          "type": "string",
+          "title": "Stated Rate Margin",
+          "x-ms-dataverse-attribute": "re_statedratemargin",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_StatedRateMargin"
+        },
+        "re_subcontractorcost": {
+          "type": "string",
+          "title": "Subcontractor Cost",
+          "x-ms-dataverse-attribute": "re_subcontractorcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_SubcontractorCost"
+        },
+        "re_subcontractorcost_base": {
+          "type": "string",
+          "title": "Subcontractor Cost (Base)",
+          "x-ms-dataverse-attribute": "re_subcontractorcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_subcontractorcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_submittedon": {
+          "type": "string",
+          "title": "Submitted On",
+          "x-ms-dataverse-attribute": "re_submittedon",
+          "x-ms-dataverse-type": "DateTimeType",
+          "x-ms-schema-name": "re_SubmittedOn"
+        },
+        "re_suggestedprice": {
+          "type": "string",
+          "title": "Suggested Price",
+          "x-ms-dataverse-attribute": "re_suggestedprice",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_SuggestedPrice"
+        },
+        "re_suggestedprice_base": {
+          "type": "string",
+          "title": "Suggested Price (Base)",
+          "x-ms-dataverse-attribute": "re_suggestedprice_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_suggestedprice_Base",
+          "x-ms-read-only": true
+        },
+        "re_suggestedpricewithkonematerial": {
+          "type": "string",
+          "title": "Suggested Price with KONE Material",
+          "x-ms-dataverse-attribute": "re_suggestedpricewithkonematerial",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_SuggestedPricewithKONEMaterial"
+        },
+        "re_suggestedpricewithkonematerial_base": {
+          "type": "string",
+          "title": "Suggested Price with KONE Material (Base)",
+          "x-ms-dataverse-attribute": "re_suggestedpricewithkonematerial_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_suggestedpricewithkonematerial_Base",
+          "x-ms-read-only": true
+        },
+        "re_suggestedsellprice": {
+          "type": "string",
+          "title": "Suggested Sell Price",
+          "x-ms-dataverse-attribute": "re_suggestedsellprice",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_SuggestedSellPrice"
+        },
+        "re_suggestedsellprice_base": {
+          "type": "string",
+          "title": "Suggested Sell Price (Base)",
+          "x-ms-dataverse-attribute": "re_suggestedsellprice_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_suggestedsellprice_Base",
+          "x-ms-read-only": true
+        },
+        "re_supervisor": {
+          "type": "string",
+          "title": "Supervisor's Name / ID",
+          "x-ms-dataverse-attribute": "re_supervisor",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_Supervisor",
+          "maxLength": 100
+        },
+        "re_targetcm2": {
+          "type": "string",
+          "title": "Target CM2",
+          "x-ms-dataverse-attribute": "re_targetcm2",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_TargetCM2"
+        },
+        "re_timecategory": {
+          "type": "string",
+          "title": "Time Category",
+          "x-ms-dataverse-attribute": "re_timecategory",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_TimeCategory",
+          "required": true,
+          "enum": [
+            "Straight Time",
+            "Double Time"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "546d6177-55ca-f111-a05c-6045bd04efb9",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "timecategory",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_timecategoryname": {
+          "type": "string",
+          "title": "re_timecategoryname",
+          "x-ms-dataverse-attribute": "re_timecategoryname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_timecategoryName",
+          "x-ms-dataverse-attribute-of": "re_timecategory",
+          "x-ms-read-only": true
+        },
+        "re_totaladditionalcost": {
+          "type": "string",
+          "title": "Total Additional Cost",
+          "x-ms-dataverse-attribute": "re_totaladditionalcost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_TotalAdditionalCost"
+        },
+        "re_totaladditionalcost_base": {
+          "type": "string",
+          "title": "Total Additional Cost (Base)",
+          "x-ms-dataverse-attribute": "re_totaladditionalcost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_totaladditionalcost_Base",
+          "x-ms-read-only": true
+        },
+        "re_totaladjustment": {
+          "type": "string",
+          "title": "Total Adjustment",
+          "x-ms-dataverse-attribute": "re_totaladjustment",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_TotalAdjustment"
+        },
+        "re_totalequipmentinbuilding": {
+          "type": "string",
+          "title": "Total Equipment in Building",
+          "x-ms-dataverse-attribute": "re_totalequipmentinbuilding",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "re_TotalEquipmentinBuilding"
+        },
+        "re_totaltruecost": {
+          "type": "string",
+          "title": "Total True Cost",
+          "x-ms-dataverse-attribute": "re_totaltruecost",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_TotalTrueCost"
+        },
+        "re_totaltruecost_base": {
+          "type": "string",
+          "title": "Total True Cost (Base)",
+          "x-ms-dataverse-attribute": "re_totaltruecost_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_totaltruecost_Base",
+          "x-ms-read-only": true
+        },
+        "re_usetax": {
+          "type": "string",
+          "title": "Use Tax %",
+          "x-ms-dataverse-attribute": "re_usetax",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_UseTax",
+          "required": true
+        },
+        "re_usetaxamount": {
+          "type": "string",
+          "title": "Use Tax Amount",
+          "x-ms-dataverse-attribute": "re_usetaxamount",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_UseTaxAmount"
+        },
+        "re_usetaxamount_base": {
+          "type": "string",
+          "title": "Use Tax Amount (Base)",
+          "x-ms-dataverse-attribute": "re_usetaxamount_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_usetaxamount_Base",
+          "x-ms-read-only": true
+        },
+        "re_usetaxpercentage": {
+          "type": "string",
+          "title": "Use Tax Percentage",
+          "x-ms-dataverse-attribute": "re_usetaxpercentage",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_UseTaxPercentage"
+        },
+        "re_verticalband": {
+          "type": "string",
+          "title": "Vertical Band",
+          "x-ms-dataverse-attribute": "re_verticalband",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_VerticalBand",
+          "enum": [
+            "High",
+            "Medium",
+            "Low"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "b66ec149-59ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "pricingband",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_verticalbandname": {
+          "type": "string",
+          "title": "re_verticalbandname",
+          "x-ms-dataverse-attribute": "re_verticalbandname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_verticalbandName",
+          "x-ms-dataverse-attribute-of": "re_verticalband",
+          "x-ms-read-only": true
+        },
+        "re_workcenter": {
+          "type": "string",
+          "title": "Work Center",
+          "x-ms-dataverse-attribute": "re_workcenter",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_WorkCenter",
+          "maxLength": 100
+        },
+        "re_workcenterrequest": {
+          "type": "string",
+          "title": "Work Center Request",
+          "x-ms-dataverse-attribute": "re_workcenterrequest",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_WorkCenterRequest",
+          "enum": [
+            "Route",
+            "Repair"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "00282068-50ca-f111-a05c-70a8a59bca08",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "workcenter request choice",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_workcenterrequestname": {
+          "type": "string",
+          "title": "re_workcenterrequestname",
+          "x-ms-dataverse-attribute": "re_workcenterrequestname",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_workcenterrequestName",
+          "x-ms-dataverse-attribute-of": "re_workcenterrequest",
+          "x-ms-read-only": true
+        },
+        "statecode": {
+          "type": "string",
+          "title": "Status",
+          "x-ms-dataverse-attribute": "statecode",
+          "x-ms-dataverse-type": "StateType",
+          "x-ms-schema-name": "statecode",
+          "required": true,
+          "enum": [
+            "Active",
+            "Inactive"
+          ],
+          "x-ms-enum-values": [
+            0,
+            1
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "bb7fdee7-d8c3-f111-aab2-000d3a373b42",
+          "x-ms-isGlobal": false,
+          "x-ms-optionsetdisplayname": "Status",
+          "x-ms-optionSetType": "State"
+        },
+        "statecodename": {
+          "type": "string",
+          "title": "statecodename",
+          "x-ms-dataverse-attribute": "statecodename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "statecodeName",
+          "x-ms-dataverse-attribute-of": "statecode",
+          "x-ms-read-only": true
+        },
+        "statuscode": {
+          "type": "string",
+          "title": "Status Reason",
+          "x-ms-dataverse-attribute": "statuscode",
+          "x-ms-dataverse-type": "StatusType",
+          "x-ms-schema-name": "statuscode",
+          "enum": [
+            "Active",
+            "Inactive"
+          ],
+          "x-ms-enum-values": [
+            1,
+            2
+          ],
+          "Color": [
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "c57fdee7-d8c3-f111-aab2-000d3a373b42",
+          "x-ms-isGlobal": false,
+          "x-ms-optionsetdisplayname": "Status Reason",
+          "x-ms-optionSetType": "Status"
+        },
+        "statuscodename": {
+          "type": "string",
+          "title": "statuscodename",
+          "x-ms-dataverse-attribute": "statuscodename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "statuscodeName",
+          "x-ms-dataverse-attribute-of": "statuscode",
+          "x-ms-read-only": true
+        },
+        "timezoneruleversionnumber": {
+          "type": "string",
+          "title": "Time Zone Rule Version Number",
+          "x-ms-dataverse-attribute": "timezoneruleversionnumber",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "TimeZoneRuleVersionNumber"
+        },
+        "transactioncurrencyid": {
+          "type": "string",
+          "title": "Currency",
+          "x-ms-dataverse-attribute": "transactioncurrencyid",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "TransactionCurrencyId",
+          "x-ms-dataverse-navigation-properties": [
+            "transactioncurrencyid"
+          ]
+        },
+        "transactioncurrencyidname": {
+          "type": "string",
+          "title": "transactioncurrencyidname",
+          "x-ms-dataverse-attribute": "transactioncurrencyidname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "TransactionCurrencyIdName",
+          "x-ms-dataverse-attribute-of": "transactioncurrencyid",
+          "x-ms-read-only": true,
+          "maxLength": 100
+        },
+        "utcconversiontimezonecode": {
+          "type": "string",
+          "title": "UTC Conversion Time Zone Code",
+          "x-ms-dataverse-attribute": "utcconversiontimezonecode",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "UTCConversionTimeZoneCode"
+        },
+        "versionnumber": {
+          "type": "string",
+          "title": "Version Number",
+          "x-ms-dataverse-attribute": "versionnumber",
+          "x-ms-dataverse-type": "BigIntType",
+          "x-ms-schema-name": "VersionNumber",
+          "x-ms-read-only": true
+        }
+      },
+      "required": [
+        "createdbyyominame",
+        "createdonbehalfbyyominame",
+        "modifiedbyyominame",
+        "modifiedonbehalfbyyominame",
+        "ownerid",
+        "owneridname",
+        "owneridtype",
+        "owneridyominame",
+        "owningbusinessunitname",
+        "re_branch",
+        "re_buildingname",
+        "re_buildingprovincestate",
+        "re_customername",
+        "re_equipmenttype",
+        "re_estimatename",
+        "re_estimatepath",
+        "re_estimatestatus",
+        "re_estimatetype",
+        "re_freight",
+        "re_market",
+        "re_name",
+        "re_proposallanguage",
+        "re_repairestimateid",
+        "re_revisionnumber",
+        "re_salesperson",
+        "re_timecategory",
+        "re_usetax",
+        "statecode"
+      ]
+    }
+  }
+}

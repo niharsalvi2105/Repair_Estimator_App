@@ -1,0 +1,81 @@
+:root {
+  color-scheme: light;
+  font-family: 'Segoe UI', sans-serif;
+  color: #102b4d;
+  background: #f3efe7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-weight: 400;
+  font-size: 14px;
+
+  --ink: #102b4d;
+  --muted: #647b96;
+  --green: #1450f5;
+  --green-dark: #0c42d9;
+  --pale-green: #eaf1ff;
+  --border: #dce7f2;
+  --surface: #fff;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  color: #e4edf8;
+  background: #101722;
+  --ink: #e4edf8;
+  --muted: #a9bbd0;
+  --green: #91b5ff;
+  --green-dark: #b7ceff;
+  --pale-green: #203654;
+  --border: #3c5068;
+  --surface: #1a2534;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 0;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 3px solid #1450f5;
+  outline-offset: 2px;
+}
+
+:root[data-theme='dark'] :focus-visible {
+  outline-color: #a7c6ff;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}

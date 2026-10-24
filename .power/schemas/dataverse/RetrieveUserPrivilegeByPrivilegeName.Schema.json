@@ -1,0 +1,61 @@
+{
+  "name": "RetrieveUserPrivilegeByPrivilegeName",
+  "title": "RetrieveUserPrivilegeByPrivilegeName",
+  "type": "Microsoft.PowerApps/dataverseOperation",
+  "properties": {
+    "displayName": "RetrieveUserPrivilegeByPrivilegeName",
+    "swagger": {
+      "swagger": "2.0",
+      "info": {
+        "title": "RetrieveUserPrivilegeByPrivilegeName",
+        "version": "1.0"
+      },
+      "basePath": "/api/data/v9.2",
+      "paths": {
+        "/systemusers({id})/Microsoft.Dynamics.CRM.RetrieveUserPrivilegeByPrivilegeName": {
+          "get": {
+            "operationId": "RetrieveUserPrivilegeByPrivilegeName",
+            "parameters": [
+              {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "type": "string",
+                "format": "guid",
+                "x-ms-dataverse-type": "UniqueidentifierType",
+                "x-ms-csdl-type": "Edm.Guid"
+              },
+              {
+                "name": "PrivilegeName",
+                "in": "query",
+                "required": true,
+                "type": "string",
+                "x-ms-dataverse-type": "StringType",
+                "x-ms-csdl-type": "Edm.String"
+              },
+              {
+                "name": "ExcludeTeamBasic",
+                "in": "query",
+                "required": false,
+                "type": "boolean",
+                "x-ms-dataverse-type": "BooleanType",
+                "x-ms-csdl-type": "Edm.Boolean"
+              }
+            ],
+            "responses": {
+              "200": {
+                "description": "Success",
+                "schema": {
+                  "type": "object",
+                  "x-ms-dataverse-type": "LookupType",
+                  "x-ms-csdl-type": "mscrm.RetrieveUserPrivilegeByPrivilegeNameResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "entitySetName": "systemusers"
+}
