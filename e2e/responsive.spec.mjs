@@ -151,6 +151,9 @@ for (const viewport of viewports) {
       await expect(market).toBeEnabled()
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
       await expect(page.locator('.request-record')).toHaveCount(1)
+      const logo = page.locator('.brand-logo')
+      await expect(logo).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
+      await expect.poll(() => logo.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true)
       await checkLayout(page, viewport, 'dashboard')
 
       await page.locator('.main-nav .nav-item').nth(2).click()

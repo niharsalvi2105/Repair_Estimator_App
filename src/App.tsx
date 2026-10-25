@@ -17,6 +17,7 @@ import type { Market } from './data/estimateQuery'
 import { useUserPreferences } from './useUserPreferences'
 import { BranchSelect } from './BranchSelect'
 import { UserAvatar } from './UserAvatar'
+import koneLogo from './assets/kone-logo.jpg?inline'
 
 type Language = 'en' | 'fr'
 type View = 'estimates' | 'requests' | 'new'
@@ -650,7 +651,7 @@ function App() {
               </filter>
             </defs>
           </svg>
-          <img className="brand-logo" src="/kone-logo.jpg" alt="KONE" />
+          <img className="brand-logo" src={koneLogo} alt="KONE" />
           <span className="brand-copy">
             <strong>{t.appName}</strong>
             <small>KTOC PSR</small>

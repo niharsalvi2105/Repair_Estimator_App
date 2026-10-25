@@ -53,6 +53,9 @@ CLI, not edited by hand.
 
 Desktop navigation uses a compact 240px sidebar, reduced branding, 44px action
 targets and consistent outline SVG icons. Narrow screens retain bottom navigation.
+The supplied JPEG logo is imported from application assets and embedded by Vite
+as a data URL, rather than requested from a root-relative public URL. This keeps
+it available under the published Power Apps hosting path as well as locally.
 Navigation has no independent scroll container. Only widths up to 640px use
 compact bottom navigation for the three available workspaces. Wider windows
 keep left navigation with icons and labels horizontally aligned, including on
