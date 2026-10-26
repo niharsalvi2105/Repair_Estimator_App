@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { decimalInputDisplay } from './data/numberDisplay'
 import {
   Re_repairestimatesre_workcenterrequest,
   Re_repairestimatesre_hasbeenapproved,
@@ -83,6 +85,7 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
   onChange: (key: InputKey, value: string) => void
   readOnly?: boolean
 }) {
+  const [focusedKey, setFocusedKey] = useState<InputKey>()
   const fields: readonly (Omit<Field, 'key'> & { key: InputKey })[] = {
     request: requestFields, cost: costFields, pricing: pricingFields, partner: partnerFields,
   }[stage]
@@ -112,7 +115,10 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
                 step={field.type === 'number' ? field.integer ? 1 : 'any' : undefined}
                 maxLength={field.maxLength ?? (field.type ? undefined : 100)}
                 readOnly={readOnly}
-                value={value[key] ?? ''} onChange={(event) => onChange(key, event.target.value)} />
+                value={field.type === 'number' && !field.integer && focusedKey !== key
+                  ? decimalInputDisplay(value[key] ?? '') : value[key] ?? ''}
+                onFocus={() => setFocusedKey(key)} onBlur={() => setFocusedKey(undefined)}
+                onChange={(event) => onChange(key, event.target.value)} />
             )}
           </div>
         )

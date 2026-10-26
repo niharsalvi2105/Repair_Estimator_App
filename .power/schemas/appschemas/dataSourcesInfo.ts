@@ -12,10 +12,31 @@ export const dataSourcesInfo = {
     "dataSourceType": "Dataverse",
     "apis": {}
   },
+  "re_bandmatrixes": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_bandmatrixid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
   "re_branchs": {
     "tableId": "",
     "version": "",
     "primaryKey": "re_branchid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_countries": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_countryid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_customerverticals": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_customerverticalid",
     "dataSourceType": "Dataverse",
     "apis": {}
   },
@@ -72,10 +93,73 @@ export const dataSourcesInfo = {
     "dataSourceType": "Dataverse",
     "apis": {}
   },
+  "re_incentiverates": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_incentiverateid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_jobsizebands": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_jobsizebandid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
   "re_jobtypes": {
     "tableId": "",
     "version": "",
     "primaryKey": "re_jobtypeid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_laborrates": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_laborrateid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_margingroups": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_margingroupid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_marginrules": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_marginruleid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_oembandrules": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_oembandruleid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_packagecategories": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_packagecategoryid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_pricingparameters": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_pricingparameterid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_redundancybands": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_redundancybandid",
     "dataSourceType": "Dataverse",
     "apis": {}
   },
@@ -90,6 +174,27 @@ export const dataSourcesInfo = {
     "tableId": "",
     "version": "",
     "primaryKey": "re_repairpackageid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_salesofficeses": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_salesofficesid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_scopelibraries": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_scopelibraryid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_situationaladjustments": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_situationaladjustmentid",
     "dataSourceType": "Dataverse",
     "apis": {}
   },

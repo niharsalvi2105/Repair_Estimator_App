@@ -31,7 +31,7 @@ async function mockData(page, language, theme, state = 'records') {
       const empty = window.__dashboardEmpty || market !== 126110000;
       return {
         mode:'dashboard',ownerId:owner,market,year:2026,generatedAt:'2026-10-26T11:15:58Z',
-        total:empty ? 0 : 125,marginCount:empty ? 0 : 100,averageCmii:empty ? null : -0.25,
+        total:empty ? 0 : 125,marginCount:empty ? 0 : 100,averageCmii:empty ? null : window.__dashboardAverage ?? -0.25,
         statuses:empty ? [] : [{status:126110000,count:100},{status:126110001,count:20},{status:126110002,count:5}],
         jobTypes:empty ? [] : [{id:'job',en:'Equipment repair',fr:'',count:120},
           {id:null,en:null,fr:null,count:5}]
@@ -88,7 +88,7 @@ async function mockData(page, language, theme, state = 'records') {
     contentType: 'application/javascript',
     body: `export async function loadSession() { return {
       displayName:'Responsive Test User', userId:'11111111-1111-1111-1111-111111111111',
-      role:'admin', canReadEstimates:true, canStartEstimate:true, developmentAdminOverride:true
+      role:window.__sessionRole || 'admin', canReadEstimates:true, canStartEstimate:true, developmentAdminOverride:true
     } }`,
   }))
   await page.route('**/src/generated/services/Re_appuserpreferencesService.ts*', (route) => route.fulfill({
@@ -307,7 +307,7 @@ for (const viewport of viewports) {
       await checkLayout(page, viewport, 'expanded review')
       await expect(page.locator('.footer-actions .button')).toBeDisabled()
       await page.locator('.form-footer > button').click()
-      await expect(page.locator('#request-re_sellprice')).toHaveValue('1500')
+      await expect(page.locator('#request-re_sellprice')).toHaveValue('1500.00')
     })
   }
 }
@@ -348,6 +348,282 @@ for (const theme of ['light', 'dark']) {
     expect(photoRequests).toEqual([])
   })
 }
+
+async function changeLanguageInSettings(page, language) {
+  await page.locator('.main-nav').getByRole('button', { name: /^(Settings|Paramètres)$/ }).click()
+  await page.getByLabel(/^(Language|Langue)$/).selectOption(language)
+  await expect(page.getByLabel(/^(Language|Langue)$/)).toBeEnabled()
+  await page.getByRole('button', { name: /^(Return to workspace|Retour à l’espace de travail)$/ }).click()
+}
+
+async function mockMasterData(page) {
+  await page.route('**/src/data/masterDataRepository.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      import { tableByName, buildMasterChanges } from '/src/data/masterDataSchema.ts';
+      const id = '22222222-2222-2222-2222-222222222222';
+      const reference = '33333333-3333-3333-3333-333333333333';
+      function row(table) { return { [table.id]:id, [table.primary]:'PKG001',
+        re_packagenameen:'Motor package',re_packagenamefr:null,re_proposalscopeen:'Replace the motor safely.',
+        re_proposalscopefr:'',re_mechanichours:2.5,re_materialmisctaxcost:125,
+        _re_country_value:reference,
+        '_re_country_value@OData.Community.Display.V1.FormattedValue':'United States',
+        statecode:0, ...window.__masterSaved }; }
+      function fail() { if (window.__masterError) throw new Error(window.__masterError); }
+      export async function getMasterMetadata(name) {
+        fail();
+        const table = tableByName(name);
+        const allowed = ['re_packagenumber','re_packagenameen','re_packagenamefr','re_proposalscopeen',
+          're_proposalscopefr','re_mechanichours','re_materialmisctaxcost','re_country'];
+        return { ...table, fields:table.fields.filter((f) => name !== 're_repairpackage' || allowed.includes(f.name))
+          .map((f) => ({...f,target:f.name === 're_country' ? 're_countries' : f.target})) };
+      }
+      export async function listMasterRecords(name, search, status, skipToken) {
+        window.__masterQueries ??= []; window.__masterQueries.push({name,search,status,skipToken});
+        fail();
+        const table = tableByName(name);
+        return { records:window.__masterEmpty ? [] : [row(table)],skipToken:skipToken ? undefined : 'master-next' };
+      }
+      export async function getMasterRecord(table, recordId) {
+        fail();
+        window.__masterReads ??= []; window.__masterReads.push(recordId);
+        return {...row(table),[table.id]:recordId};
+      }
+      export async function searchMasterLookup(entitySet, search) {
+        fail(); return {records:[{id:reference,label:'United States'}],more:true};
+      }
+      export async function saveMasterRecord(table, recordId, values, original) {
+        window.__masterWrites ??= [];
+        window.__masterWrites.push({recordId,changes:buildMasterChanges(table,values,original)});
+        if (window.__masterDelay) await new Promise((resolve) => setTimeout(resolve, window.__masterDelay));
+        if (window.__masterWriteError) throw new Error(window.__masterWriteError);
+        fail();
+        window.__masterSaved = { ...row(table), ...(!original ? {statecode:0} : {}),
+          ...window.__masterWrites.at(-1).changes,[table.id]:recordId };
+      }
+      export async function setMasterActive(table, recordId, active) {
+        window.__masterStates ??= []; window.__masterStates.push({recordId,active});
+        fail(); window.__masterSaved = {...row(table),statecode:active ? 0 : 1};
+      }
+    `,
+  }))
+}
+
+for (const role of ['estimator', 'admin']) {
+  for (const width of [320, 1366]) {
+    test(`settings and package catalog are available to ${role} at ${width}px`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 768 })
+      await mockData(page, 'en', 'light')
+      await mockMasterData(page)
+      await page.addInitScript((value) => { window.__sessionRole = value }, role)
+      await page.goto('/')
+      const nav = page.locator('.main-nav')
+      await expect(nav.getByRole('button', { name: 'Approvals', exact: true })).toHaveCount(0)
+      await expect(nav.getByRole('button', { name: 'Estimator', exact: true })).toHaveCount(0)
+      await expect(nav.getByRole('button', { name: 'Pricing & Margin', exact: true })).toHaveCount(0)
+      await expect(page.locator('header .language-control')).toHaveCount(0)
+      await expect(nav.getByRole('button', { name: 'Master Data', exact: true })).toHaveCount(role === 'admin' ? 1 : 0)
+      await nav.getByRole('button', { name: 'Settings', exact: true }).click()
+      await page.getByLabel('Theme', { exact: true }).selectOption('dark')
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+      await expect(page.getByLabel('Language', { exact: true })).toBeEnabled()
+      await page.getByLabel('Language', { exact: true }).selectOption('fr')
+      await expect(page.getByRole('heading', { name: 'Paramètres', exact: true })).toBeVisible()
+      await checkLayout(page, { width, height: 768 }, 'French settings')
+      await page.getByRole('button', { name: 'Retour à l’espace de travail' }).click()
+      await nav.getByRole('button', { name: 'Détails des forfaits', exact: true }).click()
+      await expect(page.locator('.master-record')).toContainText('Motor package')
+      await expect(page.getByRole('button', { name: 'Créer un enregistrement' })).toHaveCount(0)
+      await page.getByRole('button', { name: 'Détails', exact: true }).click()
+      await expect(page.locator('.master-details')).toContainText('Replace the motor safely.')
+      await expect(page.locator('.master-details')).toContainText('2,5')
+      await expect(page.locator('.master-details')).toContainText('United States')
+      await expect(page.locator('.master-editor input, .master-editor textarea, .master-editor select')).toHaveCount(0)
+      await checkLayout(page, { width, height: 768 }, 'French dark package details')
+      if (role === 'admin') {
+        await page.evaluate(() => window.scrollTo(0, 0))
+        await page.screenshot({ path: testInfo.outputPath('package-details.png'), fullPage: true })
+      }
+      expect(await page.evaluate(() => window.__masterWrites || [])).toEqual([])
+    })
+  }
+}
+
+for (const width of [320, 1366]) {
+  test(`admin master editor creates, edits, changes state and preserves unsaved changes at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 768 })
+    await mockData(page, 'en', 'light')
+    await mockMasterData(page)
+    await page.goto('/')
+    await page.locator('.main-nav').getByRole('button', { name: 'Master Data', exact: true }).click()
+    await expect(page.getByLabel('Table', { exact: true }).locator('option')).toHaveCount(21)
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    await page.getByLabel('Package Name (EN)', { exact: true }).fill('Edited package')
+    page.once('dialog', (dialog) => dialog.dismiss())
+    await page.locator('.main-nav').getByRole('button', { name: 'Dashboard', exact: true }).click()
+    await expect(page.getByLabel('Package Name (EN)', { exact: true })).toHaveValue('Edited package')
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+    await expect(page.locator('.master-workspace').getByRole('status')).toContainText('Record saved.')
+    expect(await page.evaluate(() => window.__masterWrites[0].changes)).toEqual({ re_packagenameen: 'Edited package' })
+    page.once('dialog', (dialog) => dialog.accept())
+    await page.getByRole('button', { name: 'Deactivate', exact: true }).click()
+    await expect(page.locator('.master-workspace').getByRole('status')).toContainText('Status updated.')
+    page.once('dialog', (dialog) => dialog.dismiss())
+    await page.getByRole('button', { name: 'Activate', exact: true }).click()
+    expect(await page.evaluate(() => window.__masterStates.length)).toBe(1)
+    page.once('dialog', (dialog) => dialog.accept())
+    await page.getByRole('button', { name: 'Activate', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Deactivate', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Back to list', exact: true }).click()
+    await page.getByRole('button', { name: 'Next', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => window.__masterQueries.at(-1).skipToken)).toBe('master-next')
+    await page.getByLabel('Search (starts with)', { exact: true }).fill('PKG')
+    await expect.poll(() => page.evaluate(() => window.__masterQueries.at(-1).skipToken)).toBeUndefined()
+    await page.getByRole('button', { name: 'Create record', exact: true }).click()
+    await page.getByLabel('Package Number', { exact: true }).fill('NEW001')
+    await page.getByLabel('Package Name (EN)', { exact: true }).fill('New package')
+    await page.getByLabel('Proposal Scope (EN)', { exact: true }).fill('New scope')
+    await page.getByLabel('Mechanic Hours', { exact: true }).fill('3.5')
+    await page.getByLabel('Material/Misc/Tax Cost', { exact: true }).fill('200')
+    await page.getByLabel('Country', { exact: true }).selectOption('33333333-3333-3333-3333-333333333333')
+    await checkLayout(page, { width, height: 768 }, 'master create form')
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.screenshot({ path: testInfo.outputPath('master-create.png'), fullPage: true })
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+    await expect(page.locator('.master-workspace').getByRole('status')).toContainText('Record saved.')
+    const writes = await page.evaluate(() => window.__masterWrites)
+    expect(writes).toHaveLength(2)
+    expect(writes[1].recordId).not.toBe(writes[0].recordId)
+    expect(writes[1].changes).toMatchObject({ re_mechanichours: 3.5, re_materialmisctaxcost: 200,
+      're_Country@odata.bind': '/re_countries(33333333-3333-3333-3333-333333333333)' })
+  })
+}
+
+test('master editor retains edits after permission failure and blocks writes until explicit reload', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await mockMasterData(page)
+  await page.goto('/')
+  await page.locator('.main-nav').getByRole('button', { name: 'Master Data', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByLabel('Package Name (EN)', { exact: true }).fill('Preserve this edit')
+  await page.evaluate(() => { window.__masterWriteError = '403: write permission denied'; window.__masterDelay = 500 })
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+  await expect(page.getByLabel('Package Name (EN)', { exact: true })).toBeDisabled()
+  await expect(page.getByRole('alert')).toContainText('403: write permission denied')
+  await expect(page.getByLabel('Package Name (EN)', { exact: true })).toHaveValue('Preserve this edit')
+  await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled()
+  await page.evaluate(() => { window.__masterWriteError = ''; window.__masterDelay = 0 })
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Reload record', exact: true }).click()
+  await expect(page.getByLabel('Package Name (EN)', { exact: true })).toHaveValue('Motor package')
+  expect(await page.evaluate(() => window.__masterWrites)).toHaveLength(1)
+})
+
+for (const state of ['empty', 'error']) {
+  test(`package catalog handles ${state} without showing demo records`, async ({ page }) => {
+    await mockData(page, 'en', 'light')
+    await mockMasterData(page)
+    await page.addInitScript((value) => {
+      window.__masterEmpty = value === 'empty'
+      window.__masterError = value === 'error' ? '403: package read denied' : ''
+    }, state)
+    await page.goto('/')
+    await page.locator('.main-nav').getByRole('button', { name: 'Package Details', exact: true }).click()
+    if (state === 'empty') await expect(page.locator('.master-records')).toContainText('No accessible records')
+    else {
+      await expect(page.getByRole('alert')).toContainText('403: package read denied')
+      await page.evaluate(() => { window.__masterError = '' })
+      await page.getByRole('button', { name: 'Retry', exact: true }).click()
+      await expect(page.locator('.master-record')).toHaveCount(1)
+    }
+  })
+}
+
+test('master repository uses registered caller SDK sources, bounded queries and validated field changes', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.route('**/@microsoft_power-apps_data.js*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `
+      import { tableByName } from '/src/data/masterDataSchema.ts';
+      const log = (method, args) => { (window.__masterSdkCalls ??= []).push({method,args}); };
+      export function getClient() { return {
+        async executeAsync(request) {
+          log('metadata', request);
+          const table = tableByName(request.dataverseRequest.parameters.tableName);
+          return {success:true,data:{
+            Attributes:table.fields.map((field) => ({LogicalName:field.name,IsValidForRead:true,
+              IsValidForCreate:!field.readOnly,IsValidForUpdate:!field.readOnly})),
+            ManyToOneRelationships:[
+              {ReferencingAttribute:'re_country',ReferencedEntity:'re_country',ReferencingEntityNavigationPropertyName:'re_Country'},
+              {ReferencingAttribute:'re_currency',ReferencedEntity:'transactioncurrency',ReferencingEntityNavigationPropertyName:'re_Currency'},
+              {ReferencingAttribute:'re_packagecategory',ReferencedEntity:'re_packagecategory',ReferencingEntityNavigationPropertyName:'re_PackageCategory'}
+            ]
+          }};
+        },
+        async retrieveMultipleRecordsAsync(...args) {
+          log('list',args);
+          return window.__sdkDenied ? {success:false,error:{message:'Permission denied',status:403}}
+            : {success:true,data:[],skipToken:'sdk-next'};
+        },
+        async createRecordAsync(...args) { log('create',args); return {success:true,data:{}}; },
+        async updateRecordAsync(...args) { log('update',args); return {success:true,data:{}}; }
+      }; }
+    `,
+  }))
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const schema = await import('/src/data/masterDataSchema.ts')
+    const repository = await import('/src/data/masterDataRepository.ts')
+    const table = await repository.getMasterMetadata('re_repairpackage', 'en')
+    const values = Object.fromEntries(table.fields.filter((f) => !f.readOnly).map((field) => [
+      field.name, !field.required ? '' : field.kind === 'LookupType' ? '33333333-3333-3333-3333-333333333333'
+        : field.kind === 'BooleanType' ? '0' : field.kind === 'PicklistType' ? String(field.options[0].value)
+          : field.kind === 'DateTimeType' ? '2026-01-01'
+            : ['MoneyType', 'DecimalType', 'IntegerType', 'DoubleType'].includes(field.kind) ? '0' : 'Required text',
+    ]))
+    const errors = []
+    for (const invalid of [
+      { re_mechanichours: 'not-a-number' }, { re_mechanichours: 'Infinity' }, { re_packagenumber: '' },
+      { re_packagenameen: 'x'.repeat(501) }, { re_effectivefrom: '2026-02-31' },
+      { re_effectivefrom: '2026-02-01', re_effectiveto: '2026-01-01' },
+      { re_currency: 'not-a-guid' }, { re_iscustompackage: '7' },
+    ]) {
+      try { schema.buildMasterChanges(table, { ...values, ...invalid }); errors.push(false) }
+      catch { errors.push(true) }
+    }
+    const id = '44444444-4444-4444-4444-444444444444'
+    await repository.listMasterRecords('re_repairpackage', "O'Brien", '0', 'page-two')
+    await repository.searchMasterLookup('re_countries', "C'")
+    await repository.saveMasterRecord(table, id, values)
+    const original = Object.fromEntries(table.fields.map((field) => [schema.fieldKey(field),
+      field.kind === 'BooleanType' ? false : values[field.name] || null]))
+    await repository.saveMasterRecord(table, id, { ...values, re_mechanichours: '3.75' }, original)
+    await repository.setMasterActive(table, id, false)
+    window.__sdkDenied = true
+    let denied
+    try { await repository.listMasterRecords('re_repairpackage') }
+    catch (error) { denied = error.status }
+    let rejectedTable = false
+    try { await repository.listMasterRecords('re_repairestimate') }
+    catch { rejectedTable = true }
+    return { errors, denied, rejectedTable, tables: schema.masterTables.length, calls: window.__masterSdkCalls }
+  })
+  expect(result.errors).toEqual(Array(8).fill(true))
+  expect(result.denied).toBe(403)
+  expect(result.rejectedTable).toBe(true)
+  expect(result.tables).toBe(21)
+  const list = result.calls.find((call) => call.method === 'list').args
+  expect(list[0]).toBe('re_repairpackages')
+  expect(list[1]).toMatchObject({ maxPageSize: 25, skipToken: 'page-two' })
+  expect(list[1].filter).toContain("startswith(re_packagenamefr,'O''Brien')")
+  const create = result.calls.find((call) => call.method === 'create').args[1]
+  expect(create.re_repairpackageid).toBe('44444444-4444-4444-4444-444444444444')
+  expect(create.re_iscustompackage).toBe(false)
+  expect(create['re_Currency@odata.bind']).toBe('/transactioncurrencies(33333333-3333-3333-3333-333333333333)')
+  expect(result.calls.filter((call) => call.method === 'update').map((call) => call.args[2])).toEqual([
+    { re_mechanichours: 3.75 }, { statecode: 1, statuscode: 2 },
+  ])
+})
 
 async function completeDraft(page, viewport = { width: 1366, height: 768 }) {
   await page.setViewportSize(viewport)
@@ -421,10 +697,133 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 
     await expect(page.locator('.selected-card').first()).toContainText('Persisted equipment snapshot')
     await expect(page.locator('.selected-card').last()).toContainText('Persisted package snapshot')
     await next(page)
-    await expect(page.locator('#request-re_usetax')).toHaveValue('5')
-    await expect(page.locator('#request-re_freight')).toHaveValue('0')
-    await expect(page.locator('#request-re_additionallaborhours')).toHaveValue('2.5')
+    await expect(page.locator('#request-re_usetax')).toHaveValue('5.00')
+    await expect(page.locator('#request-re_freight')).toHaveValue('0.00')
+    await expect(page.locator('#request-re_additionallaborhours')).toHaveValue('2.50')
   })
+}
+
+for (const width of [320, 1366]) {
+  for (const entry of ['dashboard', 'sidebar']) {
+    test(`new request clears the previous saved draft via ${entry} at ${width}px`, async ({ page }) => {
+      await completeDraft(page, { width, height: 900 })
+      await page.locator('.footer-actions .button').click()
+      await expect(page.locator('.draft-saved')).toBeVisible()
+      const previous = await page.evaluate(() => structuredClone(window.__draftSaved))
+      await page.locator('.main-nav .nav-item').nth(0).click()
+      const start = entry === 'dashboard'
+        ? page.locator('.operations-dashboard .page-heading .primary')
+        : page.locator('.main-nav .nav-item').nth(1)
+      await start.click()
+      await expect(page.locator('#estimate-title')).toHaveValue('')
+      await expect(page.locator('#opportunity-building')).toHaveValue('')
+      await expect(page.locator('#branch-select')).toBeEnabled()
+      await expect(page.locator('.market-control select')).toBeEnabled()
+      await expect(page.locator('.draft-saved')).toHaveCount(0)
+      await expect(page.locator('.draft-toolbar').getByRole('button', { name: 'Reload draft' })).toHaveCount(0)
+      await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
+      await page.locator('#estimate-title').fill('Fresh request')
+      page.once('dialog', (dialog) => dialog.dismiss())
+      await page.locator('.main-nav .nav-item').nth(1).click()
+      await expect(page.locator('#estimate-title')).toHaveValue('Fresh request')
+      page.once('dialog', (dialog) => dialog.accept())
+      await page.locator('.main-nav .nav-item').nth(1).click()
+      await expect(page.locator('#estimate-title')).toHaveValue('')
+      await page.locator('#estimate-title').fill('Separate estimate')
+      await page.locator('#branch-select').fill('020')
+      await page.locator('#branch-select').press('ArrowDown')
+      await page.locator('#branch-select').press('Enter')
+      await page.locator('#equipment-type').selectOption('test-type')
+      await page.locator('#opportunity-building').fill('New building')
+      await next(page)
+      await expect(page.locator('.selected-card')).toHaveCount(0)
+      await page.locator('#equipment-search').fill('TEST')
+      await page.locator('.result-row button').click()
+      await page.locator('#package-search').fill('PK')
+      await page.locator('.result-row button').click()
+      await next(page)
+      await expect(page.locator('#request-re_usetax')).toHaveValue('')
+      await expect(page.locator('#request-re_additionallaborhours')).toHaveValue('')
+      await page.locator('#request-re_usetax').fill('5')
+      await page.locator('#request-re_freight').fill('0')
+      await next(page)
+      await expect(page.locator('#request-re_sellprice')).toHaveValue('')
+      await page.locator('#request-re_sellprice').fill('2000')
+      await next(page)
+      await expect(page.locator('#customer-name')).toHaveValue('')
+      await expect(page.locator('#customer-email')).toHaveValue('')
+      await page.locator('#customer-name').fill('New customer')
+      await page.locator('.footer-actions .button').click()
+      await expect(page.locator('.draft-saved')).toBeVisible()
+      const calls = await page.evaluate(() => window.__draftCalls)
+      expect(calls).toHaveLength(2)
+      expect(calls[1].id).not.toBe(previous.id)
+      expect(calls[1].version).toBeNull()
+      expect(calls[1].title).toBe('Separate estimate')
+    })
+  }
+}
+
+test('decimal inputs display two places while preserving saved precision and editable blanks', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  await page.evaluate(() => {
+    for (const field of window.__draftSaved.fields) {
+      if (field.key === 're_additionallaborhours') field.value = '30.0000000000'
+      if (field.key === 're_usetax') field.value = '25.1234567890'
+    }
+  })
+  await page.locator('.draft-toolbar').getByRole('button', { name: 'Reload draft', exact: true }).click()
+  await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
+  await next(page)
+  await next(page)
+  const hours = page.locator('#request-re_additionallaborhours')
+  const tax = page.locator('#request-re_usetax')
+  await expect(hours).toHaveValue('30.00')
+  await expect(tax).toHaveValue('25.12')
+  await tax.focus()
+  await expect(tax).toHaveValue('25.1234567890')
+  await tax.blur()
+  await expect(tax).toHaveValue('25.12')
+  await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
+  await hours.focus()
+  await expect(hours).toHaveValue('30.0000000000')
+  await hours.fill('')
+  await hours.blur()
+  await expect(hours).toHaveValue('')
+  await hours.fill('1.2367')
+  await hours.blur()
+  await expect(hours).toHaveValue('1.24')
+  await page.locator('.draft-toolbar .primary').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  const fields = await page.evaluate(() => window.__draftCalls.at(-1).fields)
+  expect(fields).toContainEqual({ key: 're_additionallaborhours', value: '1.2367' })
+  expect(fields).toContainEqual({ key: 're_usetax', value: '25.1234567890' })
+})
+
+for (const width of [320, 768, 1366, 1920]) {
+  for (const language of ['en', 'fr']) {
+    test(`dashboard percentage stays together with two decimals at ${width}px ${language}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await mockData(page, language, 'light')
+      await page.addInitScript(() => { window.__dashboardAverage = -650.2816 })
+      await page.goto('/')
+      const value = page.locator('.metric-tone-3 strong')
+      await expect(value).toHaveText(new Intl.NumberFormat(language === 'fr' ? 'fr-CA' : 'en-US', {
+        style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2,
+      }).format(-650.2816))
+      const geometry = await value.evaluate((element) => {
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        const card = element.closest('article').getBoundingClientRect()
+        return { lines: range.getClientRects().length, right: element.getBoundingClientRect().right, cardRight: card.right }
+      })
+      expect(geometry.lines).toBe(1)
+      expect(geometry.right).toBeLessThanOrEqual(geometry.cardRight)
+      await checkLayout(page, { width, height: 900 }, 'two-decimal dashboard')
+    })
+  }
 }
 
 test('draft save serializes clicks, blocks editing while saving and preserves input after permission errors', async ({ page }) => {
@@ -547,7 +946,7 @@ for (const width of [320, 1366]) {
     await page.locator('#customer-name').fill('Unsaved customer edit')
     await expect(summary).toContainText('Unsaved changes:')
     await expect(summary).toContainText('$31,807.21')
-    await page.getByLabel('Language', { exact: true }).selectOption('fr')
+    await changeLanguageInSettings(page, 'fr')
     await expect(summary).toContainText('Résumé des prix et du CMII')
     await expect(summary).toContainText('Modifications non enregistrées')
     await expect(summary).toContainText(/48,81\s*%/)
@@ -591,7 +990,7 @@ test('dashboard aggregates are independent of list paging and refresh safely acr
   await page.goto('/')
   const metrics = page.locator('.dashboard-metrics')
   await expect(metrics).toContainText('125 estimates')
-  await expect(page.locator('.dashboard-stats strong')).toHaveText(['100', '20', '5', '-25%'])
+  await expect(page.locator('.dashboard-stats strong')).toHaveText(['100', '20', '5', '-25.00%'])
   await expect(page.locator('.request-record')).toHaveCount(1)
   await expect(metrics.getByRole('meter')).toHaveCount(5)
   await page.evaluate(() => { window.__dashboardError = 'Permission denied' })
@@ -608,7 +1007,7 @@ test('dashboard aggregates are independent of list paging and refresh safely acr
   await expect(metrics.locator('.dashboard-stats strong')).toHaveText(['0', '0', '0', '—'])
   await page.locator('.market-control select').selectOption('126110000')
   await expect(metrics).toContainText('125 estimates')
-  await page.getByLabel('Language', { exact: true }).selectOption('fr')
+  await changeLanguageInSettings(page, 'fr')
   await expect(metrics).toContainText('CMII réel moyen')
   await expect(metrics).toContainText('Equipment repair')
   await checkLayout(page, { width: 320, height: 768 }, 'French live dashboard')
@@ -687,7 +1086,7 @@ for (const width of [320, 1366]) {
     await search.fill('')
     await search.press('Enter')
     await expect.poll(() => page.evaluate(() => window.__estimateQueries.at(-1).search)).toBe('')
-    await page.getByLabel('Language', { exact: true }).selectOption('fr')
+    await changeLanguageInSettings(page, 'fr')
     await expect(search).toHaveAttribute('placeholder', 'Rechercher par début de numéro, client ou immeuble')
     await checkLayout(page, { width, height: 768 }, 'header search results in French')
   })

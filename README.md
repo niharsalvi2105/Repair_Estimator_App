@@ -91,8 +91,10 @@ market. MKO and CKE preserve the current UI language; users can still change it
 manually. Proposal language remains independent. Market selection is disabled
 while preferences are loading or saving so the automatic change is not lost.
 
-The header theme selector supports System, Light and Dark across the entire
-workspace. System follows device theme changes.
+Settings supports System, Light and Dark across the entire workspace, plus the
+English/French UI-language selector. Both roles can open Settings from navigation
+or the header settings control. Return to workspace resumes the previous view
+without starting a new request. System follows device theme changes.
 The supplied KONE asset is JPEG, not vector artwork. An inline SVG color filter
 turns its blue background and letter cutouts transparent while retaining the
 white logo tiles, allowing the sidebar color to show through in either theme.
@@ -144,6 +146,15 @@ The transcript adjusts the workbook: supervisor is optional and customer contact
 is confirmed at review. Proposal language is independent of the UI language.
 Equipment quantity is derived from selections, not a second conflicting input.
 Inputs survive in-app navigation; leaving/reloading warns about unsaved changes.
+Non-integer request inputs display two decimal places when unfocused; focusing
+reveals the original editable value. Formatting does not round persisted values,
+mark a loaded draft dirty, convert blank inputs to zero, or change calculations.
+Dashboard average CMII displays two decimal places with the percent sign kept
+on the same line. Request counts remain integers.
+The dashboard New repair request, sidebar New Request and form New draft actions
+all start a separate, empty draft at step 1, with a new ID and no saved version,
+pricing or equipment/package selections. They require confirmation before
+discarding unsaved edits and are unavailable during a draft save/load.
 Changing branch requires confirmation before clearing selected equipment/packages.
 
 This is **not workbook pricing parity or a complete operational workflow**.
@@ -320,9 +331,77 @@ Administrator rollout:
    runtime privileges or Power Apps action transport.
 6. Run `npm run validate`, then publish the frontend only after approval.
 
-Saved pricing and dashboard displays are wired locally. Submission, approvals
+Saved pricing and dashboard displays are wired locally. Submission
 and documents remain unconnected in the app. The equipment query is
 branch-scoped, not customer-filtered.
+
+## Settings, Package Details and admin Master Data
+
+Estimator and Pricing & Margin are no longer separate navigation entries: they
+remain stages within each repair request. **Internal approval routing is outside
+this app's scope**, and the Approvals navigation entry is removed. No existing
+Dataverse tables, statuses or workbook input columns are deleted by this change.
+Quotes and Reports remain unavailable placeholders.
+
+Both app roles can use Settings and the read-only **Package Details** catalog.
+The catalog is explicitly cross-country, defaults to active packages, supports
+server-side prefix search on number and EN/FR name, and uses 25-row paging.
+Opening a package retrieves its available scope, hours, material values,
+classification, effective dates, version and reference details. French names
+fall back to English. Values are read from Dataverse, never demonstration data.
+No create/edit/state actions exist in the catalog, including for admins.
+
+**Master Data** is an admin-only workspace for the 21 v3.2 business master/pricing
+tables: Country, State/Province, Branch, Sales Office, Margin Group, Equipment
+Type, Equipment, Customer Vertical, Job Type, Package Category, Repair Package,
+Scope Library, Labor Rate, Job Size Band, Redundancy Band, OEM Band Rule, Band
+Matrix, Margin Rule, Situational Adjustment, Incentive Rate and Pricing Parameter.
+Per-user UI preferences continue to be maintained through Settings, not an
+arbitrary-user preference editor. Legacy tables outside that inventory and
+transaction/process tables are not exposed as master data.
+
+Admins can search/page active or inactive records, create, edit and explicitly
+activate/deactivate; there is no hard-delete action. The editor uses generated
+schemas and live column/relationship metadata, including real navigation names
+for `@odata.bind` lookups. Reference searches are bounded at 20 rows and require
+refining when there are more results. Read-only/system/base columns are not
+editable. Saves update only changed columns, validate required fields, lengths,
+numbers, choices and date ranges, and surface Dataverse validation/permission
+errors. Ambiguous write errors require an explicit reload before another write;
+create uses a stable client-generated ID to avoid duplicates on retry.
+Unsaved changes require confirmation before navigation; writes block navigation.
+The SDK does not expose conditional `If-Match` here: simultaneous administrators
+editing the same column can still overwrite one another. This is not presented
+as optimistic-concurrency protection.
+
+### Required security-role rollout (not applied automatically)
+
+All calls use the existing authenticated Code App SDK and caller's Dataverse
+permissions; there is no SYSTEM service or browser SQL connection. The admin UI
+gate is not a substitute for server-side privileges. Before rollout:
+
+1. On all 21 tables above, grant **Repair Estimator - Admin** Read, Create, Write,
+   Append and Append To at the intended shared-master scope. State changes need
+   Write. Grant required lookup-target Read/Append To, including currencies.
+   Do not grant Delete merely to enable this UI.
+2. Give **Repair Estimator - Estimator** read-only access to packages and their
+   Country, Package Category and Currency reference labels, plus the master reads
+   required by the estimator. Do not grant business-master Create/Write/Delete.
+   Keep the existing own-user preference and estimate/snapshot privileges.
+3. A read-only live audit on 2026-10-26 found the two app roles lack most master
+   reads/writes, and the Estimator role unexpectedly grants **Create on Branch**.
+   Remove that Branch Create grant from Estimator and add the intended Admin
+   privileges manually. Other assigned roles are additive: test effective access
+   with representative non-System-Administrator accounts.
+4. Verify estimator direct create/update/deactivate attempts are denied by
+   Dataverse and admin CRUD/state changes succeed in a safe test environment.
+   Local mocks do not establish backend authorization or plug-in business rules.
+
+New data sources were generated using `pa app add data-source --connector
+dataverse --table <logical-name> --non-interactive`. No backend assembly change,
+schema migration, tenant write, deployment or publication was performed for these
+pages. Until role configuration and authenticated-host testing are complete, the
+new editing surface is **not production-verified**.
 
 ## Personal live dashboard
 

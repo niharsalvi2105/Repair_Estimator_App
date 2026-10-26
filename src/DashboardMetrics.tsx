@@ -71,7 +71,7 @@ export function DashboardMetrics({ market, owner, language }: {
             {[...statusLabels, t.avg].map((label, index) => <article className={`dashboard-stat metric-tone-${index}`} key={label}>
               <div className="dashboard-stat-copy"><span>{label}</span>
                 <strong>{index < 3 ? number.format(counts[index]) : data.averageCmii == null ? '—'
-                  : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 }).format(data.averageCmii)}</strong>
+                  : new Intl.NumberFormat(locale, { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.averageCmii)}</strong>
                 <small>{index < 3 ? `${number.format(data.total)} ${fr ? 'devis' : 'estimates'}`
                   : data.marginCount ? `${number.format(data.marginCount)} ${t.eligible}` : t.noMargin}</small>
               </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getBranches,
   getRequestReferences,
@@ -15,6 +15,7 @@ import './App.css'
 import { EstimateList } from './EstimateList'
 import { PricingSummary } from './PricingSummary'
 import { DashboardMetrics } from './DashboardMetrics'
+import { Settings } from './Settings'
 import { loadSession, type AppSession } from './data/sessionRepository'
 import { RequestFields, type RequestInputs } from './RequestFields'
 import type { Market } from './data/estimateQuery'
@@ -24,8 +25,10 @@ import { UserAvatar } from './UserAvatar'
 import koneLogo from './assets/kone-logo.jpg?inline'
 import { draftOperation, draftInputs, type DraftRecord } from './data/draftRepository'
 
+const MasterDataWorkspace = lazy(() => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace })))
+
 type Language = 'en' | 'fr'
-type View = 'estimates' | 'requests' | 'new'
+type View = 'estimates' | 'requests' | 'new' | 'settings' | 'master' | 'packages'
 type SelectedEquipment = {
   id: string
   number: string
@@ -44,9 +47,7 @@ const copy = {
     estimates: 'Dashboard',
     newEstimate: 'New Request',
     repairRequests: 'Repair Requests',
-    estimatorNav: 'Estimator',
-    pricingNav: 'Pricing & Margin',
-    approvalsNav: 'Approvals',
+    packagesNav: 'Package Details',
     quotesNav: 'Quotes',
     masterDataNav: 'Master Data',
     reportsNav: 'Reports',
@@ -185,9 +186,7 @@ const copy = {
     estimates: 'Tableau de bord',
     newEstimate: 'Nouvelle demande',
     repairRequests: 'Demandes de réparation',
-    estimatorNav: 'Estimateur',
-    pricingNav: 'Prix et marge',
-    approvalsNav: 'Approbations',
+    packagesNav: 'Détails des forfaits',
     quotesNav: 'Devis',
     masterDataNav: 'Données principales',
     reportsNav: 'Rapports',
@@ -344,7 +343,6 @@ function NavigationIcon({ name }: { name: string }) {
     estimator: 'M5 3h14v18H5z M8 7h8 M8 12h1 M12 12h1 M16 12h0 M8 16h1 M12 16h1 M16 16h0',
     pricing: 'M16 7H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H7 M12 3v18',
     quotes: 'M5 3h10l4 4v14H5z M14 3v5h5 M8 12h8 M8 16h5',
-    approvals: 'M4 12l5 5L20 6',
     data: 'M4 4h16v16H4z M4 9h16 M4 14h16 M10 4v16',
     reports: 'M4 3v18h17 M8 17v-5 M13 17V7 M18 17V4',
     settings: 'M4 7h16 M4 17h16 M8 4v6 M16 14v6',
@@ -361,6 +359,9 @@ function App() {
   const [market, setMarket] = useState<Market>(126110000)
   const [systemDarkMode, setSystemDarkMode] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const [view, setView] = useState<View>('estimates')
+  const [masterDirty, setMasterDirty] = useState(false)
+  const [masterBusy, setMasterBusy] = useState(false)
+  const settingsReturnView = useRef<View>('estimates')
   const [searchInput, setSearchInput] = useState('')
   const [requestSearch, setRequestSearch] = useState('')
   const [branches, setBranches] = useState<Branch[]>([])
@@ -426,7 +427,7 @@ function App() {
   const currentSnapshot = JSON.stringify(draftState)
   const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || estimateTitle
     || customerName || customerEmail || customerPhone || equipmentTypeId || jobTypeId || Object.values(requestInputs).some(Boolean))
-  const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty)
+  const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty || masterDirty || masterBusy)
   const selectedBranch = branches.find((branch) => branch.re_branchid === branchId)
   const marketBranches = branches.filter((branch) => branch.re_market === market)
   const marketName =
@@ -679,19 +680,13 @@ function App() {
     setPackageResults([])
   }
 
-  function beginEstimate() {
-    if (!canStart) return
-    setStep(1)
-    setView('new')
-  }
-
   const dt = language === 'fr' ? {
     title: 'Nom du devis', province: 'Province / État du bâtiment', currency: 'Devise',
     save: 'Enregistrer le brouillon', saving: 'Enregistrement…', saved: 'Brouillon enregistré',
     open: 'Ouvrir le brouillon', working: 'Opération en cours…', new: 'Nouveau brouillon',
     warning: 'Des modifications ne sont pas enregistrées. Les abandonner ?',
     required: 'Renseignez le nom du devis, le client, le bâtiment, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
-    note: 'Brouillon uniquement : prix enregistrés du serveur disponibles ; envoi pour approbation non connecté.',
+    note: 'Brouillon uniquement : prix enregistrés du serveur disponibles ; soumission non connectée.',
     error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
     reload: 'Recharger le brouillon', locked: 'La succursale et le marché sont fixes pour un brouillon enregistré.',
   } : {
@@ -700,7 +695,7 @@ function App() {
     open: 'Open draft', working: 'Operation in progress…', new: 'New draft',
     warning: 'There are unsaved changes. Discard them?',
     required: 'Complete estimate title, customer, building, province, equipment, packages, proposal language, time category, use tax and freight.',
-    note: 'Draft only: saved server pricing is available; submission for approval is not connected.',
+    note: 'Draft only: saved server pricing is available; submission is not connected.',
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
   }
@@ -774,13 +769,29 @@ function App() {
   }
 
   function newDraft() {
-    if (draftBusy || (draftDirty && !window.confirm(dt.warning))) return
+    if (!canStart || draftInFlight.current || draftBusy || (draftDirty && !window.confirm(dt.warning))) return
+    if (!leaveMaster()) return
     setDraftId(crypto.randomUUID()); setDraftVersion(null); setDraftNumber(''); setSavedSnapshot('')
     setSavedSalesperson('')
     setPricingUnavailable(false)
     setEstimateTitle(''); resetBranch(''); setStateId(''); setEquipmentTypeId(''); setJobTypeId('')
     setBuildingName(''); setCustomerName(''); setCustomerEmail(''); setCustomerPhone('')
     setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1); setView('new')
+  }
+
+  function leaveMaster() {
+    if (masterBusy) return false
+    if (masterDirty && !window.confirm(language === 'fr'
+      ? 'Des modifications des données de référence ne sont pas enregistrées. Les abandonner ?'
+      : 'There are unsaved master-data changes. Discard them?')) return false
+    setMasterDirty(false)
+    return true
+  }
+
+  function navigate(next: View) {
+    if (next === view || !leaveMaster()) return
+    if (next === 'settings') settingsReturnView.current = view
+    setView(next)
   }
 
   return (
@@ -791,7 +802,7 @@ function App() {
           href="#home"
           onClick={(event) => {
             event.preventDefault()
-            setView('estimates')
+            navigate('estimates')
           }}
         >
           <svg width="0" height="0" aria-hidden="true" focusable="false" className="logo-filter-definition">
@@ -810,36 +821,43 @@ function App() {
         <nav aria-label="Main navigation" className="main-nav">
           <button
             className={`nav-item ${view === 'estimates' ? 'active' : ''}`}
-            onClick={() => setView('estimates')}
+            onClick={() => navigate('estimates')}
           >
             <NavigationIcon name="dashboard" />
             {t.estimates}
           </button>
           <button
             className={`nav-item ${view === 'new' ? 'active' : ''}`}
-            onClick={beginEstimate}
-            disabled={!canStart}
+            onClick={newDraft}
+            disabled={!canStart || draftBusy}
           >
             <NavigationIcon name="new" />
             {t.newEstimate}
           </button>
           <button
             className={`nav-item ${view === 'requests' ? 'active' : ''}`}
-            onClick={() => setView('requests')}
+            onClick={() => navigate('requests')}
             disabled={!session?.canReadEstimates}
           >
             <NavigationIcon name="requests" />
             {t.repairRequests}
           </button>
+          <button className={`nav-item ${view === 'packages' ? 'active' : ''}`}
+            onClick={() => navigate('packages')} disabled={!session?.role}>
+            <NavigationIcon name="data" />{t.packagesNav}
+          </button>
+          {session?.role === 'admin' && <button className={`nav-item ${view === 'master' ? 'active' : ''}`}
+            onClick={() => navigate('master')}>
+            <NavigationIcon name="data" />{t.masterDataNav}
+          </button>}
+          <button className={`nav-item ${view === 'settings' ? 'active' : ''}`}
+            onClick={() => navigate('settings')} disabled={!session?.role}>
+            <NavigationIcon name="settings" />{t.settingsNav}
+          </button>
           {[
-            [t.estimatorNav, 'estimator'],
-            [t.pricingNav, 'pricing'],
             [t.quotesNav, 'quotes'],
             ...(session?.role === 'admin' ? [
-              [t.approvalsNav, 'approvals'],
-              [t.masterDataNav, 'data'],
               [t.reportsNav, 'reports'],
-              [t.settingsNav, 'settings'],
             ] : []),
           ].map(([label, icon]) => (
             <button
@@ -869,6 +887,7 @@ function App() {
               event.preventDefault()
               if (!session?.canReadEstimates || draftBusy) return
               if (view === 'new' && draftDirty && !window.confirm(dt.warning)) return
+              if (!leaveMaster()) return
               setRequestSearch(searchInput.trim()); setView('requests')
             }}>
             <label className="sr-only" htmlFor="header-request-search">{t.requestSearch}</label>
@@ -893,35 +912,10 @@ function App() {
               </select>
             </label>
             <span className="role-label">{roleLabel}</span>
-            <label className="language-control">
-              <span className="sr-only">{t.theme}</span>
-              <select aria-label={t.theme} value={preferences.theme} disabled={!preferences.ready || preferences.busy}
-                onChange={(event) => {
-                  const theme = event.target.value
-                  if (theme === 'system' || theme === 'dark' || theme === 'light') void preferences.save({ language, locale: preferences.locale, theme })
-                }}>
-                <option value="system">{t.systemTheme}</option>
-                <option value="light">{t.lightMode}</option>
-                <option value="dark">{t.darkMode}</option>
-              </select>
-            </label>
-            <label className="language-control">
-              <span className="sr-only">{t.language}</span>
-              <select
-                value={language}
-                disabled={!preferences.ready || preferences.busy}
-                onChange={(event) => {
-                  const next = event.target.value
-                  if (next === 'en' || next === 'fr') void preferences.save({
-                    language: next, locale: next === 'fr' ? 'fr-CA' : 'en-US', theme: preferences.theme,
-                  })
-                }}
-                aria-label={t.language}
-              >
-                <option value="en">EN</option>
-                <option value="fr">FR</option>
-              </select>
-            </label>
+            <button className="button secondary settings-control" aria-label={t.settingsNav}
+              disabled={!session?.role || masterBusy} onClick={() => navigate('settings')}>
+              <NavigationIcon name="settings" />
+            </button>
             {session && <UserAvatar name={session.displayName} language={language} />}
           </div>
         </header>
@@ -969,7 +963,14 @@ function App() {
               <strong>{!session?.role ? t.noRole : t.noRead}</strong>
             </div>
           ) : !canStart ? <p className="inline-state">{t.noCreate}</p> : null}
-          {view === 'requests' ? (
+          {view === 'settings' ? (
+            session?.role && <Settings preferences={preferences} onClose={() => navigate(settingsReturnView.current)} />
+          ) : view === 'master' || view === 'packages' ? (
+            session?.role && <Suspense fallback={<p role="status" className="inline-state">{t.loadingReferences}</p>}>
+              <MasterDataWorkspace key={view} language={language} admin={session.role === 'admin'}
+                catalog={view === 'packages'} onDirtyChange={setMasterDirty} onBusyChange={setMasterBusy} />
+            </Suspense>
+          ) : view === 'requests' ? (
             session?.canReadEstimates ?
             <section className="page-content">
               <div className="page-heading"><div>
@@ -989,7 +990,7 @@ function App() {
                   <h1>{marketName} · {t.dashboardTitle}</h1>
                   <p>{t.dashboardSubtitle}</p>
                 </div>
-                <button className="button primary" onClick={beginEstimate} disabled={!canStart}>
+                <button className="button primary" onClick={newDraft} disabled={!canStart || draftBusy}>
                   <span aria-hidden="true">+</span>
                   {t.startEstimate}
                 </button>

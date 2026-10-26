@@ -83,6 +83,81 @@
           "entitySetName": "transactioncurrencies",
           "logicalName": "transactioncurrency",
           "isHidden": false
+        },
+        "countries": {
+          "entitySetName": "re_countries",
+          "logicalName": "re_country",
+          "isHidden": false
+        },
+        "salesoffices": {
+          "entitySetName": "re_salesofficeses",
+          "logicalName": "re_salesoffices",
+          "isHidden": false
+        },
+        "margingroups": {
+          "entitySetName": "re_margingroups",
+          "logicalName": "re_margingroup",
+          "isHidden": false
+        },
+        "customerverticals": {
+          "entitySetName": "re_customerverticals",
+          "logicalName": "re_customervertical",
+          "isHidden": false
+        },
+        "packagecategories": {
+          "entitySetName": "re_packagecategories",
+          "logicalName": "re_packagecategory",
+          "isHidden": false
+        },
+        "scopelibraries": {
+          "entitySetName": "re_scopelibraries",
+          "logicalName": "re_scopelibrary",
+          "isHidden": false
+        },
+        "laborrates": {
+          "entitySetName": "re_laborrates",
+          "logicalName": "re_laborrate",
+          "isHidden": false
+        },
+        "jobsizebands": {
+          "entitySetName": "re_jobsizebands",
+          "logicalName": "re_jobsizeband",
+          "isHidden": false
+        },
+        "redundancybands": {
+          "entitySetName": "re_redundancybands",
+          "logicalName": "re_redundancyband",
+          "isHidden": false
+        },
+        "oembandrules": {
+          "entitySetName": "re_oembandrules",
+          "logicalName": "re_oembandrule",
+          "isHidden": false
+        },
+        "bandmatrices": {
+          "entitySetName": "re_bandmatrixes",
+          "logicalName": "re_bandmatrix",
+          "isHidden": false
+        },
+        "marginrules": {
+          "entitySetName": "re_marginrules",
+          "logicalName": "re_marginrule",
+          "isHidden": false
+        },
+        "situationaladjustments": {
+          "entitySetName": "re_situationaladjustments",
+          "logicalName": "re_situationaladjustment",
+          "isHidden": false
+        },
+        "incentiverates": {
+          "entitySetName": "re_incentiverates",
+          "logicalName": "re_incentiverate",
+          "isHidden": false
+        },
+        "pricingparameters": {
+          "entitySetName": "re_pricingparameters",
+          "logicalName": "re_pricingparameter",
+          "isHidden": false
         }
       },
       "environmentVariableName": ""
