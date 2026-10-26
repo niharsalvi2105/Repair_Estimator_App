@@ -8,7 +8,7 @@
       "x-ms-dataverse-entity": true,
       "x-ms-dataverse-entityset": "re_estimatepackages",
       "x-ms-dataverse-primary-id": "re_estimatepackageid",
-      "x-ms-dataverse-primary-name": "re_estimatepackagename",
+      "x-ms-dataverse-primary-name": "re_name",
       "properties": {
         "createdby": {
           "type": "string",
@@ -81,6 +81,14 @@
           "x-ms-read-only": true,
           "required": true,
           "maxLength": 100
+        },
+        "exchangerate": {
+          "type": "string",
+          "title": "Exchange Rate",
+          "x-ms-dataverse-attribute": "exchangerate",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "ExchangeRate",
+          "x-ms-read-only": true
         },
         "importsequencenumber": {
           "type": "string",
@@ -261,15 +269,125 @@
           "required": true,
           "x-ms-keyType": "primary"
         },
-        "re_estimatepackagename": {
+        "re_materialcostperunit": {
           "type": "string",
-          "title": "Estimate Package Name",
-          "x-ms-dataverse-attribute": "re_estimatepackagename",
+          "title": "Material Cost per Unit",
+          "x-ms-dataverse-attribute": "re_materialcostperunit",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_MaterialCostperUnit",
+          "required": true
+        },
+        "re_materialcostperunit_base": {
+          "type": "string",
+          "title": "Material Cost per Unit (Base)",
+          "x-ms-dataverse-attribute": "re_materialcostperunit_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_materialcostperunit_Base",
+          "x-ms-read-only": true
+        },
+        "re_mechanichoursperunit": {
+          "type": "string",
+          "title": "Mechanic Hours per Unit",
+          "x-ms-dataverse-attribute": "re_mechanichoursperunit",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_MechanicHoursperUnit",
+          "required": true
+        },
+        "re_name": {
+          "type": "string",
+          "title": "Name",
+          "x-ms-dataverse-attribute": "re_name",
           "x-ms-dataverse-type": "StringType",
-          "x-ms-schema-name": "re_EstimatePackageName",
+          "x-ms-schema-name": "re_Name",
           "x-ms-dataverse-primary-name": true,
           "required": true,
-          "maxLength": 850
+          "maxLength": 200
+        },
+        "re_packagenameen": {
+          "type": "string",
+          "title": "Package Name (EN)",
+          "x-ms-dataverse-attribute": "re_packagenameen",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_PackageNameEN",
+          "required": true,
+          "maxLength": 500
+        },
+        "re_packagenamefr": {
+          "type": "string",
+          "title": "Package Name (FR)",
+          "x-ms-dataverse-attribute": "re_packagenamefr",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_PackageNameFR",
+          "maxLength": 500
+        },
+        "re_packagenumber": {
+          "type": "string",
+          "title": "Package Number",
+          "x-ms-dataverse-attribute": "re_packagenumber",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_PackageNumber",
+          "required": true,
+          "maxLength": 20
+        },
+        "re_packagerole": {
+          "type": "string",
+          "title": "Package Role",
+          "x-ms-dataverse-attribute": "re_packagerole",
+          "x-ms-dataverse-type": "PicklistType",
+          "x-ms-schema-name": "re_PackageRole",
+          "required": true,
+          "enum": [
+            "Primary",
+            "Second",
+            "Third"
+          ],
+          "x-ms-enum-values": [
+            126110000,
+            126110001,
+            126110002
+          ],
+          "Color": [
+            null,
+            null,
+            null
+          ],
+          "x-ms-optionsetmetadataid": "82b92f04-7ed0-f111-a059-0022480bfd0d",
+          "x-ms-isGlobal": true,
+          "x-ms-optionsetdisplayname": "packagerole",
+          "x-ms-optionSetType": "Picklist"
+        },
+        "re_packagerolename": {
+          "type": "string",
+          "title": "re_packagerolename",
+          "x-ms-dataverse-attribute": "re_packagerolename",
+          "x-ms-dataverse-type": "VirtualType",
+          "x-ms-schema-name": "re_packageroleName",
+          "x-ms-dataverse-attribute-of": "re_packagerole",
+          "x-ms-read-only": true
+        },
+        "re_proposalscopeen": {
+          "type": "string",
+          "title": "Proposal Scope (EN)",
+          "x-ms-dataverse-attribute": "re_proposalscopeen",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_ProposalScopeEN",
+          "required": true,
+          "maxLength": 10000
+        },
+        "re_proposalscopefr": {
+          "type": "string",
+          "title": "Proposal Scope (FR)",
+          "x-ms-dataverse-attribute": "re_proposalscopefr",
+          "x-ms-dataverse-type": "MemoType",
+          "x-ms-schema-name": "re_ProposalScopeFR",
+          "maxLength": 10000
+        },
+        "re_quantity": {
+          "type": "string",
+          "title": "Quantity",
+          "x-ms-dataverse-attribute": "re_quantity",
+          "x-ms-dataverse-type": "IntegerType",
+          "x-ms-schema-name": "re_Quantity"
         },
         "re_repairestimate": {
           "type": "string",
@@ -279,7 +397,8 @@
           "x-ms-schema-name": "re_RepairEstimate",
           "x-ms-dataverse-navigation-properties": [
             "re_RepairEstimate"
-          ]
+          ],
+          "required": true
         },
         "re_repairestimatename": {
           "type": "string",
@@ -312,6 +431,28 @@
           "x-ms-read-only": true,
           "maxLength": 20
         },
+        "re_totalhours": {
+          "type": "string",
+          "title": "Total Hours",
+          "x-ms-dataverse-attribute": "re_totalhours",
+          "x-ms-dataverse-type": "DecimalType",
+          "x-ms-schema-name": "re_TotalHours"
+        },
+        "re_totalmaterial": {
+          "type": "string",
+          "title": "Total Material",
+          "x-ms-dataverse-attribute": "re_totalmaterial",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_TotalMaterial"
+        },
+        "re_totalmaterial_base": {
+          "type": "string",
+          "title": "Total Material (Base)",
+          "x-ms-dataverse-attribute": "re_totalmaterial_base",
+          "x-ms-dataverse-type": "MoneyType",
+          "x-ms-schema-name": "re_totalmaterial_Base",
+          "x-ms-read-only": true
+        },
         "statecode": {
           "type": "string",
           "title": "Status",
@@ -331,7 +472,7 @@
             null,
             null
           ],
-          "x-ms-optionsetmetadataid": "aeb20aaf-b7c6-f111-aaad-000d3a37457b",
+          "x-ms-optionsetmetadataid": "0b2bf202-62cb-f111-a05a-70a8a5b28613",
           "x-ms-isGlobal": false,
           "x-ms-optionsetdisplayname": "Status",
           "x-ms-optionSetType": "State"
@@ -363,7 +504,7 @@
             null,
             null
           ],
-          "x-ms-optionsetmetadataid": "c1b20aaf-b7c6-f111-aaad-000d3a37457b",
+          "x-ms-optionsetmetadataid": "152bf202-62cb-f111-a05a-70a8a5b28613",
           "x-ms-isGlobal": false,
           "x-ms-optionsetdisplayname": "Status Reason",
           "x-ms-optionSetType": "Status"
@@ -383,6 +524,26 @@
           "x-ms-dataverse-attribute": "timezoneruleversionnumber",
           "x-ms-dataverse-type": "IntegerType",
           "x-ms-schema-name": "TimeZoneRuleVersionNumber"
+        },
+        "transactioncurrencyid": {
+          "type": "string",
+          "title": "Currency",
+          "x-ms-dataverse-attribute": "transactioncurrencyid",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "TransactionCurrencyId",
+          "x-ms-dataverse-navigation-properties": [
+            "transactioncurrencyid"
+          ]
+        },
+        "transactioncurrencyidname": {
+          "type": "string",
+          "title": "transactioncurrencyidname",
+          "x-ms-dataverse-attribute": "transactioncurrencyidname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "TransactionCurrencyIdName",
+          "x-ms-dataverse-attribute-of": "transactioncurrencyid",
+          "x-ms-read-only": true,
+          "maxLength": 100
         },
         "utcconversiontimezonecode": {
           "type": "string",
@@ -411,7 +572,14 @@
         "owneridyominame",
         "owningbusinessunitname",
         "re_estimatepackageid",
-        "re_estimatepackagename",
+        "re_materialcostperunit",
+        "re_mechanichoursperunit",
+        "re_name",
+        "re_packagenameen",
+        "re_packagenumber",
+        "re_packagerole",
+        "re_proposalscopeen",
+        "re_repairestimate",
         "re_repairpackage",
         "statecode"
       ]

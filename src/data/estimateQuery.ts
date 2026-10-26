@@ -5,7 +5,8 @@ export type EstimateQuery = { search: string; status: string; skipToken?: string
 
 export function buildBranchQuery(skipToken?: string): IGetAllOptions {
   return {
-    select: ['re_branchid', 're_branchname', 're_branchnumber', 're_market', '_re_country_value'],
+    select: ['re_branchid', 're_branchname', 're_branchnumber', 're_market', '_re_country_value',
+      '_re_currency_value', '_re_stateprovince_value', 're_defaultusetax', 're_defaultfreight'],
     filter: 'statecode eq 0',
     orderBy: ['re_branchname asc', 're_branchid asc'],
     maxPageSize: 500,

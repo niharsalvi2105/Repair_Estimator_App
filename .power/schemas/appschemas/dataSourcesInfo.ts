@@ -19,6 +19,31 @@ export const dataSourcesInfo = {
     "dataSourceType": "Dataverse",
     "apis": {}
   },
+  "re_draftestimate": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "",
+    "dataSourceType": "Dataverse",
+    "apis": {
+      "re_DraftEstimate": {
+        "path": "/api/data/v9.2/re_DraftEstimate",
+        "method": "POST",
+        "parameters": [
+          {
+            "name": "InputJson",
+            "in": "body",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseInfo": {
+          "200": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
   "re_equipments": {
     "tableId": "",
     "version": "",
@@ -65,6 +90,13 @@ export const dataSourcesInfo = {
     "tableId": "",
     "version": "",
     "primaryKey": "re_repairpackageid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_stateprovinces": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_stateprovinceid",
     "dataSourceType": "Dataverse",
     "apis": {}
   },
@@ -162,6 +194,13 @@ export const dataSourcesInfo = {
     "tableId": "",
     "version": "",
     "primaryKey": "roleid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "transactioncurrencies": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "transactioncurrencyid",
     "dataSourceType": "Dataverse",
     "apis": {}
   }

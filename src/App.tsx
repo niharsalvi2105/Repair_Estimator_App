@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getBranches,
   getRequestReferences,
+  getDraftReferences,
+  type DraftReferences,
   searchEquipment,
   searchStandardPackages,
   type Branch,
@@ -11,6 +13,8 @@ import {
 } from './data/repairEstimatorRepository'
 import './App.css'
 import { EstimateList } from './EstimateList'
+import { PricingSummary } from './PricingSummary'
+import { DashboardMetrics } from './DashboardMetrics'
 import { loadSession, type AppSession } from './data/sessionRepository'
 import { RequestFields, type RequestInputs } from './RequestFields'
 import type { Market } from './data/estimateQuery'
@@ -18,6 +22,7 @@ import { useUserPreferences } from './useUserPreferences'
 import { BranchSelect } from './BranchSelect'
 import { UserAvatar } from './UserAvatar'
 import koneLogo from './assets/kone-logo.jpg?inline'
+import { draftOperation, draftInputs, type DraftRecord } from './data/draftRepository'
 
 type Language = 'en' | 'fr'
 type View = 'estimates' | 'requests' | 'new'
@@ -58,6 +63,8 @@ const copy = {
     unverifiedRole: 'Access not verified',
     metricsPending: 'Dashboard aggregates are not connected yet. Use Repair Requests to view live records.',
     viewRequests: 'View requests',
+    requestSearch: 'Search requests by ID, customer or building (starts with)',
+    searchAction: 'Search',
     equipmentType: 'Equipment type',
     jobType: 'Job type',
     chooseReference: 'Select an option',
@@ -94,14 +101,14 @@ const copy = {
     opportunityHint: 'Estimator header inputs for the selected market. Supervisor is optional; customer contact details are confirmed at review.',
     nextEquipment: 'Continue to equipment & packages',
     costsHint: 'Inputs only. No costs, margins or incentives are calculated or saved in this browser.',
-    pricingHint: 'Server calculation is not connected. Suggested price and actual CMII are unavailable; entered sell price is not an approved quote.',
+    pricingHint: 'Save the draft to calculate pricing in Dataverse. Saved results appear below; an entered selling price is not an approved quote.',
     equipmentNote: 'Equipment names are resolved from Dataverse. Unlisted numbers remain explicitly unbound.',
     costsTitle: 'Standard package cost inputs',
     costsUnavailable: 'Package labor, material, tax and freight totals require verified server calculation. Enter percentages as displayed in Excel (e.g. 5 for 5%); defaults are not loaded. Custom/T&M line entry is not implemented yet.',
     proposalPrice: 'Proposal pricing',
     partnerTitle: 'Partner information & CTT notes',
     selectedCount: 'Equipment quantity (from selected units)',
-    workbookAlignment: 'Workbook-aligned input capture only. Saving, custom/T&M costing, calculation, and submission are not connected.',
+    workbookAlignment: 'Saved standard-package pricing is calculated in Dataverse. Excel reconciliation is still required; custom/T&M and submission are not connected.',
     branchChangeWarning: 'Changing branch removes the selected equipment and packages. Continue?',
     missingCountry: 'This branch has no country lookup. Package search cannot run; ask an administrator to correct the branch data.',
     stepEquipment: 'Equipment',
@@ -131,7 +138,7 @@ const copy = {
     back: 'Back',
     packagesTitle: 'Select standard packages',
     packagesHint:
-      'Choose up to three packages. Hours and materials scale with the equipment count. Pricing will be shown after server calculation is connected.',
+      'Choose up to three packages. Hours and materials scale with the equipment count. Save the draft to view server pricing in Pricing & Margin or Review.',
     packageSearch: 'Search package number or name',
     packageSearchHelp: 'Enter at least 2 characters to search the package catalog.',
     searchingPackages: 'Searching package catalog...',
@@ -197,6 +204,8 @@ const copy = {
     unverifiedRole: 'Accès non vérifié',
     metricsPending: 'Les indicateurs ne sont pas encore connectés. Consultez les demandes pour voir les données réelles.',
     viewRequests: 'Voir les demandes',
+    requestSearch: 'Rechercher par début de numéro, client ou immeuble',
+    searchAction: 'Rechercher',
     equipmentType: 'Type d’équipement',
     jobType: 'Type de travail',
     chooseReference: 'Choisir une option',
@@ -233,14 +242,14 @@ const copy = {
     opportunityHint: 'En-tête de l’estimateur pour le marché sélectionné. Le superviseur est facultatif ; les coordonnées du client sont confirmées à la vérification.',
     nextEquipment: 'Continuer vers les équipements et forfaits',
     costsHint: 'Saisie uniquement. Aucun coût, marge ou incitatif n’est calculé ou enregistré dans le navigateur.',
-    pricingHint: 'Le calcul serveur n’est pas connecté. Le prix suggéré et le CMII réel sont indisponibles ; le prix saisi n’est pas un devis approuvé.',
+    pricingHint: 'Enregistrez le brouillon pour calculer les prix dans Dataverse. Les résultats enregistrés apparaissent ci-dessous ; le prix saisi n’est pas un devis approuvé.',
     equipmentNote: 'Les noms des équipements proviennent de Dataverse. Les numéros non répertoriés restent sans correspondance.',
     costsTitle: 'Coûts supplémentaires du forfait standard',
     costsUnavailable: 'Les totaux de main-d’œuvre, matériaux, taxes et fret nécessitent le calcul serveur vérifié. Saisissez les pourcentages comme dans Excel (ex. 5 pour 5 %) ; les valeurs par défaut ne sont pas chargées. La saisie personnalisée/T&M n’est pas encore implémentée.',
     proposalPrice: 'Prix de la proposition',
     partnerTitle: 'Partenaires et notes CTT',
     selectedCount: 'Quantité d’équipements (unités sélectionnées)',
-    workbookAlignment: 'Saisie alignée sur le classeur uniquement. Enregistrement, coûts personnalisés/T&M, calcul et envoi non connectés.',
+    workbookAlignment: 'Les prix des forfaits standards enregistrés sont calculés dans Dataverse. La comparaison Excel reste nécessaire ; les coûts personnalisés/T&M et l’envoi ne sont pas connectés.',
     branchChangeWarning: 'Changer de succursale supprime les équipements et forfaits sélectionnés. Continuer ?',
     missingCountry: 'Cette succursale n’a pas de pays associé. La recherche de forfaits est impossible ; contactez un administrateur.',
     stepEquipment: 'Équipement',
@@ -270,7 +279,7 @@ const copy = {
     back: 'Retour',
     packagesTitle: 'Choisir les forfaits standard',
     packagesHint:
-      'Choisissez jusqu’à trois forfaits. Les heures et matériaux varient selon le nombre d’équipements. Le prix sera affiché après la connexion du calcul serveur.',
+      'Choisissez jusqu’à trois forfaits. Les heures et matériaux varient selon le nombre d’équipements. Enregistrez le brouillon pour voir les prix dans Prix et marge ou Vérification.',
     packageSearch: 'Rechercher par numéro ou nom de forfait',
     packageSearchHelp: 'Saisissez au moins 2 caractères pour rechercher le catalogue.',
     searchingPackages: 'Recherche dans le catalogue…',
@@ -318,7 +327,7 @@ function message(error: unknown): string {
 }
 
 function localizePackage(
-  repairPackage: RepairPackage,
+  repairPackage: Pick<RepairPackage, 're_packagenameen' | 're_packagenamefr'>,
   language: Language,
 ): string {
   if (language === 'fr' && repairPackage.re_packagenamefr) {
@@ -352,6 +361,8 @@ function App() {
   const [market, setMarket] = useState<Market>(126110000)
   const [systemDarkMode, setSystemDarkMode] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const [view, setView] = useState<View>('estimates')
+  const [searchInput, setSearchInput] = useState('')
+  const [requestSearch, setRequestSearch] = useState('')
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchLoading, setBranchLoading] = useState(true)
   const [branchError, setBranchError] = useState('')
@@ -367,7 +378,7 @@ function App() {
   const [packageResults, setPackageResults] = useState<RepairPackage[]>([])
   const [packageLoading, setPackageLoading] = useState(false)
   const [packageError, setPackageError] = useState('')
-  const [selectedPackages, setSelectedPackages] = useState<RepairPackage[]>([])
+  const [selectedPackages, setSelectedPackages] = useState<Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]>([])
   const [step, setStep] = useState(1)
   const [customerName, setCustomerName] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
@@ -386,6 +397,20 @@ function App() {
   const [equipmentTypeId, setEquipmentTypeId] = useState('')
   const [jobTypeId, setJobTypeId] = useState('')
   const [requestInputs, setRequestInputs] = useState<RequestInputs>({})
+  const [draftReferences, setDraftReferences] = useState<DraftReferences>()
+  const [draftReferenceError, setDraftReferenceError] = useState('')
+  const [stateId, setStateId] = useState('')
+  const [estimateTitle, setEstimateTitle] = useState('')
+  const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID())
+  const [draftVersion, setDraftVersion] = useState<string | null>(null)
+  const [draftNumber, setDraftNumber] = useState('')
+  const [savedSnapshot, setSavedSnapshot] = useState('')
+  const [draftBusy, setDraftBusy] = useState(false)
+  const [draftError, setDraftError] = useState('')
+  const [draftNotice, setDraftNotice] = useState('')
+  const [savedSalesperson, setSavedSalesperson] = useState('')
+  const [pricingUnavailable, setPricingUnavailable] = useState(false)
+  const draftInFlight = useRef(false)
   const requestSection = useRef<HTMLElement>(null)
   function updateRequestInput(key: keyof RequestInputs, value: string) {
     setRequestInputs((current) => ({ ...current, [key]: value }))
@@ -395,8 +420,13 @@ function App() {
   const roleLabel = session?.role === 'admin' ? t.adminRole
     : session?.role === 'estimator' ? t.estimatorRole : t.unverifiedRole
   const canStart = session?.canStartEstimate === true
-  const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || branchId || buildingName || customerName || customerEmail || customerPhone
-    || equipmentTypeId || jobTypeId || Object.values(requestInputs).some(Boolean))
+  const canWork = canStart || Boolean(draftVersion)
+  const draftState = { branchId, stateId, estimateTitle, buildingName, customerName, customerEmail, customerPhone,
+    equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages }
+  const currentSnapshot = JSON.stringify(draftState)
+  const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || estimateTitle
+    || customerName || customerEmail || customerPhone || equipmentTypeId || jobTypeId || Object.values(requestInputs).some(Boolean))
+  const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty)
   const selectedBranch = branches.find((branch) => branch.re_branchid === branchId)
   const marketBranches = branches.filter((branch) => branch.re_market === market)
   const marketName =
@@ -458,21 +488,32 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!canStart) return
+    if (!session?.canReadEstimates) return
     const timeout = window.setTimeout(() => {
       void loadBranches()
     }, 0)
     return () => window.clearTimeout(timeout)
-  }, [loadBranches, canStart])
+  }, [loadBranches, session?.canReadEstimates])
 
   useEffect(() => {
-    if (!canStart) return
+    if (!session?.canReadEstimates) return
     let cancelled = false
     void getRequestReferences()
       .then((result) => { if (!cancelled) setReferences(result) })
       .catch((error: unknown) => { if (!cancelled) setReferenceError(message(error)) })
     return () => { cancelled = true }
-  }, [canStart, referenceAttempt])
+  }, [session?.canReadEstimates, referenceAttempt])
+
+  useEffect(() => {
+    if (!session?.canReadEstimates) return
+    let cancelled = false
+    void getDraftReferences().then((result) => {
+      if (!cancelled) { setDraftReferences(result); setDraftReferenceError('') }
+    }).catch((reason: unknown) => {
+      if (!cancelled) setDraftReferenceError(message(reason))
+    })
+    return () => { cancelled = true }
+  }, [session?.canReadEstimates, referenceAttempt])
 
   useEffect(() => {
     const query = equipmentQuery.trim()
@@ -589,9 +630,20 @@ function App() {
   }
 
   function changeBranch(nextBranchId: string) {
+    if (draftVersion) return
     if (nextBranchId === branchId) return
     if ((selectedEquipment.length > 0 || selectedPackages.length > 0) && !window.confirm(t.branchChangeWarning)) return
     resetBranch(nextBranchId)
+    const branch = branches.find((row) => row.re_branchid === nextBranchId)
+    setStateId(branch?._re_stateprovince_value ?? '')
+    const province = draftReferences?.states.find((s) => s.id === branch?._re_stateprovince_value)
+    setRequestInputs((current) => ({
+      ...current,
+      re_usetax: typeof branch?.re_defaultusetax !== 'number' ? '' : String(branch.re_defaultusetax * 100),
+      re_freight: typeof branch?.re_defaultfreight !== 'number' ? '' : String(branch.re_defaultfreight * 100),
+      re_timecategory: current.re_timecategory || '126110000',
+      re_proposallanguage: province?.frenchRequired ? '126110001' : current.re_proposallanguage || (language === 'fr' ? '126110001' : '126110000'),
+    }))
   }
 
   function changeMarket(nextMarket: Market) {
@@ -631,6 +683,104 @@ function App() {
     if (!canStart) return
     setStep(1)
     setView('new')
+  }
+
+  const dt = language === 'fr' ? {
+    title: 'Nom du devis', province: 'Province / État du bâtiment', currency: 'Devise',
+    save: 'Enregistrer le brouillon', saving: 'Enregistrement…', saved: 'Brouillon enregistré',
+    open: 'Ouvrir le brouillon', working: 'Opération en cours…', new: 'Nouveau brouillon',
+    warning: 'Des modifications ne sont pas enregistrées. Les abandonner ?',
+    required: 'Renseignez le nom du devis, le client, le bâtiment, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
+    note: 'Brouillon uniquement : prix enregistrés du serveur disponibles ; envoi pour approbation non connecté.',
+    error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
+    reload: 'Recharger le brouillon', locked: 'La succursale et le marché sont fixes pour un brouillon enregistré.',
+  } : {
+    title: 'Estimate title', province: 'Building province / state', currency: 'Currency',
+    save: 'Save draft', saving: 'Saving…', saved: 'Draft saved',
+    open: 'Open draft', working: 'Operation in progress…', new: 'New draft',
+    warning: 'There are unsaved changes. Discard them?',
+    required: 'Complete estimate title, customer, building, province, equipment, packages, proposal language, time category, use tax and freight.',
+    note: 'Draft only: saved server pricing is available; submission for approval is not connected.',
+    error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
+    reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
+  }
+  const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && buildingName.trim() && stateId
+    && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
+    && requestInputs.re_proposallanguage && requestInputs.re_timecategory
+    && requestInputs.re_usetax?.trim() && requestInputs.re_freight?.trim()
+    && selectedBranch?._re_currency_value && draftReferences)
+
+  function applyDraft(record: DraftRecord) {
+    const inputs = draftInputs(record)
+    const equipment = record.equipment.map((item) => ({
+      ...item, id: item.matched ? item.id : `unlisted-${crypto.randomUUID()}`,
+      name: item.name ?? '', location: item.location ?? '', customer: item.customer ?? '',
+      oem: item.oem ?? '', age: item.age ?? undefined,
+    }))
+    const packages = record.packages.map((item) => ({
+      re_repairpackageid: item.id, re_packagenumber: item.number, re_packagenameen: item.nameEn,
+      re_packagenamefr: item.nameFr ?? undefined, re_proposalscopeen: item.scopeEn,
+      re_proposalscopefr: item.scopeFr ?? undefined, re_mechanichours: item.hours,
+    }))
+    setDraftId(record.id); setDraftVersion(record.version); setDraftNumber(record.number ?? '')
+    setSavedSalesperson(record.salesperson ?? '')
+    setPricingUnavailable(record.pricingState === 'unavailable')
+    setEstimateTitle(record.title); setBranchId(record.branchId); setStateId(record.stateId)
+    setBuildingName(record.building); setCustomerName(record.customer)
+    setCustomerEmail(record.email ?? ''); setCustomerPhone(record.phone ?? '')
+    setEquipmentTypeId(record.equipmentTypeId); setJobTypeId(record.jobTypeId ?? '')
+    setMarket(record.market); setRequestInputs(inputs); setSelectedEquipment(equipment); setSelectedPackages(packages)
+    setEquipmentQuery(''); setEquipmentResults([]); setPackageQuery(''); setPackageResults([])
+    setSavedSnapshot(JSON.stringify({
+      branchId: record.branchId, stateId: record.stateId, estimateTitle: record.title,
+      buildingName: record.building, customerName: record.customer, customerEmail: record.email ?? '',
+      customerPhone: record.phone ?? '', equipmentTypeId: record.equipmentTypeId, jobTypeId: record.jobTypeId ?? '',
+      market: record.market, requestInputs: inputs, selectedEquipment: equipment, selectedPackages: packages,
+    }))
+  }
+
+  async function openDraft(id: string) {
+    if (draftInFlight.current || (draftDirty && !window.confirm(dt.warning))) return
+    draftInFlight.current = true
+    setDraftBusy(true); setDraftError(''); setDraftNotice('')
+    try {
+      const record = await draftOperation({ mode: 'load', id })
+      applyDraft(record); setStep(1); setView('new')
+    } catch (reason) { setDraftError(`${dt.error} ${message(reason)}`) }
+    finally { draftInFlight.current = false; setDraftBusy(false) }
+  }
+
+  async function saveDraft() {
+    if (draftInFlight.current) return
+    setDraftError(''); setDraftNotice('')
+    if (!draftComplete) { setDraftError(dt.required); return }
+    const controls = requestSection.current?.querySelectorAll<HTMLInputElement>('input')
+    if (controls && !Array.from(controls).every((input) => input.reportValidity())) return
+    draftInFlight.current = true; setDraftBusy(true)
+    try {
+      const record = await draftOperation({
+        mode: 'save', id: draftId, version: draftVersion, title: estimateTitle,
+        branchId, stateId, equipmentTypeId, jobTypeId, building: buildingName,
+        customer: customerName, email: customerEmail, phone: customerPhone, market,
+        fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
+        equipment: selectedEquipment.map((item) => ({ ...item, id: item.matched ? item.id : '' })),
+        packages: selectedPackages.map((item) => ({ id: item.re_repairpackageid,
+          number: item.re_packagenumber, nameEn: item.re_packagenameen, scopeEn: item.re_proposalscopeen ?? '',
+          hours: 0, material: 0 })),
+      })
+      applyDraft(record); setDraftNotice(`${dt.saved}: ${record.number || record.id}`)
+    } catch (reason) { setDraftError(`${dt.error} ${message(reason)}`) }
+    finally { draftInFlight.current = false; setDraftBusy(false) }
+  }
+
+  function newDraft() {
+    if (draftBusy || (draftDirty && !window.confirm(dt.warning))) return
+    setDraftId(crypto.randomUUID()); setDraftVersion(null); setDraftNumber(''); setSavedSnapshot('')
+    setSavedSalesperson('')
+    setPricingUnavailable(false)
+    setEstimateTitle(''); resetBranch(''); setStateId(''); setEquipmentTypeId(''); setJobTypeId('')
+    setBuildingName(''); setCustomerName(''); setCustomerEmail(''); setCustomerPhone('')
+    setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1); setView('new')
   }
 
   return (
@@ -714,15 +864,26 @@ function App() {
 
       <main className="main-area">
         <header className="topbar">
-          <div className="breadcrumb">
-            <span>{t.appName}</span>
-            <span aria-hidden="true">/</span>
-            <strong>{view === 'new' ? t.newEstimate : view === 'requests' ? t.repairRequests : t.estimates}</strong>
-          </div>
+          <form className="header-request-search" role="search" aria-label={t.requestSearch}
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!session?.canReadEstimates || draftBusy) return
+              if (view === 'new' && draftDirty && !window.confirm(dt.warning)) return
+              setRequestSearch(searchInput.trim()); setView('requests')
+            }}>
+            <label className="sr-only" htmlFor="header-request-search">{t.requestSearch}</label>
+            <span className="search-icon" aria-hidden="true" />
+            <input id="header-request-search" type="search" maxLength={150} value={searchInput}
+              placeholder={t.requestSearch} disabled={!session?.canReadEstimates || draftBusy}
+              onChange={(event) => setSearchInput(event.target.value)} />
+            <button type="submit" className="button secondary" disabled={!session?.canReadEstimates || draftBusy}>
+              {t.searchAction}
+            </button>
+          </form>
           <div className="topbar-actions">
             <label className="market-control">
               <span className="sr-only">{t.market}</span>
-              <select aria-label={t.market} value={market} disabled={!preferences.ready || preferences.busy} onChange={(event) => {
+              <select aria-label={t.market} value={market} disabled={!preferences.ready || preferences.busy || draftBusy || Boolean(draftVersion)} onChange={(event) => {
                 const value = Number(event.target.value)
                 if (value === 126110000 || value === 126110001 || value === 126110002) changeMarket(value)
               }}>
@@ -779,6 +940,17 @@ function App() {
           {session?.developmentAdminOverride && (
             <p className="draft-notice" role="status">{t.developmentAdminNotice}</p>
           )}
+          {draftBusy && <p className="inline-state" role="status">{dt.working}</p>}
+          {draftError && <div className="error-box draft-error" role="alert">
+            <span>{draftError}</span>
+            <button className="button secondary" disabled={draftBusy} onClick={() => void openDraft(draftId)}>{dt.reload}</button>
+          </div>}
+          {draftNotice && <p className="inline-state draft-saved" role="status">{draftNotice}</p>}
+          {pricingUnavailable && <p className="draft-notice" role="status">
+            {language === 'fr'
+              ? 'Le brouillon est enregistré, mais le calcul des prix est indisponible. Vérifiez les données et la configuration avec votre administrateur avant toute soumission.'
+              : 'The draft is saved, but pricing is unavailable. Ask your administrator to check the inputs and configuration before submission.'}
+          </p>}
           {sessionLoading ? (
             <p className="inline-state" role="status">{t.checkingAccess}</p>
           ) : sessionError ? (
@@ -804,17 +976,17 @@ function App() {
                 <h1>{t.repairRequests}</h1>
                 <p>{t.recentRequestsHint}</p>
               </div></div>
-              <section className="dashboard-card"><EstimateList key={market} market={market} language={language} /></section>
+              <section className="dashboard-card"><EstimateList key={market} market={market} search={requestSearch} language={language} onOpen={(id) => void openDraft(id)} busy={draftBusy} /></section>
             </section>
             : null
-          ) : view === 'new' && !canStart ? null : (
+          ) : view === 'new' && !canWork ? null : (
           <>
           {view === 'estimates' ? (
-            <section className="page-content">
+            <section className="page-content operations-dashboard">
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">OVERVIEW</div>
-                  <h1>{t.dashboardTitle}</h1>
+                  <div className="eyebrow">{language === 'fr' ? 'VUE D’ENSEMBLE' : 'OVERVIEW'}</div>
+                  <h1>{marketName} · {t.dashboardTitle}</h1>
                   <p>{t.dashboardSubtitle}</p>
                 </div>
                 <button className="button primary" onClick={beginEstimate} disabled={!canStart}>
@@ -822,62 +994,18 @@ function App() {
                   {t.startEstimate}
                 </button>
               </div>
-              <div className="dashboard-stats" aria-label={t.dashboardTitle}>
-                {[
-                  [t.openRequests, '↗'],
-                  [t.pendingApprovals, '⌛'],
-                  [t.quotesSent, '➤'],
-                  [t.averageMargin, '%'],
-                ].map(([label, icon], index) => (
-                  <article className="dashboard-stat" key={label}>
-                    <div className="dashboard-stat-copy">
-                      <span>{label}</span>
-                      <strong>—</strong>
-                      <small>{t.metricsPending}</small>
-                    </div>
-                    <span className={`dashboard-stat-icon tone-${index}`} aria-hidden="true">{icon}</span>
-                  </article>
-                ))}
-              </div>
-              <div className="dashboard-grid">
-                <section className="dashboard-card">
-                  <div className="dashboard-card-heading">
-                    <div>
-                      <h2>{t.requestStatus}</h2>
-                      <p>{t.requestStatusHint}</p>
-                    </div>
-                    <span className="market-badge">{marketName || 'KONE'}</span>
-                  </div>
-                  <div className="dashboard-empty">
-                    <span className="dashboard-empty-mark" aria-hidden="true">◷</span>
-                    <p>{t.metricsPending}</p>
-                  </div>
-                </section>
-                <section className="dashboard-card">
-                  <div className="dashboard-card-heading">
-                    <div>
-                      <h2>{t.repairTypes}</h2>
-                      <p>{t.repairTypesHint}</p>
-                    </div>
-                  </div>
-                  <div className="dashboard-empty">
-                    <span className="dashboard-empty-mark" aria-hidden="true">▤</span>
-                    <p>{t.metricsPending}</p>
-                  </div>
-                </section>
-              </div>
+              {session?.canReadEstimates && <DashboardMetrics market={market} owner={session.userId} language={language} />}
               <section className="dashboard-card recent-card">
                 <div className="dashboard-card-heading">
                   <div>
                     <h2>{t.recentRequests}</h2>
                     <p>{t.recentRequestsHint}</p>
                   </div>
-                  <button className="button primary" onClick={beginEstimate} disabled={!canStart}>
-                    <span aria-hidden="true">+</span>
-                    {t.startEstimate}
+                  <button className="button tertiary" onClick={() => setView('requests')}>
+                    {t.viewRequests} <span aria-hidden="true">→</span>
                   </button>
                 </div>
-                {session?.canReadEstimates && <EstimateList key={market} market={market} language={language} />}
+                {session?.canReadEstimates && <EstimateList recent key={market} market={market} language={language} onOpen={(id) => void openDraft(id)} busy={draftBusy} />}
               </section>
             </section>
           ) : (
@@ -888,8 +1016,17 @@ function App() {
                   <h1>{t.newTitle}</h1>
                   <p>{t.newSubtitle}</p>
                 </div>
-                <span className="unsaved-badge">{t.notSaved}</span>
+                <span className="unsaved-badge">{draftVersion && !draftDirty ? `${dt.saved} ${draftNumber}` : t.notSaved}</span>
               </div>
+              <div className="draft-toolbar">
+                <button className="button secondary" onClick={newDraft} disabled={draftBusy || !canStart}>{dt.new}</button>
+                {draftVersion && <button className="button secondary" disabled={draftBusy}
+                  onClick={() => void openDraft(draftId)}>{dt.reload}</button>}
+                <button className="button primary" disabled={draftBusy || !canWork || !draftComplete}
+                  onClick={() => void saveDraft()}>{draftBusy ? dt.saving : dt.save}</button>
+              </div>
+              {draftVersion && <p className="field-help">{dt.locked}</p>}
+              <fieldset className="draft-workspace" disabled={draftBusy}>
 
               <p className="draft-notice">{t.workbookAlignment}</p>
               <div className="stepper" aria-label={`${t.stepOf} ${step} / 5`}>
@@ -927,6 +1064,23 @@ function App() {
                       {step === 1 && <>
                       <fieldset className="opportunity-group">
                       <legend>{t.locationAssignment}</legend>
+                      <div className="input-grid">
+                        <div className="field-label">
+                          <label htmlFor="estimate-title">{dt.title}<span className="required">*</span></label>
+                          <input id="estimate-title" className="text-input" value={estimateTitle} maxLength={100}
+                            aria-required="true" onChange={(event) => setEstimateTitle(event.target.value)} />
+                        </div>
+                        <div className="field-label">
+                          <label htmlFor="draft-currency">{dt.currency}</label>
+                          <input id="draft-currency" className="text-input" readOnly
+                            value={draftReferences?.currencies.find((c) => c.id === selectedBranch?._re_currency_value)?.code ?? '—'} />
+                        </div>
+                      </div>
+                      {draftReferenceError && <div className="error-box" role="alert">
+                        <span>{draftReferenceError}</span>
+                        <button className="button secondary" onClick={() => setReferenceAttempt((value) => value + 1)}>{t.retry}</button>
+                      </div>}
+                      {!draftReferences && !draftReferenceError && <p role="status">{t.loadingReferences}</p>}
                       {branchLoading ? (
                         <div className="inline-state" role="status">{t.loadBranches}</div>
                       ) : branchError ? (
@@ -938,7 +1092,7 @@ function App() {
                       ) : (
                         <>
                           <label className="field-label" htmlFor="branch-select">{t.branch}<span className="required">*</span></label>
-                          <BranchSelect key={market} branches={marketBranches} value={branchId}
+                          <BranchSelect key={market} branches={marketBranches} value={branchId} disabled={Boolean(draftVersion)}
                             onChange={changeBranch} language={language} />
                           {marketBranches.length === 0 && <p className="field-help" role="status">{t.noMarketBranches}</p>}
                         </>
@@ -974,13 +1128,27 @@ function App() {
                       <div className="input-grid">
                         <div className="field-label">
                           <label htmlFor="salesperson">{t.salesperson}</label>
-                          <input id="salesperson" className="text-input" value={session?.displayName ?? ''} readOnly />
+                          <input id="salesperson" className="text-input" value={draftVersion ? savedSalesperson : session?.displayName ?? ''} readOnly />
                         </div>
                         <div className="field-label">
                           <label htmlFor="opportunity-building">{t.buildingName}<span className="required">*</span></label>
                           <input id="opportunity-building" className="text-input" aria-required="true" value={buildingName}
                             maxLength={300} onChange={(event) => setBuildingName(event.target.value)} />
                         </div>
+                      </div>
+                      <div className="field-label">
+                        <label htmlFor="draft-province">{dt.province}<span className="required">*</span></label>
+                        <select id="draft-province" className="text-input" value={stateId} aria-required="true"
+                          disabled={!branchId || !draftReferences} onChange={(event) => {
+                            setStateId(event.target.value)
+                            if (draftReferences?.states.find((s) => s.id === event.target.value)?.frenchRequired)
+                              updateRequestInput('re_proposallanguage', '126110001')
+                          }}>
+                          <option value="">{t.chooseReference}</option>
+                          {draftReferences?.states.filter((s) => s.countryId === selectedBranch?._re_country_value).map((s) => (
+                            <option key={s.id} value={s.id}>{language === 'fr' ? s.fr || s.en : s.en}</option>
+                          ))}
+                        </select>
                       </div>
                       </fieldset>
                       <fieldset className="opportunity-group">
@@ -1236,6 +1404,8 @@ function App() {
                         value={requestInputs} onChange={updateRequestInput} />
                       <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
                     </section>
+                    {step === 4 && <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
+                      language={language} currencies={draftReferences?.currencies ?? []} />}
                   </div>
                 </div>
               )}
@@ -1243,6 +1413,8 @@ function App() {
               {step === 5 && (
                 <div className="form-layout">
                   <div className="form-main">
+                    <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
+                      language={language} currencies={draftReferences?.currencies ?? []} />
                     <section className="form-card">
                       <div className="section-heading">
                         <span className="section-icon">05</span>
@@ -1309,14 +1481,14 @@ function App() {
                           <RequestFields stage={stage} language={language} value={requestInputs} onChange={updateRequestInput} readOnly />
                         </details>
                       ))}
-                      <p className="draft-notice">{t.draftUnavailable}</p>
+                      <p className="draft-notice">{dt.note}</p>
                     </section>
                   </div>
                   <aside className="form-aside">
                     <div className="aside-card">
                       <span className="aside-overline">{t.readyNext}</span>
-                      <h3>{t.notSaved}</h3>
-                      <p>{t.readyNextText}</p>
+                      <h3>{draftVersion && !draftDirty ? dt.saved : t.notSaved}</h3>
+                      <p>{dt.note}</p>
                     </div>
                   </aside>
                 </div>
@@ -1341,12 +1513,14 @@ function App() {
                       <span aria-hidden="true">→</span>
                     </button>
                   ) : (
-                    <button className="button primary" disabled title={t.draftUnavailable}>
-                      {t.notSaved}
+                    <button className="button primary" disabled={draftBusy || !draftComplete}
+                      onClick={() => void saveDraft()} title={draftComplete ? dt.note : dt.required}>
+                      {draftBusy ? dt.saving : dt.save}
                     </button>
                   )}
                 </div>
               </div>
+              </fieldset>
             </section>
           )}
           </>

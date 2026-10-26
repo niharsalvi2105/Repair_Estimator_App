@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Branch } from './data/repairEstimatorRepository'
 
-export function BranchSelect({ branches, value, onChange, language }: {
+export function BranchSelect({ branches, value, onChange, language, disabled = false }: {
   branches: Branch[]
   value: string
   onChange: (id: string) => void
   language: 'en' | 'fr'
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -42,6 +43,7 @@ export function BranchSelect({ branches, value, onChange, language }: {
     }}>
       <div className="branch-combobox-control">
         <input ref={input} id="branch-select" className="text-input" role="combobox"
+          disabled={disabled}
           aria-expanded={open} aria-controls="branch-options" aria-autocomplete="list"
           aria-required="true"
           aria-activedescendant={open && activeOption ? `branch-option-${active}` : undefined}
@@ -64,6 +66,7 @@ export function BranchSelect({ branches, value, onChange, language }: {
             } else if (event.key === 'Tab') setOpen(false)
           }} />
         <button type="button" className="branch-dropdown-toggle"
+          disabled={disabled}
           aria-label={language === 'fr' ? 'Afficher les succursales' : 'Show branches'}
           aria-expanded={open} aria-controls="branch-options"
           onMouseDown={(event) => event.preventDefault()}

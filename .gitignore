@@ -12,6 +12,17 @@ dist
 dist-ssr
 playwright-report
 test-results
+backend/bin
+backend/obj
+backend/*.snk
+backend/__pycache__
+backend-tests/bin
+backend-tests/obj
+backend-pricing/bin
+backend-pricing/obj
+backend-pricing/*.snk
+backend-pricing-tests/bin
+backend-pricing-tests/obj
 *.local
 
 # Editor directories and files

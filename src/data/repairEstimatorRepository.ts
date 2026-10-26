@@ -5,6 +5,8 @@ import {
   Re_repairestimatesService,
   Re_equipmenttypesService,
   Re_jobtypesService,
+  Re_stateprovincesService,
+  TransactioncurrenciesService,
 } from '../generated'
 import { unwrap, withTimeout } from './dataverseOperation'
 import { buildBranchQuery, buildEstimateQuery, type EstimateQuery } from './estimateQuery'
@@ -20,6 +22,10 @@ export type Branch = Pick<
   | 're_branchnumber'
   | 're_market'
   | '_re_country_value'
+  | '_re_currency_value'
+  | '_re_stateprovince_value'
+  | 're_defaultusetax'
+  | 're_defaultfreight'
 >
 
 export type Equipment = Pick<
@@ -47,6 +53,29 @@ export type RepairPackage = Pick<
 >
 
 export type ReferenceOption = { id: string; en: string; fr?: string }
+
+export type DraftReferences = {
+  states: { id: string; en: string; fr?: string; countryId: string; frenchRequired: boolean }[]
+  currencies: { id: string; code: string }[]
+}
+
+export async function getDraftReferences(): Promise<DraftReferences> {
+  const [states, currencies] = await Promise.all([
+    withTimeout(Re_stateprovincesService.getAll({
+      select: ['re_stateprovinceid', 're_nameen', 're_namefr', '_re_country_value', 're_frenchrequired'],
+      filter: 'statecode eq 0', orderBy: ['re_nameen asc'], maxPageSize: 500,
+    })),
+    withTimeout(TransactioncurrenciesService.getAll({
+      select: ['transactioncurrencyid', 'isocurrencycode'], filter: 'statecode eq 0', maxPageSize: 500,
+    })),
+  ])
+  if (states.skipToken || currencies.skipToken) throw new Error('Location/currency reference paging exceeds the supported size.')
+  return {
+    states: unwrap(states).map((s) => ({ id: s.re_stateprovinceid, en: s.re_nameen, fr: s.re_namefr,
+      countryId: s._re_country_value ?? '', frenchRequired: s.re_frenchrequired })),
+    currencies: unwrap(currencies).map((c) => ({ id: c.transactioncurrencyid, code: c.isocurrencycode })),
+  }
+}
 
 export async function getRequestReferences(): Promise<{
   equipmentTypes: ReferenceOption[]; jobTypes: ReferenceOption[]

@@ -8,6 +8,7 @@ test('branch queries select actual columns, not generated formatted choice-label
   const query = buildBranchQuery('branch-page')
   assert.deepEqual(query.select, [
     're_branchid', 're_branchname', 're_branchnumber', 're_market', '_re_country_value',
+    '_re_currency_value', '_re_stateprovince_value', 're_defaultusetax', 're_defaultfreight',
   ])
   assert.equal(query.select.includes('re_marketname'), false)
   assert.equal(query.top, undefined)

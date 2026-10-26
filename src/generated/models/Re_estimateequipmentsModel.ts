@@ -16,17 +16,20 @@ export type Re_estimateequipmentsstatuscode = keyof typeof Re_estimateequipments
 export interface Re_estimateequipmentsBase {
   importsequencenumber?: number;
   overriddencreatedon?: string;
-  re_equipmentagesnapshot?: number;
+  "re_Equipment@odata.bind"?: string;
+  re_equipmentage?: number;
   re_equipmentnamesnapshot?: string;
-  re_equipmentnumbersnapshot?: string;
-  re_equipmenttypesnapshot?: string;
-  re_estimateequipment: string;
+  re_equipmentnumber: string;
   re_estimateequipmentid: string;
-  re_installationdatesnapshot?: string;
-  re_name?: string;
-  re_oemsnapshot?: string;
-  re_primaryequipment?: boolean;
-  re_sequence?: number;
+  re_functionallocation?: string;
+  re_isprimary: boolean;
+  re_name: string;
+  re_oem?: string;
+  "re_RepairEstimate@odata.bind": string;
+  re_sequence: number;
+  re_soldtoname?: string;
+  re_soldtonumber?: string;
+  re_verticalcode?: string;
   statecode: Re_estimateequipmentsstatecode;
   statuscode?: Re_estimateequipmentsstatuscode;
   timezoneruleversionnumber?: number;
@@ -37,7 +40,7 @@ export interface Re_estimateequipments extends Re_estimateequipmentsBase {
   createdon?: string;
   modifiedon?: string;
   ownerid: string;
-  re_primaryequipmentname?: string;
+  re_isprimaryname?: string;
   statecodename?: string;
   statuscodename?: string;
   versionnumber?: number;
@@ -55,4 +58,8 @@ export interface Re_estimateequipments extends Re_estimateequipmentsBase {
   _owningteam_value?: string;
   owninguser?: object;
   _owninguser_value?: string;
+  re_equipment?: object;
+  _re_equipment_value?: string;
+  re_repairestimate?: object;
+  _re_repairestimate_value?: string;
 }

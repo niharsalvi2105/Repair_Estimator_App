@@ -8,7 +8,7 @@
       "x-ms-dataverse-entity": true,
       "x-ms-dataverse-entityset": "re_estimateequipments",
       "x-ms-dataverse-primary-id": "re_estimateequipmentid",
-      "x-ms-dataverse-primary-name": "re_estimateequipment",
+      "x-ms-dataverse-primary-name": "re_name",
       "properties": {
         "createdby": {
           "type": "string",
@@ -216,8 +216,7 @@
           "x-ms-dataverse-navigation-properties": [
             "owningbusinessunit"
           ],
-          "x-ms-read-only": true,
-          "required": true
+          "x-ms-read-only": true
         },
         "owningbusinessunitname": {
           "type": "string",
@@ -252,46 +251,49 @@
           ],
           "x-ms-read-only": true
         },
-        "re_equipmentagesnapshot": {
+        "re_equipment": {
           "type": "string",
-          "title": "Equipment Age Snapshot",
-          "x-ms-dataverse-attribute": "re_equipmentagesnapshot",
+          "title": "Equipment",
+          "x-ms-dataverse-attribute": "re_equipment",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_Equipment",
+          "x-ms-dataverse-navigation-properties": [
+            "re_Equipment"
+          ]
+        },
+        "re_equipmentage": {
+          "type": "string",
+          "title": "Equipment Age",
+          "x-ms-dataverse-attribute": "re_equipmentage",
           "x-ms-dataverse-type": "IntegerType",
-          "x-ms-schema-name": "re_EquipmentAgeSnapshot"
+          "x-ms-schema-name": "re_EquipmentAge"
+        },
+        "re_equipmentname": {
+          "type": "string",
+          "title": "re_equipmentname",
+          "x-ms-dataverse-attribute": "re_equipmentname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_EquipmentName",
+          "x-ms-dataverse-attribute-of": "re_equipment",
+          "x-ms-read-only": true,
+          "maxLength": 850
         },
         "re_equipmentnamesnapshot": {
           "type": "string",
           "title": "Equipment Name Snapshot",
           "x-ms-dataverse-attribute": "re_equipmentnamesnapshot",
           "x-ms-dataverse-type": "StringType",
-          "x-ms-schema-name": "re_EquipmentNameSnapshot",
-          "maxLength": 100
+          "x-ms-schema-name": "re_equipmentnamesnapshot",
+          "maxLength": 300
         },
-        "re_equipmentnumbersnapshot": {
+        "re_equipmentnumber": {
           "type": "string",
-          "title": "Equipment Number Snapshot",
-          "x-ms-dataverse-attribute": "re_equipmentnumbersnapshot",
+          "title": "Equipment Number",
+          "x-ms-dataverse-attribute": "re_equipmentnumber",
           "x-ms-dataverse-type": "StringType",
-          "x-ms-schema-name": "re_EquipmentNumberSnapshot",
-          "maxLength": 100
-        },
-        "re_equipmenttypesnapshot": {
-          "type": "string",
-          "title": "Equipment Type Snapshot",
-          "x-ms-dataverse-attribute": "re_equipmenttypesnapshot",
-          "x-ms-dataverse-type": "StringType",
-          "x-ms-schema-name": "re_EquipmentTypeSnapshot",
-          "maxLength": 100
-        },
-        "re_estimateequipment": {
-          "type": "string",
-          "title": "Estimate Equipment",
-          "x-ms-dataverse-attribute": "re_estimateequipment",
-          "x-ms-dataverse-type": "StringType",
-          "x-ms-schema-name": "re_EstimateEquipment",
-          "x-ms-dataverse-primary-name": true,
+          "x-ms-schema-name": "re_EquipmentNumber",
           "required": true,
-          "maxLength": 850
+          "maxLength": 20
         },
         "re_estimateequipmentid": {
           "type": "string",
@@ -303,35 +305,21 @@
           "required": true,
           "x-ms-keyType": "primary"
         },
-        "re_installationdatesnapshot": {
+        "re_functionallocation": {
           "type": "string",
-          "title": "Installation Date Snapshot",
-          "x-ms-dataverse-attribute": "re_installationdatesnapshot",
-          "x-ms-dataverse-type": "DateTimeType",
-          "x-ms-schema-name": "re_InstallationDateSnapshot"
-        },
-        "re_name": {
-          "type": "string",
-          "title": "Name",
-          "x-ms-dataverse-attribute": "re_name",
+          "title": "Functional Location",
+          "x-ms-dataverse-attribute": "re_functionallocation",
           "x-ms-dataverse-type": "StringType",
-          "x-ms-schema-name": "re_Name",
-          "maxLength": 100
+          "x-ms-schema-name": "re_FunctionalLocation",
+          "maxLength": 30
         },
-        "re_oemsnapshot": {
+        "re_isprimary": {
           "type": "string",
-          "title": "OEM Snapshot",
-          "x-ms-dataverse-attribute": "re_oemsnapshot",
-          "x-ms-dataverse-type": "StringType",
-          "x-ms-schema-name": "re_OEMSnapshot",
-          "maxLength": 100
-        },
-        "re_primaryequipment": {
-          "type": "string",
-          "title": "Primary Equipment",
-          "x-ms-dataverse-attribute": "re_primaryequipment",
+          "title": "Is Primary",
+          "x-ms-dataverse-attribute": "re_isprimary",
           "x-ms-dataverse-type": "BooleanType",
-          "x-ms-schema-name": "re_PrimaryEquipment",
+          "x-ms-schema-name": "re_IsPrimary",
+          "required": true,
           "enum": [
             "No",
             "Yes"
@@ -344,26 +332,90 @@
             null,
             null
           ],
-          "x-ms-optionsetmetadataid": "cf1200a7-f2c6-f111-aaaf-00224809b692",
+          "x-ms-optionsetmetadataid": "00b55748-69d0-f111-a05b-000d3a5ae30c",
           "x-ms-isGlobal": false,
-          "x-ms-optionsetdisplayname": "Primary Equipment",
+          "x-ms-optionsetdisplayname": "Is Primary",
           "x-ms-optionSetType": "Boolean"
         },
-        "re_primaryequipmentname": {
+        "re_isprimaryname": {
           "type": "string",
-          "title": "re_primaryequipmentname",
-          "x-ms-dataverse-attribute": "re_primaryequipmentname",
+          "title": "re_isprimaryname",
+          "x-ms-dataverse-attribute": "re_isprimaryname",
           "x-ms-dataverse-type": "VirtualType",
-          "x-ms-schema-name": "re_primaryequipmentName",
-          "x-ms-dataverse-attribute-of": "re_primaryequipment",
+          "x-ms-schema-name": "re_isprimaryName",
+          "x-ms-dataverse-attribute-of": "re_isprimary",
           "x-ms-read-only": true
+        },
+        "re_name": {
+          "type": "string",
+          "title": "Name",
+          "x-ms-dataverse-attribute": "re_name",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_Name",
+          "x-ms-dataverse-primary-name": true,
+          "required": true,
+          "maxLength": 100
+        },
+        "re_oem": {
+          "type": "string",
+          "title": "OEM",
+          "x-ms-dataverse-attribute": "re_oem",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_OEM",
+          "maxLength": 100
+        },
+        "re_repairestimate": {
+          "type": "string",
+          "title": "Repair Estimate",
+          "x-ms-dataverse-attribute": "re_repairestimate",
+          "x-ms-dataverse-type": "LookupType",
+          "x-ms-schema-name": "re_RepairEstimate",
+          "x-ms-dataverse-navigation-properties": [
+            "re_RepairEstimate"
+          ],
+          "required": true
+        },
+        "re_repairestimatename": {
+          "type": "string",
+          "title": "re_repairestimatename",
+          "x-ms-dataverse-attribute": "re_repairestimatename",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_RepairEstimateName",
+          "x-ms-dataverse-attribute-of": "re_repairestimate",
+          "x-ms-read-only": true,
+          "maxLength": 850
         },
         "re_sequence": {
           "type": "string",
           "title": "Sequence",
           "x-ms-dataverse-attribute": "re_sequence",
           "x-ms-dataverse-type": "IntegerType",
-          "x-ms-schema-name": "re_Sequence"
+          "x-ms-schema-name": "re_Sequence",
+          "required": true
+        },
+        "re_soldtoname": {
+          "type": "string",
+          "title": "Sold-to Name",
+          "x-ms-dataverse-attribute": "re_soldtoname",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_SoldtoName",
+          "maxLength": 300
+        },
+        "re_soldtonumber": {
+          "type": "string",
+          "title": "Sold-to Number",
+          "x-ms-dataverse-attribute": "re_soldtonumber",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_SoldtoNumber",
+          "maxLength": 20
+        },
+        "re_verticalcode": {
+          "type": "string",
+          "title": "Vertical Code",
+          "x-ms-dataverse-attribute": "re_verticalcode",
+          "x-ms-dataverse-type": "StringType",
+          "x-ms-schema-name": "re_VerticalCode",
+          "maxLength": 50
         },
         "statecode": {
           "type": "string",
@@ -384,7 +436,7 @@
             null,
             null
           ],
-          "x-ms-optionsetmetadataid": "0d5ed0ed-89f6-ef11-be21-0022480a8031",
+          "x-ms-optionsetmetadataid": "7a4e3615-62cb-f111-a05a-70a8a5b28613",
           "x-ms-isGlobal": false,
           "x-ms-optionsetdisplayname": "Status",
           "x-ms-optionSetType": "State"
@@ -416,7 +468,7 @@
             null,
             null
           ],
-          "x-ms-optionsetmetadataid": "175ed0ed-89f6-ef11-be21-0022480a8031",
+          "x-ms-optionsetmetadataid": "844e3615-62cb-f111-a05a-70a8a5b28613",
           "x-ms-isGlobal": false,
           "x-ms-optionsetdisplayname": "Status Reason",
           "x-ms-optionSetType": "Status"
@@ -462,10 +514,13 @@
         "owneridname",
         "owneridtype",
         "owneridyominame",
-        "owningbusinessunit",
         "owningbusinessunitname",
-        "re_estimateequipment",
+        "re_equipmentnumber",
         "re_estimateequipmentid",
+        "re_isprimary",
+        "re_name",
+        "re_repairestimate",
+        "re_sequence",
         "statecode"
       ]
     }

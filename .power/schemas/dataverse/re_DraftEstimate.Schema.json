@@ -1,0 +1,43 @@
+{
+  "name": "re_DraftEstimate",
+  "title": "re_DraftEstimate",
+  "type": "Microsoft.PowerApps/dataverseOperation",
+  "properties": {
+    "displayName": "re_DraftEstimate",
+    "swagger": {
+      "swagger": "2.0",
+      "info": {
+        "title": "re_DraftEstimate",
+        "version": "1.0"
+      },
+      "basePath": "/api/data/v9.2",
+      "paths": {
+        "/re_DraftEstimate": {
+          "post": {
+            "operationId": "re_DraftEstimate",
+            "parameters": [
+              {
+                "name": "InputJson",
+                "in": "body",
+                "required": true,
+                "type": "string",
+                "x-ms-dataverse-type": "StringType",
+                "x-ms-csdl-type": "Edm.String"
+              }
+            ],
+            "responses": {
+              "200": {
+                "description": "Success",
+                "schema": {
+                  "type": "object",
+                  "x-ms-dataverse-type": "LookupType",
+                  "x-ms-csdl-type": "mscrm.re_DraftEstimateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
