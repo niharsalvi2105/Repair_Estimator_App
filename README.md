@@ -100,6 +100,9 @@ Opportunity details use two labelled field groups, a bounded reading width and
 compact 44px controls. Signed-in salesperson is visually read-only, distinct
 from editable fields. Fields stack on narrow/tablet screens, with 16px mobile
 input text for legibility and to avoid focus zoom in mobile Safari.
+Draft actions use a bordered toolbar with icon/text New and Reload actions and
+a right-aligned primary Save action. On phones, Save occupies its own full-width
+row; existing confirmations, disabled states and save/reload behavior are unchanged.
 
 The header includes an MKO / CKE / CKQ market selector (initially MKO).
 Branches are limited to that market and request lists apply the corresponding

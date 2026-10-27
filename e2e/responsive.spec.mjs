@@ -908,6 +908,19 @@ test('lazy estimator preserves unsaved draft inputs, selections and step across 
   await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
   await page.locator('.footer-actions .button').click()
   await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  await expect(page.locator('.draft-toolbar button svg')).toHaveCount(3)
+  const toolbarLayout = await page.locator('.draft-toolbar').evaluate((toolbar) => {
+    const actions = toolbar.querySelector('.draft-secondary-actions').getBoundingClientRect()
+    const save = toolbar.querySelector('.draft-save-action').getBoundingClientRect()
+    return { actionsRight: actions.right, actionsBottom: actions.bottom, saveLeft: save.left,
+      saveTop: save.top, saveWidth: save.width, actionsWidth: actions.width }
+  })
+  if (viewport.width <= 640) {
+    expect(toolbarLayout.saveTop).toBeGreaterThanOrEqual(toolbarLayout.actionsBottom)
+    expect(Math.abs(toolbarLayout.saveWidth - toolbarLayout.actionsWidth)).toBeLessThan(2)
+  } else {
+    expect(toolbarLayout.saveLeft).toBeGreaterThan(toolbarLayout.actionsRight)
+  }
   const saved = await page.evaluate(() => window.__draftCalls.at(-1))
   expect(saved.title).toBe('Motor repair draft')
   expect(saved.equipment.map((item) => item.id)).toEqual(['test-equipment'])
@@ -1293,6 +1306,24 @@ for (const theme of ['light', 'dark']) {
     expect(await page.evaluate(() => window.__estimateQueries.at(-1).recent)).toBe(false)
     await expect(page.locator('.request-filters select')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeEnabled()
+  })
+}
+
+for (const width of [1440, 1920]) {
+  test(`header search fills available desktop space at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await mockData(page, 'en', 'light')
+    await page.goto('/')
+    await expect(page.locator('.market-control select')).toBeEnabled()
+    const geometry = await page.locator('.topbar').evaluate((header) => {
+      const search = header.querySelector('.header-request-search').getBoundingClientRect()
+      const actions = header.querySelector('.topbar-actions').getBoundingClientRect()
+      return { gap: actions.left - search.right, expectedGap: parseFloat(getComputedStyle(header).columnGap),
+        sameRow: Math.abs(search.top - actions.top) < 2 }
+    })
+    expect(geometry.sameRow).toBe(true)
+    expect(Math.abs(geometry.gap - geometry.expectedGap)).toBeLessThan(2)
+    await checkLayout(page, { width, height: 900 }, 'expanded header search')
   })
 }
 

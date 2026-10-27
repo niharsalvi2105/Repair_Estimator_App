@@ -337,12 +337,13 @@ function NavigationIcon({ name }: { name: string }) {
     quotes: 'M5 3h10l4 4v14H5z M14 3v5h5 M8 12h8 M8 16h5',
     data: 'M4 4h16v16H4z M4 9h16 M4 14h16 M10 4v16',
     reports: 'M4 3v18h17 M8 17v-5 M13 17V7 M18 17V4',
-    settings: 'M4 7h16 M4 17h16 M8 4v6 M16 14v6',
+    settings: 'M9.5 2h5l.5 3 2 1.2 2.8-1 2.5 4.3-2.3 2v1l2.3 2-2.5 4.3-2.8-1-2 1.2-.5 3h-5l-.5-3-2-1.2-2.8 1-2.5-4.3 2.3-2v-1l-2.3-2 2.5-4.3 2.8 1L9 5l.5-3Z',
   }
   return (
     <svg className="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d={paths[name]} />
+      {name === 'settings' && <circle cx="12" cy="12" r="3" />}
     </svg>
   )
 }

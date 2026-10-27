@@ -124,11 +124,25 @@ export default function EstimatorWorkspace({
         <span className="unsaved-badge">{draftVersion && !draftDirty ? `${dt.saved} ${draftNumber}` : t.notSaved}</span>
       </div>
       <div className="draft-toolbar">
-        <button className="button secondary" onClick={newDraft} disabled={draftBusy || !canStart}>{dt.new}</button>
-        {draftVersion && <button className="button secondary" disabled={draftBusy}
-          onClick={() => void openDraft(draftId)}>{dt.reload}</button>}
-        <button className="button primary" disabled={draftBusy || !canWork || !draftComplete}
-          onClick={() => void saveDraft()}>{draftBusy ? dt.saving : dt.save}</button>
+        <div className="draft-secondary-actions">
+          <button className="button tertiary" onClick={newDraft} disabled={draftBusy || !canStart}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+              strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+            {dt.new}
+          </button>
+          {draftVersion && <button className="button tertiary" disabled={draftBusy}
+            onClick={() => void openDraft(draftId)}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+              strokeLinecap="round" strokeLinejoin="round"><path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M5 15a8 8 0 0 0 13 3" /></svg>
+            {dt.reload}
+          </button>}
+        </div>
+        <button className="button primary draft-save-action" disabled={draftBusy || !canWork || !draftComplete}
+          onClick={() => void saveDraft()}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+            strokeLinecap="round" strokeLinejoin="round"><path d="m19 21 2-2V7l-4-4H5L3 5v14l2 2h14ZM7 3v6h10V3M7 21v-8h10v8" /></svg>
+          {draftBusy ? dt.saving : dt.save}
+        </button>
       </div>
       {draftVersion && <p className="field-help">{dt.locked}</p>}
       <fieldset className="draft-workspace" disabled={draftBusy}>

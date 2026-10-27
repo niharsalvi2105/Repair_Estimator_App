@@ -100,7 +100,6 @@
   position: relative;
   flex: 1 1 350px;
   min-width: 0;
-  max-width: 760px;
   gap: 8px;
 }
 
@@ -1561,9 +1560,33 @@
 
 .draft-toolbar {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 18px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.draft-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.draft-toolbar .button { gap: 8px; }
+.draft-toolbar svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.draft-toolbar .button:disabled { cursor: not-allowed; }
+.draft-toolbar .tertiary:disabled { opacity: .5; background: transparent; }
+.draft-toolbar .draft-save-action { margin-left: auto; box-shadow: none; }
+
+@media (max-width: 640px) {
+  .draft-secondary-actions { flex: 1 1 100%; }
+  .draft-secondary-actions > .button { flex: 1; padding-inline: 8px; }
+  .draft-toolbar .draft-save-action { width: 100%; }
 }
 
 .opportunity-group > .input-grid:first-of-type {
