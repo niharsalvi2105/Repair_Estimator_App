@@ -108,16 +108,17 @@ async function mockData(page, language, theme, state = 'records') {
     contentType: 'application/javascript',
     body: `
       const name = 'Long branch name / Succursale de démonstration';
-      export async function getBranches() { return [{
+      const referenceCall = (name) => { (window.__referenceCalls ??= []).push(name); };
+      export async function getBranches() { referenceCall('branches'); return [{
         re_branchid:'test-branch', re_branchname:name, re_branchnumber:'020',
         re_market:126110000, _re_country_value:'test-country',
         _re_currency_value:'test-currency', _re_stateprovince_value:'test-state'
       }] }
-      export async function getDraftReferences() { return {
+      export async function getDraftReferences() { referenceCall('draft'); return {
         states:[{id:'test-state',en:'Test province',fr:'Province test',countryId:'test-country',frenchRequired:false}],
         currencies:[{id:'test-currency',code:window.__currencyCode || 'USD'}]
       } }
-      export async function getRequestReferences() { return {
+      export async function getRequestReferences() { referenceCall('request'); return {
         equipmentTypes:[{id:'test-type',en:'Passenger elevator',fr:'Ascenseur pour passagers'}],
         jobTypes:[{id:'test-job',en:'Equipment repair',fr:'Réparation d’équipement'}]
       } }
@@ -188,6 +189,7 @@ async function checkLayout(page, viewport, stage) {
       }),
     }
   })
+
   expect(metrics.horizontalOverflow, `${stage}: page horizontal overflow: ${metrics.overflowingElements.join(', ')}`).toBe(false)
   expect(metrics.sidebarOverflow, `${stage}: navigation overflow`).toBe(false)
   expect(metrics.sidebarScrollStyle, `${stage}: independent navigation scrolling`).toBe('visible')
@@ -247,7 +249,7 @@ for (const viewport of viewports) {
       await expect(page.locator('.request-record')).toHaveCount(1)
       await expect(page.locator('.dashboard-stats strong').first()).toHaveText('100')
       const logo = page.locator('.brand-logo')
-      await expect(logo).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
+      await expect(logo).toHaveAttribute('src', /kone-logo-small\.jpg/)
       await expect.poll(() => logo.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true)
       await checkLayout(page, viewport, 'dashboard')
 
@@ -325,6 +327,127 @@ for (const state of ['empty', 'error']) {
   })
 }
 
+test('form references are deferred until an estimate opens and reused across workspace navigation', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await expect(page.locator('.recent-card .request-record')).toHaveCount(1)
+  expect(await page.evaluate(() => window.__referenceCalls ?? [])).toEqual([])
+  const logo = page.locator('.brand-logo')
+  await expect(logo).toHaveAttribute('src', /kone-logo-small\.jpg/)
+  expect(await logo.evaluate((image) => image.complete && image.naturalWidth === 576)).toBe(true)
+  await page.getByRole('button', { name: 'New repair request', exact: true }).click()
+  await expect(page.locator('#branch-select')).toBeVisible()
+  await expect(page.locator('#equipment-type option')).toHaveCount(2)
+  await expect.poll(() => page.evaluate(() => window.__referenceCalls?.length)).toBe(3)
+  await page.locator('.main-nav').getByRole('button', { name: 'Dashboard', exact: true }).click()
+  await expect(page.locator('.recent-card .request-record')).toHaveCount(1)
+  await page.getByRole('button', { name: 'New repair request', exact: true }).click()
+  await expect(page.locator('#equipment-type option')).toHaveCount(2)
+  expect(await page.evaluate(() => window.__referenceCalls.toSorted())).toEqual(['branches', 'draft', 'request'])
+})
+
+test('master searches, paging and status changes do not reload table metadata', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await mockMasterData(page)
+  await page.goto('/')
+  await page.locator('.main-nav').getByRole('button', { name: 'Master Data', exact: true }).click()
+  await expect(page.locator('.master-record')).toHaveCount(1)
+  expect(await page.evaluate(() => window.__masterMetadataCalls)).toEqual(['re_repairpackage'])
+  await page.locator('.master-search input').fill('PKG')
+  await expect.poll(() => page.evaluate(() => window.__masterQueries.at(-1)?.search)).toBe('PKG')
+  await expect(page.locator('.master-record')).toHaveCount(1)
+  await page.locator('.master-workspace').getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(page.locator('.request-pagination')).toContainText('Page 2')
+  await expect(page.locator('.master-record')).toHaveCount(1)
+  await page.locator('.master-filters').getByLabel('Status', { exact: true }).selectOption('1')
+  await expect.poll(() => page.evaluate(() => window.__masterQueries.at(-1)?.status)).toBe('1')
+  await expect(page.locator('.master-record')).toHaveCount(1)
+  expect(await page.evaluate(() => window.__masterMetadataCalls)).toEqual(['re_repairpackage'])
+  await page.locator('.master-filters').getByLabel('Table', { exact: true }).selectOption('re_country')
+  await expect(page.locator('.master-record')).toHaveCount(1)
+  expect(await page.evaluate(() => window.__masterMetadataCalls)).toEqual(['re_repairpackage', 're_country'])
+})
+
+test('only the selected master table downloads its compact field definitions', async ({ page }) => {
+  const requests = []
+  page.on('request', (request) => requests.push(decodeURIComponent(request.url())))
+  await mockData(page, 'en', 'light')
+  await mockMasterData(page)
+  await page.goto('/')
+  await expect(page.locator('.recent-card .request-record')).toHaveCount(1)
+  expect(requests.some((url) => url.includes('EstimatorWorkspace.tsx'))).toBe(false)
+  expect(requests.some((url) => url.includes('.Schema.json'))).toBe(false)
+  await page.locator('.main-nav').getByRole('button', { name: 'Package Details', exact: true }).click()
+  await expect(page.locator('.master-record')).toHaveCount(1)
+  const fieldRequests = () => requests.filter((url) => url.includes('.Schema.json') && new URL(url).searchParams.has('master-fields'))
+  expect(fieldRequests()).toHaveLength(1)
+  expect(fieldRequests()[0]).toContain('/repairpackages.Schema.json')
+  expect(requests.some((url) => /(?:repairestimates|securityroles|estimatepackages)\.Schema\.json/.test(url))).toBe(false)
+  await page.locator('.main-nav').getByRole('button', { name: 'Master Data', exact: true }).click()
+  await expect(page.locator('.master-record')).toHaveCount(1)
+  expect(fieldRequests()).toHaveLength(1)
+  await page.locator('.master-filters').getByLabel('Table', { exact: true }).selectOption('re_country')
+  await expect(page.locator('.master-list-toolbar h2')).toHaveText('Countries')
+  expect(fieldRequests()).toHaveLength(2)
+  expect(fieldRequests()[1]).toContain('/countries.Schema.json')
+})
+
+test('lookup options load on focus or search, preserve selected labels and surface retryable errors', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await mockMasterData(page)
+  await page.goto('/')
+  await page.locator('.main-nav').getByRole('button', { name: 'Master Data', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  const country = page.getByLabel('Country', { exact: true })
+  await expect(country.locator('option:checked')).toHaveText('United States')
+  expect(await page.evaluate(() => window.__masterLookupQueries ?? [])).toEqual([])
+  await country.focus()
+  await expect.poll(() => page.evaluate(() => window.__masterLookupQueries?.length)).toBe(1)
+  await expect(country.locator('option:checked')).toHaveText('United States')
+  await page.evaluate(() => { window.__masterError = 'Lookup permission denied' })
+  await page.getByLabel('Search reference: Country', { exact: true }).fill('Can')
+  await expect(page.locator('.master-lookup [role=alert]')).toContainText('Lookup permission denied')
+  await expect(country.locator('option:checked')).toHaveText('United States')
+  await page.evaluate(() => { window.__masterError = '' })
+  await page.locator('.master-lookup').getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.locator('.master-lookup [role=alert]')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => window.__masterLookupQueries.at(-1)?.search)).toBe('Can')
+  expect(await page.evaluate(() => window.__masterWrites ?? [])).toEqual([])
+})
+
+test('compact schema download failures can be retried without an app reload', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await mockMasterData(page)
+  let failed = false
+  await page.route('**/repairpackages.Schema.json*', (route) => {
+    if (new URL(route.request().url()).searchParams.has('master-fields') && !failed) {
+      failed = true
+      return route.abort()
+    }
+    return route.continue()
+  })
+  await page.goto('/')
+  await page.locator('.main-nav').getByRole('button', { name: 'Package Details', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Dataverse operation failed.')
+  await expect(page.locator('.master-record')).toHaveCount(0)
+  await page.getByRole('alert').getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.locator('.master-record')).toHaveCount(1)
+})
+
+test('lazy workspace failures show an explicit error and can be retried', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  let failed = false
+  await page.route('**/src/EstimatorWorkspace.tsx*', (route) => {
+    if (!failed) { failed = true; return route.abort() }
+    return route.continue()
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New repair request', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Could not load this workspace.')
+  await page.getByRole('alert').getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.locator('#estimate-title')).toBeVisible()
+})
+
 for (const theme of ['light', 'dark']) {
   test(`initials avatar: ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 })
@@ -356,11 +479,68 @@ async function changeLanguageInSettings(page, language) {
   await page.getByRole('button', { name: /^(Return to workspace|Retour à l’espace de travail)$/ }).click()
 }
 
+for (const scenario of [
+  { names: ['Repair Estimator - Admin'], label: 'Admin', master: true, create: true, read: true },
+  { names: ['Repair Estimator - Estimator'], label: 'Estimator', master: false, create: true, read: true },
+  { names: ['Repair Estimator - Estimator', 'Repair Estimator - Admin'], label: 'Admin', master: true, create: true, read: true },
+  { names: ['System Administrator'], label: 'Access not verified', master: false, create: false, read: false },
+  { names: ['Repair Estimator - Estimator'], label: 'Estimator', master: false, create: false, read: true },
+  { names: ['Repair Estimator - Admin'], label: 'Admin', master: true, create: false, read: false },
+  { names: [], label: 'Access not verified', master: false, create: false, read: false, error: true },
+]) {
+  test(`live role startup: ${scenario.names.join('+') || 'role lookup failure'} read=${scenario.read} create=${scenario.create}`, async ({ page }) => {
+    await mockData(page, 'en', 'light')
+    await page.unroute('**/src/data/sessionRepository.ts*')
+    await page.route('**/@microsoft_power-apps_app.js*', (route) => route.fulfill({
+      contentType: 'application/javascript',
+      body: `export async function getContext() { return {user:{objectId:'directory-user',
+        systemUserId:'11111111-1111-1111-1111-111111111111',fullName:'Role Test User'}} }`,
+    }))
+    await page.route('**/src/generated/services/RetrieveAadUserRolesService.ts*', (route) => route.fulfill({
+      contentType: 'application/javascript',
+      body: `export class RetrieveAadUserRolesService { static async RetrieveAadUserRoles(id) {
+        window.__roleLookupId=id;
+        return ${scenario.error ? "{success:false,error:{message:'Role lookup denied',status:403}}" :
+          JSON.stringify({ success: true, data: { value: scenario.names.map((name) => ({ name })) } })};
+      } }`,
+    }))
+    await page.route('**/src/generated/services/Re_repairestimatesService.ts*', (route) => route.fulfill({
+      contentType: 'application/javascript',
+      body: `export class Re_repairestimatesService { static async getMetadata() {
+        return {success:true,data:{Privileges:[{PrivilegeType:2,Name:'actualReadPrivilege'},
+          {PrivilegeType:1,Name:'actualCreatePrivilege'}]}};
+      } }`,
+    }))
+    await page.route('**/src/generated/services/RetrieveUserPrivilegeByPrivilegeNameService.ts*', (route) => route.fulfill({
+      contentType: 'application/javascript',
+      body: `export class RetrieveUserPrivilegeByPrivilegeNameService {
+        static async RetrieveUserPrivilegeByPrivilegeName(user,name) {
+          (window.__privilegeChecks ??= []).push({user,name});
+          const granted=name==='actualReadPrivilege' ? ${scenario.read} : ${scenario.create};
+          return {success:true,data:{RolePrivileges:granted ? [{PrivilegeId:'privilege',Depth:0}] : []}};
+        }
+      }`,
+    }))
+    await page.goto('/')
+    await expect.poll(() => page.evaluate(() => window.__roleLookupId)).toBe('directory-user')
+    if (scenario.error) await expect(page.getByRole('alert')).toContainText('Role lookup denied')
+    else await expect(page.locator('.role-label')).toHaveText(scenario.label)
+    await expect(page.locator('.main-nav').getByRole('button', { name: 'Master Data', exact: true })).toHaveCount(scenario.master ? 1 : 0)
+    const start = page.locator('.main-nav').getByRole('button', { name: 'New Request', exact: true })
+    if (scenario.create && scenario.read) await expect(start).toBeEnabled()
+    else await expect(start).toBeDisabled()
+    await expect(page.getByText('Local testing: Admin UI override is active.', { exact: false })).toHaveCount(0)
+    if (!scenario.names.some((name) => name.startsWith('Repair Estimator - '))) {
+      expect(await page.evaluate(() => window.__privilegeChecks || [])).toEqual([])
+    }
+  })
+}
+
 async function mockMasterData(page) {
   await page.route('**/src/data/masterDataRepository.ts*', (route) => route.fulfill({
     contentType: 'application/javascript',
     body: `
-      import { tableByName, buildMasterChanges } from '/src/data/masterDataSchema.ts';
+      import { loadMasterTable, buildMasterChanges } from '/src/data/masterDataSchema.ts';
       const id = '22222222-2222-2222-2222-222222222222';
       const reference = '33333333-3333-3333-3333-333333333333';
       function row(table) { return { [table.id]:id, [table.primary]:'PKG001',
@@ -371,8 +551,9 @@ async function mockMasterData(page) {
         statecode:0, ...window.__masterSaved }; }
       function fail() { if (window.__masterError) throw new Error(window.__masterError); }
       export async function getMasterMetadata(name) {
+        (window.__masterMetadataCalls ??= []).push(name);
         fail();
-        const table = tableByName(name);
+        const table = await loadMasterTable(name);
         const allowed = ['re_packagenumber','re_packagenameen','re_packagenamefr','re_proposalscopeen',
           're_proposalscopefr','re_mechanichours','re_materialmisctaxcost','re_country'];
         return { ...table, fields:table.fields.filter((f) => name !== 're_repairpackage' || allowed.includes(f.name))
@@ -381,8 +562,11 @@ async function mockMasterData(page) {
       export async function listMasterRecords(name, search, status, skipToken) {
         window.__masterQueries ??= []; window.__masterQueries.push({name,search,status,skipToken});
         fail();
-        const table = tableByName(name);
-        return { records:window.__masterEmpty ? [] : [row(table)],skipToken:skipToken ? undefined : 'master-next' };
+        const table = await loadMasterTable(name);
+        return { records:window.__masterEmpty ? [] : Array.from({length:window.__masterRecordCount || 1}, (_, index) =>
+          ({...row(table),[table.id]:index ? id.slice(0,-1)+index : id,
+            ...(window.__masterLongName ? {re_packagenameen:window.__masterLongName} : {})})),
+          skipToken:skipToken ? undefined : 'master-next' };
       }
       export async function getMasterRecord(table, recordId) {
         fail();
@@ -390,7 +574,8 @@ async function mockMasterData(page) {
         return {...row(table),[table.id]:recordId};
       }
       export async function searchMasterLookup(entitySet, search) {
-        fail(); return {records:[{id:reference,label:'United States'}],more:true};
+        (window.__masterLookupQueries ??= []).push({entitySet,search});
+        fail(); return {records:window.__lookupEmpty ? [] : [{id:reference,label:'United States'}],more:true};
       }
       export async function saveMasterRecord(table, recordId, values, original) {
         window.__masterWrites ??= [];
@@ -407,6 +592,39 @@ async function mockMasterData(page) {
       }
     `,
   }))
+}
+
+for (const width of [320, 768, 1440]) {
+  for (const language of ['en', 'fr']) {
+    test(`compact master and package lists at ${width}px ${language}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 })
+      await mockData(page, language, language === 'fr' ? 'dark' : 'light')
+      await mockMasterData(page)
+      await page.addInitScript(() => {
+        window.__masterRecordCount = 5
+        window.__masterLongName = 'CAB: F/I replacement cab fan: 14 inch diameter grill; 6 inches high, 2 speed fan or similar; does not include battery backup for observation cars.'
+      })
+      await page.goto('/')
+      const nav = page.locator('.main-nav')
+      for (const label of language === 'fr' ? ['Détails des forfaits', 'Données principales'] : ['Package Details', 'Master Data']) {
+        await nav.getByRole('button', { name: label, exact: true }).click()
+        await expect(page.locator('.master-record')).toHaveCount(5)
+        await checkLayout(page, { width, height: 900 }, label)
+        if (width > 1000) {
+          await expect(page.locator('.master-column-headings')).toBeVisible()
+          for (const record of await page.locator('.master-record').all()) {
+            const rect = await record.boundingBox()
+            expect(rect.height).toBeLessThan(150)
+            const description = await record.locator('.master-record-description').boundingBox()
+            const status = await record.locator('.master-status').boundingBox()
+            expect(description.x + description.width).toBeLessThanOrEqual(status.x)
+          }
+        } else await expect(page.locator('.master-column-headings')).toBeHidden()
+        await page.evaluate(() => window.scrollTo(0, 0))
+        await page.screenshot({ path: testInfo.outputPath(label === 'Master Data' || label === 'Données principales' ? 'master-list.png' : 'package-list.png'), fullPage: true })
+      }
+    })
+  }
 }
 
 for (const role of ['estimator', 'admin']) {
@@ -485,6 +703,7 @@ for (const width of [320, 1366]) {
     await page.getByLabel('Proposal Scope (EN)', { exact: true }).fill('New scope')
     await page.getByLabel('Mechanic Hours', { exact: true }).fill('3.5')
     await page.getByLabel('Material/Misc/Tax Cost', { exact: true }).fill('200')
+    await page.getByLabel('Country', { exact: true }).focus()
     await page.getByLabel('Country', { exact: true }).selectOption('33333333-3333-3333-3333-333333333333')
     await checkLayout(page, { width, height: 768 }, 'master create form')
     await page.evaluate(() => window.scrollTo(0, 0))
@@ -544,12 +763,13 @@ test('master repository uses registered caller SDK sources, bounded queries and 
   await page.route('**/@microsoft_power-apps_data.js*', (route) => route.fulfill({
     contentType: 'application/javascript',
     body: `
-      import { tableByName } from '/src/data/masterDataSchema.ts';
+      import { loadMasterTable } from '/src/data/masterDataSchema.ts';
       const log = (method, args) => { (window.__masterSdkCalls ??= []).push({method,args}); };
       export function getClient() { return {
         async executeAsync(request) {
           log('metadata', request);
-          const table = tableByName(request.dataverseRequest.parameters.tableName);
+          if (window.__sdkMetadataDenied) return {success:false,error:{message:'Metadata denied',status:403}};
+          const table = await loadMasterTable(request.dataverseRequest.parameters.tableName);
           return {success:true,data:{
             Attributes:table.fields.map((field) => ({LogicalName:field.name,IsValidForRead:true,
               IsValidForCreate:!field.readOnly,IsValidForUpdate:!field.readOnly})),
@@ -574,7 +794,21 @@ test('master repository uses registered caller SDK sources, bounded queries and 
   const result = await page.evaluate(async () => {
     const schema = await import('/src/data/masterDataSchema.ts')
     const repository = await import('/src/data/masterDataRepository.ts')
-    const table = await repository.getMasterMetadata('re_repairpackage', 'en')
+    const [table, ...cached] = await Promise.all([
+      repository.getMasterMetadata('re_repairpackage', 'en'),
+      repository.getMasterMetadata('re_repairpackage', 'en'),
+      repository.getMasterMetadata('re_repairpackages', 'en'),
+    ])
+    const reusedMetadata = cached.every((entry) => entry === table)
+    const firstMetadataCalls = window.__masterSdkCalls.filter((call) => call.method === 'metadata').length
+    await repository.getMasterMetadata('re_repairpackage', 'fr')
+    await repository.getMasterMetadata('re_repairpackage', 'en', true)
+    window.__sdkMetadataDenied = true
+    let metadataDenied
+    try { await repository.getMasterMetadata('re_country', 'en') }
+    catch (error) { metadataDenied = error.status }
+    window.__sdkMetadataDenied = false
+    await repository.getMasterMetadata('re_country', 'en')
     const values = Object.fromEntries(table.fields.filter((f) => !f.readOnly).map((field) => [
       field.name, !field.required ? '' : field.kind === 'LookupType' ? '33333333-3333-3333-3333-333333333333'
         : field.kind === 'BooleanType' ? '0' : field.kind === 'PicklistType' ? String(field.options[0].value)
@@ -606,12 +840,17 @@ test('master repository uses registered caller SDK sources, bounded queries and 
     let rejectedTable = false
     try { await repository.listMasterRecords('re_repairestimate') }
     catch { rejectedTable = true }
-    return { errors, denied, rejectedTable, tables: schema.masterTables.length, calls: window.__masterSdkCalls }
+    return { errors, denied, rejectedTable, reusedMetadata, firstMetadataCalls, metadataDenied,
+      tables: schema.masterTables.length, calls: window.__masterSdkCalls }
   })
   expect(result.errors).toEqual(Array(8).fill(true))
   expect(result.denied).toBe(403)
   expect(result.rejectedTable).toBe(true)
   expect(result.tables).toBe(21)
+  expect(result.reusedMetadata).toBe(true)
+  expect(result.firstMetadataCalls).toBe(1)
+  expect(result.metadataDenied).toBe(403)
+  expect(result.calls.filter((call) => call.method === 'metadata')).toHaveLength(5)
   const list = result.calls.find((call) => call.method === 'list').args
   expect(list[0]).toBe('re_repairpackages')
   expect(list[1]).toMatchObject({ maxPageSize: 25, skipToken: 'page-two' })
@@ -655,6 +894,26 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }) {
   await page.locator('#customer-name').fill('Draft customer')
   await page.locator('#customer-email').fill('draft@example.invalid')
 }
+
+test('lazy estimator preserves unsaved draft inputs, selections and step across workspace navigation', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.main-nav').getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Return to workspace', exact: true }).click()
+  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  await expect(page.locator('[aria-current=step]')).toBeFocused()
+  for (let index = 0; index < 4; index++) await page.locator('.form-footer > button').click()
+  await expect(page.locator('#estimate-title')).toHaveValue('Motor repair draft')
+  await expect(page.locator('#branch-select')).toHaveValue(/020/)
+  for (let index = 0; index < 4; index++) await next(page)
+  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  const saved = await page.evaluate(() => window.__draftCalls.at(-1))
+  expect(saved.title).toBe('Motor repair draft')
+  expect(saved.equipment.map((item) => item.id)).toEqual(['test-equipment'])
+  expect(saved.packages.map((item) => item.id)).toEqual(['test-package'])
+  expect(saved.fields).toEqual(expect.arrayContaining([{ key: 're_sellprice', value: '1500' }]))
+})
 
 for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 }]) {
   test(`draft save, update, new and reopen at ${viewport.width}px`, async ({ page }) => {
@@ -1022,6 +1281,7 @@ for (const theme of ['light', 'dark']) {
     await page.addInitScript(() => { window.__estimateRecordCount = 6 })
     await page.goto('/')
     await expect(page.locator('.recent-card .request-record')).toHaveCount(5)
+    expect(await page.evaluate(() => window.__estimateQueries.at(-1).recent)).toBe(true)
     await expect(page.locator('.recent-card .request-filters')).toHaveCount(0)
     await expect(page.locator('.recent-card .request-pagination')).toHaveCount(0)
     await expect(page.locator('.user-avatar')).toHaveCSS('background-color', 'rgb(20, 80, 245)')
@@ -1030,6 +1290,7 @@ for (const theme of ['light', 'dark']) {
     await checkLayout(page, page.viewportSize(), 'compact recent requests')
     await page.getByRole('button', { name: /View requests/ }).click()
     await expect(page.locator('.request-record')).toHaveCount(6)
+    expect(await page.evaluate(() => window.__estimateQueries.at(-1).recent)).toBe(false)
     await expect(page.locator('.request-filters select')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeEnabled()
   })
@@ -1081,7 +1342,7 @@ for (const width of [320, 1366]) {
     await expect(page.locator('.request-pagination > span')).toContainText('1')
     await expect(status).toHaveValue('126110000')
     await expect.poll(() => page.evaluate(() => window.__estimateQueries.at(-1))).toEqual({
-      search: 'Building', status: '126110000', market: 126110000,
+      search: 'Building', status: '126110000', market: 126110000, recent: false, skipToken: undefined,
     })
     await search.fill('')
     await search.press('Enter')

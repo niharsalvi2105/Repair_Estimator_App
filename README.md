@@ -35,7 +35,8 @@ in an indefinite loading state. A CLI sign-in is not a browser sign-in.
   exact privilege names retrieved from the estimate table's `Privileges`
   metadata, never names constructed from its logical name.
 - Repair Requests and the dashboard request panel: server-filtered
-  active estimates, 25 records per page using SDK continuation tokens. The
+  active estimates. Repair Requests uses 25 records per page with SDK
+  continuation tokens; the dashboard requests only the five latest rows. The
   server enforces which records are accessible; the UI does not fetch the entire
   estimate table or calculate organization-wide metrics from a page. Drafts have
   an Open action; reopening requires the draft API described below.
@@ -43,6 +44,33 @@ in an indefinite loading state. A CLI sign-in is not a browser sign-in.
   debounced equipment and standard-package searches. French reference labels
   fall back to English. Province/state, branch currency and explicit estimate
   title are included in draft capture.
+  Form references load only when a new or existing estimate is opened, then
+  remain available for subsequent requests in the same app session. Dashboard,
+  Settings and catalog navigation do not initiate those reference reads.
+- Master-data metadata: normalized table definitions and in-flight metadata
+  requests are reused for the current page lifetime, keyed by approved table and
+  UI language (at most 21 tables x 2 languages). Failed loads are evicted and can
+  be retried. Search, status and paging query records without refetching metadata.
+  Reload the app after schema or permission changes; backend permissions remain
+  authoritative for every operation. No operational records are persisted locally.
+- Master schemas: the Vite build projects only the 21 approved master schemas
+  into a compact inventory and separate on-demand field-definition chunks.
+  Transaction/process/security-role schemas and unused generated schema properties
+  are not included in the workspace bundle. Projections are derived from the
+  current generated schemas during development/build, not maintained by hand;
+  field requirements, choices, lengths and navigation hints are preserved.
+  Only the selected table's fields are loaded, with failed loads evicted for retry.
+- Admin lookups fetch bounded options only after the user focuses or searches
+  that lookup, not when every form field mounts. Selected reference labels stay
+  visible while options load, fail, or are filtered out.
+- The estimator view, including request fields, branch selection and pricing
+  summary, is lazy-loaded independently from the dashboard. Draft values,
+  selections, step, concurrency version and unsaved guards remain in the parent
+  app state when the view unmounts. Settings returns to the same draft; New
+  Request still intentionally starts a separate draft after confirmation.
+  Dirty snapshots are recalculated only when draft data changes, not for unrelated
+  header/theme/loading updates. Workspace import/render failures have an explicit
+  retry state without resetting the parent draft.
 - Dataverse errors and access-check failures are surfaced. Unknown users,
   missing app roles and failed permission checks do not enable request creation
   or administration. Permission checks are cached for the current app session;
@@ -55,9 +83,10 @@ CLI, not edited by hand.
 
 Desktop navigation uses a compact 240px sidebar, reduced branding, 44px action
 targets and consistent outline SVG icons. Narrow screens retain bottom navigation.
-The supplied JPEG logo is imported from application assets and embedded by Vite
-as a data URL, rather than requested from a root-relative public URL. This keeps
-it available under the published Power Apps hosting path as well as locally.
+The supplied JPEG logo has a 576 x 324 derivative for the sidebar, preserving the
+original artwork. Vite emits it as a separate hashed asset rather than embedding
+base64 in startup JavaScript. The relative build base preserves the published
+Power Apps hosting path; the existing transparency filter is unchanged.
 Navigation has no independent scroll container. Only widths up to 640px use
 compact bottom navigation for the three available workspaces. Wider windows
 keep left navigation with icons and labels horizontally aligned, including on
@@ -197,18 +226,21 @@ column in this environment. Branch records are loaded using continuation tokens.
 
 ## Two-role setup (administrator action still required)
 
-### Temporary local Admin testing
+### Live role integration
 
-`.env.development` currently sets `VITE_DEV_ADMIN_OVERRIDE=true` at the user's
-request. In development only, this skips app-role discovery and selects the
-Admin UI role after verifying the signed-in Power Apps/Dataverse identity.
-Read/Create privilege checks and all Dataverse backend enforcement remain
-active. A visible banner identifies this mode. It does not enable unavailable
-write operations or provide a standalone localhost identity.
+`.env.development` sets `VITE_DEV_ADMIN_OVERRIDE=false`. Local and published
+apps resolve the signed-in user's assigned Dataverse roles using
+`RetrieveAadUserRoles`, then check effective estimate Read/Create privileges.
+The Admin role enables Master Data; both roles enable Package Details and
+Settings. Creating a role alone does not assign it to users: assign the
+appropriate role directly or through a supported Dataverse team, and share
+the Code App separately. Reopen the app after changing assignments because
+access is loaded at session startup.
 
-Production builds ignore the override even if the flag is supplied. To restore
-real role discovery locally, set the flag to `false` (or remove it) and restart
-the development server. Remove this temporary setting before role-based UAT.
+Restart the development server after changing the environment setting. An
+explicit temporary `true` still enables development-only Admin UI testing with
+a visible warning; production builds always ignore that override. Neither
+mode bypasses Dataverse table/record permissions or supplies a localhost identity.
 
 The app recognizes exactly two dedicated Dataverse security-role names:
 
@@ -223,7 +255,8 @@ created or assigned by this code change. An unrelated `Admin`, `Estimator` or
 If both app roles are assigned, Admin is the displayed role. Users can receive
 the roles through Dataverse teams linked to Entra security groups.
 
-Create the roles in the intended environment and solution. Proposed least-
+The roles already exist in the intended environment. Verify their privileges
+and assign them to the intended users/teams. Proposed least-
 privilege starting point, to validate with representative accounts:
 
 | Area | Estimator | Admin |
@@ -350,6 +383,11 @@ Opening a package retrieves its available scope, hours, material values,
 classification, effective dates, version and reference details. French names
 fall back to English. Values are read from Dataverse, never demonstration data.
 No create/edit/state actions exist in the catalog, including for admins.
+Package and master-data lists use compact aligned desktop columns, readable
+mobile cards, neutral filter toolbars and green/gray active-state badges.
+Record details separate long scope text into full-width panels; edit forms keep
+scope fields full-width and actions separate from the record header. No fields,
+authorization rules, query scope or save semantics change with this presentation.
 
 **Master Data** is an admin-only workspace for the 21 v3.2 business master/pricing
 tables: Country, State/Province, Branch, Sales Office, Margin Group, Equipment

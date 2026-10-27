@@ -8,8 +8,9 @@ export type MasterField = {
 }
 export type MasterTable = {
   logicalName: string; entitySet: string; id: string; primary: string
-  en: string; fr: string; fields: MasterField[]
+  en: string; fr: string; nameFields: string[]; fields: MasterField[]
 }
+type MasterTableSummary = Omit<MasterTable, 'fields'>
 
 const definitions = [
   ['countries', 'Countries', 'Pays'],
@@ -35,53 +36,57 @@ const definitions = [
   ['pricingparameters', 'Pricing parameters', 'Paramètres de tarification'],
 ] as const
 
-const schemas = import.meta.glob('../../.power/schemas/dataverse/*.Schema.json', { eager: true, import: 'default' })
+const summaries = import.meta.glob<Pick<MasterTableSummary, 'logicalName' | 'entitySet' | 'id' | 'primary' | 'nameFields'>>(
+  '../../.power/schemas/dataverse/{countries,state_provinces,branches,salesoffices,margingroups,equipmenttypes,equipment,customerverticals,jobtypes,packagecategories,repairpackages,scopelibraries,laborrates,jobsizebands,redundancybands,oembandrules,bandmatrices,marginrules,situationaladjustments,incentiverates,pricingparameters}.Schema.json',
+  { eager: true, import: 'default', query: '?master-summary' },
+)
+const fieldLoaders = import.meta.glob<MasterField[]>(
+  '../../.power/schemas/dataverse/{countries,state_provinces,branches,salesoffices,margingroups,equipmenttypes,equipment,customerverticals,jobtypes,packagecategories,repairpackages,scopelibraries,laborrates,jobsizebands,redundancybands,oembandrules,bandmatrices,marginrules,situationaladjustments,incentiverates,pricingparameters}.Schema.json',
+  { import: 'default', query: '?master-fields' },
+)
+const loadedTables = new Map<string, Promise<MasterTable>>()
 export function object(value: unknown): MasterRow {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Dataverse metadata or record.')
   return value as MasterRow
 }
 
-export const masterTables: MasterTable[] = definitions.map(([file, en, fr]) => {
-  const schema = object(schemas[`../../.power/schemas/dataverse/${file}.Schema.json`])
-  const item = object(object(schema.schema).items)
-  return {
-    logicalName: String(schema.name), entitySet: String(item['x-ms-dataverse-entityset']),
-    id: String(item['x-ms-dataverse-primary-id']), primary: String(item['x-ms-dataverse-primary-name']), en, fr,
-    fields: Object.entries(object(item.properties))
-      .filter(([name, value]) => name.startsWith('re_') && !object(value)['x-ms-dataverse-attribute-of']
-        && !object(value)['x-ms-dataverse-primary-id'])
-      .map(([name, value]) => {
-        const field = object(value)
-        const labels = Array.isArray(field.enum) ? field.enum : []
-        const values = Array.isArray(field['x-ms-enum-values']) ? field['x-ms-enum-values'] : []
-        const navigation = field['x-ms-dataverse-navigation-properties']
-        return {
-          name, label: String(field.title), kind: String(field['x-ms-dataverse-type']),
-          required: field.required === true, readOnly: field['x-ms-read-only'] === true,
-          maxLength: typeof field.maxLength === 'number' ? field.maxLength : undefined,
-          options: values.map((v, i) => ({ value: Number(v), label: String(labels[i]) })),
-          navigation: Array.isArray(navigation) ? String(navigation[0]) : undefined,
-          create: !field['x-ms-read-only'], update: !field['x-ms-read-only'],
-        }
-      }),
-  }
+export const masterTables: MasterTableSummary[] = definitions.map(([file, en, fr]) => {
+  const summary = summaries[`../../.power/schemas/dataverse/${file}.Schema.json`]
+  if (!summary) throw new Error(`Missing approved master schema: ${file}`)
+  return { ...summary, en, fr }
 })
 
-export function tableByName(name: string): MasterTable {
+export function tableByName(name: string): MasterTableSummary {
   const table = masterTables.find((entry) => entry.logicalName === name || entry.entitySet === name)
   if (!table) throw new Error('This table is not in the approved master-data inventory.')
   return table
+}
+
+export function loadMasterTable(name: string): Promise<MasterTable> {
+  const summary = tableByName(name)
+  const cached = loadedTables.get(summary.logicalName)
+  if (cached) return cached
+  const definition = definitions.find(([, en]) => en === summary.en)
+  if (!definition) throw new Error(`Missing master definition: ${name}`)
+  const load = fieldLoaders[`../../.power/schemas/dataverse/${definition[0]}.Schema.json`]
+  if (!load) throw new Error(`Missing master fields: ${name}`)
+  const request = load().then((fields) => ({ ...summary, fields })).catch((reason: unknown) => {
+    loadedTables.delete(summary.logicalName)
+    throw reason
+  })
+  loadedTables.set(summary.logicalName, request)
+  return request
 }
 
 export function fieldKey(field: MasterField): string {
   return field.kind === 'LookupType' ? `_${field.name}_value` : field.name
 }
 
-export function masterNameFields(table: MasterTable): string[] {
-  return table.fields.filter((field) => /(?:name|jobtype)(?:en|fr)$/.test(field.name) && field.kind === 'StringType').map((field) => field.name)
+export function masterNameFields(table: MasterTableSummary): string[] {
+  return table.nameFields
 }
 
-export function masterRecordLabel(table: MasterTable, row: MasterRow, language: Language): string {
+export function masterRecordLabel(table: MasterTableSummary, row: MasterRow, language: Language): string {
   const names = masterNameFields(table)
   const english = names.find((name) => name.endsWith('en'))
   const french = names.find((name) => name.endsWith('fr'))

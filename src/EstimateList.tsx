@@ -55,7 +55,7 @@ function PagedEstimateList({ language, market, onOpen, busy = false, search = ''
     const timer = setTimeout(() => {
       setLoading(true)
       setError(undefined)
-      void listEstimates({ search, status, skipToken, market })
+      void listEstimates({ search, status, skipToken, market, recent })
         .then((page) => {
           if (cancelled) return
           setRecords(page.records)
@@ -71,7 +71,7 @@ function PagedEstimateList({ language, market, onOpen, busy = false, search = ''
         .finally(() => { if (!cancelled) setLoading(false) })
     }, 300)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [search, status, skipToken, retry, market])
+  }, [search, status, skipToken, retry, market, recent])
 
   const statuses: Record<number, string> = {
     126110000: t.draft, 126110001: t.pending, 126110002: t.submitted,

@@ -18,6 +18,8 @@ const copy = {
     reload: 'Reload record', noValue: 'Not set', readOnly: 'Read-only', dirty: 'Unsaved changes',
     notCreated: 'The record does not exist. Review the inputs and retry using the same record ID.',
     units: 'Numeric configuration values use their stored Dataverse units. Fractional rates stay fractional (for example, 0.05 = 5%); no automatic percentage conversion is applied.',
+    record: 'Record', description: 'Description', action: 'Action', page: 'Page', shown: 'records on this page',
+    catalog: 'PACKAGE CATALOG', administration: 'ADMINISTRATION', recordDetails: 'Record details',
   },
   fr: {
     title: 'Données de référence', packages: 'Détails des forfaits', hint: 'Gérez les données de référence et de tarification. Les autorisations Dataverse s’appliquent.',
@@ -33,6 +35,8 @@ const copy = {
     reload: 'Recharger l’enregistrement', noValue: 'Non renseigné', readOnly: 'Lecture seule', dirty: 'Modifications non enregistrées',
     notCreated: 'L’enregistrement n’existe pas. Vérifiez les valeurs et réessayez avec le même identifiant.',
     units: 'Les nombres utilisent les unités stockées dans Dataverse. Les taux restent fractionnaires (exemple : 0,05 = 5 %) ; aucune conversion automatique en pourcentage.',
+    record: 'Enregistrement', description: 'Description', action: 'Action', page: 'Page', shown: 'enregistrements sur cette page',
+    catalog: 'CATALOGUE DES FORFAITS', administration: 'ADMINISTRATION', recordDetails: 'Détails de l’enregistrement',
   },
 }
 const reasonMessage = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
@@ -46,7 +50,10 @@ function LookupField({ field, value, selectedLabel, onChange, language, disabled
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const [requested, setRequested] = useState(false)
+  const [selectedOption, setSelectedOption] = useState<{ id: string; label: string }>()
   useEffect(() => {
+    if (!requested || disabled) return
     let cancelled = false
     const timer = setTimeout(() => {
       if (!field.target) { setError(`${field.label}: lookup metadata missing.`); return }
@@ -56,19 +63,26 @@ function LookupField({ field, value, selectedLabel, onChange, language, disabled
         .finally(() => { if (!cancelled) setBusy(false) })
     }, 300)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [search, field.target, field.label, attempt])
+  }, [search, field.target, field.label, attempt, requested, disabled])
   return <div className="master-lookup">
-    {value && <p className="field-help">{selectedLabel || result?.records.find((row) => row.id === value)?.label || value}</p>}
-    <label className="field-label">{t.lookup}: {field.label}
-      <input className="text-input" value={search} disabled={disabled} maxLength={150} onChange={(e) => setSearch(e.target.value)} />
+    <label className="field-label"><span className="sr-only">{t.lookup}: {field.label}</span>
+      <input className="text-input" value={search} disabled={disabled} maxLength={150}
+        onFocus={() => setRequested(true)}
+        onChange={(e) => { setRequested(true); setSearch(e.target.value) }} />
     </label>
     {busy && <p role="status">{t.loading}</p>}
     {error && <div role="alert" className="error-box">{error}<button type="button" className="button secondary"
       onClick={() => setAttempt((n) => n + 1)}>{t.retry}</button></div>}
     <select id={`master-${field.name}`} className="text-input" aria-label={field.label}
-      value={value} required={field.required} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+      onFocus={() => setRequested(true)}
+      value={value} required={field.required} disabled={disabled} onChange={(e) => {
+        setSelectedOption({ id: e.target.value, label: e.target.selectedOptions[0]?.textContent ?? e.target.value })
+        onChange(e.target.value)
+      }}>
       <option value="">{t.choose}</option>
-      {value && !result?.records.some((r) => r.id === value) && <option value={value}>{selectedLabel || value}</option>}
+      {value && !result?.records.some((r) => r.id === value) && <option value={value}>
+        {selectedLabel || (selectedOption?.id === value ? selectedOption.label : value)}
+      </option>}
       {result?.records.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
     </select>
     {result?.more && <p className="field-help">{t.more}</p>}
@@ -103,14 +117,20 @@ export function MasterDataWorkspace({ language, admin, catalog = false, onDirtyC
   const [editor, setEditor] = useState<{ id: string; row?: MasterRow }>()
   const [values, setValues] = useState<Record<string, string>>({})
   const [baseline, setBaseline] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [listLoading, setLoading] = useState(true)
+  const [metadataLoading, setMetadataLoading] = useState(true)
+  const [metadataError, setMetadataError] = useState('')
+  const [metadataAttempt, setMetadataAttempt] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [uncertain, setUncertain] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const inFlight = useRef(false)
+  const loading = listLoading || metadataLoading
   const dirty = !catalog && Boolean(editor && JSON.stringify(values) !== baseline)
+  const displayFields = table ? [...table.fields].sort((a, b) =>
+    Number(a.kind === 'MemoType') - Number(b.kind === 'MemoType')) : []
   useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
   useEffect(() => { onBusyChange(busy) }, [busy, onBusyChange])
   const skipToken = tokens[tokens.length - 1]
@@ -118,18 +138,30 @@ export function MasterDataWorkspace({ language, admin, catalog = false, onDirtyC
     if (!admin && !catalog) return
     let cancelled = false
     const timer = setTimeout(() => {
+      setMetadataLoading(true); setMetadataError(''); setTable(undefined)
+      void getMasterMetadata(name, language, metadataAttempt > 0)
+        .then((metadata) => { if (!cancelled) setTable(metadata) })
+        .catch((reason: unknown) => { if (!cancelled) setMetadataError(reasonMessage(reason)) })
+        .finally(() => { if (!cancelled) setMetadataLoading(false) })
+    }, 0)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [name, language, metadataAttempt, admin, catalog])
+  useEffect(() => {
+    if (!admin && !catalog) return
+    let cancelled = false
+    const timer = setTimeout(() => {
       setLoading(true); setError(''); setPage(undefined)
-      void Promise.all([getMasterMetadata(name, language), listMasterRecords(name, search, status, skipToken)])
-        .then(([metadata, rows]) => {
+      void listMasterRecords(name, search, status, skipToken)
+        .then((rows) => {
           if (cancelled) return
           if (rows.skipToken && tokens.includes(rows.skipToken)) throw new Error('Dataverse returned a repeated master-data paging token.')
-          setTable(metadata); setPage(rows)
+          setPage(rows)
         })
         .catch((reason: unknown) => { if (!cancelled) setError(reasonMessage(reason)) })
         .finally(() => { if (!cancelled) setLoading(false) })
     }, 300)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [name, search, status, skipToken, tokens, attempt, language, admin, catalog])
+  }, [name, search, status, skipToken, tokens, attempt, admin, catalog])
 
   if (!admin && !catalog) return <p role="alert" className="error-box">{t.denied}</p>
   function confirmDiscard() { return !dirty || window.confirm(t.discard) }
@@ -166,34 +198,46 @@ export function MasterDataWorkspace({ language, admin, catalog = false, onDirtyC
     } catch (reason) { setError(reasonMessage(reason)); setUncertain(true) }
     finally { inFlight.current = false; setBusy(false) }
   }
-  return <section className="page-content master-workspace">
-    <div className="page-heading"><div><h1>{catalog ? t.packages : t.title}</h1><p>{catalog ? t.packageHint : t.hint}</p></div>
-      {!catalog && <button className="button primary" disabled={loading || busy || !table || uncertain} onClick={() => {
+  return <section className={`page-content master-workspace${catalog ? ' package-catalog' : ''}`}>
+    <div className="page-heading"><div><div className="eyebrow">{catalog ? t.catalog : t.administration}</div>
+      <h1>{catalog ? t.packages : t.title}</h1><p>{catalog ? t.packageHint : t.hint}</p></div>
+      {!catalog && !editor && <button className="button primary" disabled={loading || busy || !table || uncertain} onClick={() => {
         if (!confirmDiscard() || !table) return
         const initial = Object.fromEntries(table.fields.map((field) => [field.name, '']))
         setEditor({ id: crypto.randomUUID() }); setValues(initial); setBaseline(''); setError(''); setNotice('')
       }}>{t.create}</button>}
     </div>
-    {error && <div className="error-box" role="alert"><strong>{t.error}</strong><span>{error}</span>
+    {(error || metadataError) && <div className="error-box" role="alert"><strong>{t.error}</strong>
+      {metadataError && <span>{metadataError}</span>}{error && <span>{error}</span>}
       {uncertain ? <><span>{t.uncertain}</span><button className="button secondary" disabled={busy}
         onClick={() => { if (editor && confirmDiscard()) void open(editor.id, true) }}>{t.reload}</button></>
-        : <button className="button secondary" disabled={busy} onClick={() => setAttempt((n) => n + 1)}>{t.retry}</button>}
+        : <button className="button secondary" disabled={busy} onClick={() => {
+          setAttempt((n) => n + 1)
+          if (metadataError) setMetadataAttempt((n) => n + 1)
+        }}>{t.retry}</button>}
     </div>}
     {notice && <p role="status" className="inline-state">{notice}</p>}
     {busy && <p role="status">{t.loading}</p>}
     {editor && table ? <section className="dashboard-card master-editor">
-      <div className="dashboard-card-heading"><h2>{catalog ? t.details : t.edit}: {String(editor.row?.[table.primary] ?? t.create)}</h2>
+      <div className="dashboard-card-heading master-editor-heading"><div>
+        <div className="master-editor-meta"><span className="master-record-code">{String(editor.row?.[table.primary] ?? t.create)}</span>
+          <span className={`master-status ${editor.row?.statecode === 1 ? 'is-inactive' : 'is-active'}`}>
+            {catalog ? t.readOnly : editor.row?.statecode === 1 ? t.inactive : editor.row ? t.active : t.create}
+          </span></div>
+        <h2>{editor.row && table ? masterRecordLabel(table, editor.row, language) : t.recordDetails}</h2>
+      </div>
         <button className="button secondary" disabled={busy} onClick={() => { if (confirmDiscard()) resetList() }}>{t.back}</button></div>
       {dirty && <p className="draft-notice">{t.dirty}</p>}
-      {!catalog && <p className="field-help">{t.units}</p>}
-      {catalog ? <dl className="master-details">{table.fields.filter((f) => !f.name.endsWith('_base')).map((field) => <div key={field.name}>
+      {!catalog && <p className="field-help master-units">{t.units}</p>}
+      {catalog ? <dl className="master-details">{displayFields.filter((f) => !f.name.endsWith('_base')).map((field) => <div
+        className={field.kind === 'MemoType' ? 'master-scope-detail' : ''} key={field.name}>
         <dt>{field.label}</dt><dd>{displayValue(editor.row ?? {}, field, language)}</dd>
       </div>)}</dl> : <form onSubmit={(e) => { e.preventDefault(); void write('save') }}>
         <fieldset disabled={busy || uncertain} className="master-fieldset"><div className="master-fields">
-          {table.fields.filter((f) => !f.readOnly && (editor.row ? f.update : f.create)).map((field) => {
+          {displayFields.filter((f) => !f.readOnly && (editor.row ? f.update : f.create)).map((field) => {
             const set = (value: string) => setValues((current) => ({ ...current, [field.name]: value }))
             const value = values[field.name] ?? ''
-            return <div className="master-field" key={field.name}>
+            return <div className={`master-field${field.kind === 'MemoType' ? ' master-scope-field' : ''}`} key={field.name}>
               <label className="field-label" htmlFor={`master-${field.name}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
               {field.kind === 'LookupType' ? <LookupField field={field} value={value}
                 selectedLabel={editor.row && value === fieldInput(editor.row, field) ? displayValue(editor.row, field, language) : undefined}
@@ -217,30 +261,36 @@ export function MasterDataWorkspace({ language, admin, catalog = false, onDirtyC
         </div></fieldset>
       </form>}
     </section> : <>
-      <div className="master-filters">
+      <div className={`master-filters${catalog ? ' catalog-filters' : ''}`}>
         {!catalog && <label className="field-label">{t.table}<select className="text-input" aria-label={t.table} value={name} disabled={busy}
           onChange={(e) => { resetList(); setLoading(true); setName(e.target.value); setSearch('') }}>
           {masterTables.map((entry) => <option key={entry.logicalName} value={entry.logicalName}>{language === 'fr' ? entry.fr : entry.en}</option>)}
         </select></label>}
-        <label className="field-label">{t.search}<input className="text-input" value={search} maxLength={150} disabled={busy}
+        <label className="field-label master-search">{t.search}<input className="text-input" type="search" value={search} maxLength={150} disabled={busy}
           onChange={(e) => { setLoading(true); setTokens([undefined]); setSearch(e.target.value) }} /></label>
         <label className="field-label">{t.status}<select className="text-input" aria-label={t.status} value={status} disabled={busy}
           onChange={(e) => { setLoading(true); setTokens([undefined]); setStatus(e.target.value) }}>
           <option value="0">{t.active}</option><option value="1">{t.inactive}</option><option value="">{t.all}</option>
         </select></label>
       </div>
-      {loading ? <p role="status">{t.loading}</p> : page && <section className="dashboard-card master-records">
+      {loading ? <p role="status">{t.loading}</p> : page && table && <section className="dashboard-card master-records">
+        <div className="master-list-toolbar"><h2>{catalog ? t.packages : table ? language === 'fr' ? table.fr : table.en : t.title}</h2>
+          <span>{page.records.length} {t.shown}</span></div>
+        {page.records.length > 0 && <div className="master-column-headings" aria-hidden="true">
+          <span>{t.record}</span><span>{t.description}</span><span>{t.status}</span><span>{t.action}</span>
+        </div>}
         {!page.records.length && <p>{t.empty}</p>}
         {page.records.map((row) => <article className="master-record" key={String(row[table?.id ?? ''])}>
-          <div><h2>{String(row[table?.primary ?? ''] ?? '—')}</h2>
-            {table && masterRecordLabel(table, row, language) !== String(row[table.primary]) && <p>{masterRecordLabel(table, row, language)}</p>}
-            <span className="preview-badge">{row.statecode === 0 ? t.active : t.inactive}</span></div>
+          <h2 className="master-record-code">{String(row[table?.primary ?? ''] ?? '—')}</h2>
+          <p className="master-record-description">{table && masterRecordLabel(table, row, language) !== String(row[table.primary])
+            ? masterRecordLabel(table, row, language) : '—'}</p>
+          <span className={`master-status ${row.statecode === 0 ? 'is-active' : 'is-inactive'}`}>{row.statecode === 0 ? t.active : t.inactive}</span>
           <button className="button secondary" disabled={busy} onClick={() => void open(String(row[table?.id ?? '']))}>{catalog ? t.details : t.edit}</button>
         </article>)}
         <div className="request-pagination">
           <button className="button secondary" disabled={busy || tokens.length === 1}
             onClick={() => { setLoading(true); setTokens((current) => current.slice(0, -1)) }}>{t.previous}</button>
-          <span>{tokens.length}</span>
+          <span>{t.page} {tokens.length}</span>
           <button className="button secondary" disabled={busy || !page.skipToken}
             onClick={() => { setLoading(true); setTokens((current) => [...current, page.skipToken]) }}>{t.next}</button>
         </div>

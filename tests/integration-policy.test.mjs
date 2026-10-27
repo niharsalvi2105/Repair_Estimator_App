@@ -104,6 +104,18 @@ test('request search escapes apostrophes and filters status on the server', () =
   assert.throws(() => buildEstimateQuery({ search: '', status: '0 or true' }), /Unsupported/)
 })
 
+test('recent request queries ask the server for five rows without changing full-list paging', () => {
+  const recent = buildEstimateQuery({ search: '', status: '', market: 126110000, recent: true })
+  const full = buildEstimateQuery({ search: '', status: '', market: 126110000 })
+  assert.equal(recent.top, 5)
+  assert.equal(recent.maxPageSize, 5)
+  assert.equal(full.top, undefined)
+  assert.equal(full.maxPageSize, 25)
+  assert.equal(recent.filter, full.filter)
+  assert.deepEqual(recent.select, full.select)
+  assert.deepEqual(recent.orderBy, full.orderBy)
+})
+
 test('header markets scope request queries on the server without losing other filters or paging', () => {
   for (const market of [126110000, 126110001, 126110002]) {
     const query = buildEstimateQuery({ search: "O'Brien", status: '126110000', market, skipToken: 'market-page' })

@@ -1,7 +1,7 @@
 import type { IGetAllOptions } from '../generated/models/CommonModels'
 
 export type Market = 126110000 | 126110001 | 126110002
-export type EstimateQuery = { search: string; status: string; skipToken?: string; market?: Market }
+export type EstimateQuery = { search: string; status: string; skipToken?: string; market?: Market; recent?: boolean }
 
 export function buildBranchQuery(skipToken?: string): IGetAllOptions {
   return {
@@ -37,7 +37,8 @@ export function buildEstimateQuery(options: EstimateQuery): IGetAllOptions {
       're_buildingname', 're_estimatestatus', 'createdon'],
     filter: filters.join(' and '),
     orderBy: ['createdon desc', 're_repairestimateid asc'],
-    maxPageSize: 25,
+    maxPageSize: options.recent ? 5 : 25,
+    ...(options.recent ? { top: 5 } : {}),
     skipToken: options.skipToken,
   }
 }

@@ -1,13 +1,29 @@
 import { getClient } from '@microsoft/power-apps/data'
 import { dataSourcesInfo } from '../../.power/schemas/appschemas/dataSourcesInfo'
 import { unwrap, withTimeout } from './dataverseOperation'
-import { buildMasterChanges, masterNameFields, object, tableByName, type Language, type MasterRow, type MasterTable } from './masterDataSchema'
+import { buildMasterChanges, loadMasterTable, masterNameFields, object, tableByName, type Language, type MasterRow, type MasterTable } from './masterDataSchema'
 
 const client = getClient(dataSourcesInfo)
 const currency = { logicalName: 'transactioncurrency', entitySet: 'transactioncurrencies', id: 'transactioncurrencyid', primary: 'currencyname' }
+const metadataCache = new Map<string, Promise<MasterTable>>()
 
-export async function getMasterMetadata(name: string, language: Language): Promise<MasterTable> {
+export function getMasterMetadata(name: string, language: Language, refresh = false): Promise<MasterTable> {
   const table = tableByName(name)
+  const key = `${table.logicalName}:${language}`
+  if (!refresh) {
+    const cached = metadataCache.get(key)
+    if (cached) return cached
+  }
+  const request = loadMasterMetadata(table.logicalName, language).catch((reason: unknown) => {
+    if (metadataCache.get(key) === request) metadataCache.delete(key)
+    throw reason
+  })
+  metadataCache.set(key, request)
+  return request
+}
+
+async function loadMasterMetadata(name: string, language: Language): Promise<MasterTable> {
+  const table = await loadMasterTable(name)
   const metadata = object(unwrap(await withTimeout(client.executeAsync({
     dataverseRequest: { action: 'getEntityMetadata', parameters: {
       tableName: table.entitySet, options: { metadata: ['PrimaryIdAttribute', 'PrimaryNameAttribute'],
