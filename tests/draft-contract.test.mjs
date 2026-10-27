@@ -27,6 +27,13 @@ test('pricing state accepts old responses and nullable strings but rejects malfo
   }
 })
 
+test('submitted snapshots carry explicit status and reject unsupported statuses', () => {
+  assert.equal(parseDraft({ ...fixture(), status: 126110002 }).status, 126110002)
+  assert.equal(parseDraft({ ...fixture(), status: 126110000 }).status, 126110000)
+  for (const status of ['126110002', false, 126110001, -1])
+    assert.throws(() => parseDraft({ ...fixture(), status }), /draft/i)
+})
+
 test('missing versions, header values and unknown market fail explicitly', () => {
   for (const value of [null, {}, { ...fixture(), version: '' }, { ...fixture(), title: null },
     { ...fixture(), market: 7 }, { ...fixture(), email: {} }]) {

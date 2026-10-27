@@ -92,11 +92,13 @@ compact bottom navigation for the three available workspaces. Wider windows
 keep left navigation with icons and labels horizontally aligned, including on
 short laptops and landscape tablets. At heights up to 800px, branding and spacing
 compact; at heights up to 640px, already-disabled future sections are hidden to
-keep available workspaces accessible. Disabled sections are also hidden on mobile.
+keep available workspaces accessible. The app title and KTOC PSR subtitle remain
+visible beneath the logo at all left-navigation heights. Disabled sections are also hidden on mobile.
 Bottom safe-area padding keeps navigation and page content clear of device
 gesture areas.
 
-Opportunity details use two labelled field groups, a bounded reading width and
+Opportunity details use separate location/assignment, customer details and
+request details groups, a bounded reading width and
 compact 44px controls. Signed-in salesperson is visually read-only, distinct
 from editable fields. Fields stack on narrow/tablet screens, with 16px mobile
 input text for legibility and to avoid focus zoom in mobile Safari.
@@ -159,7 +161,8 @@ deployed draft API below.
 
 The original equipment-first three-step skeleton has been replaced with:
 
-1. **Opportunity details**: signed-in salesperson, branch, building, equipment
+1. **Opportunity details**: signed-in salesperson, branch, building, customer
+   name/email/phone in a separate customer section, equipment
    type, optional job type and supervisor, work-centre request, technician count,
    approval indication, National Account, emergency, subcontractor cost, budget,
    paper type, consultant, competing bids, stated billing rate and proposal language.
@@ -171,14 +174,32 @@ The original equipment-first three-step skeleton has been replaced with:
    labor/material cards. No client cost calculation.
 4. **Pricing & margin**: entered sell price, billing plan and margin comments.
    Saved server pricing summary, also shown prominently in the final Review stage.
-5. **Review**: customer/contact and building confirmation, partner identifiers
+5. **Review**: read-only customer/contact and building confirmation, partner identifiers
    and CTT notes, selected equipment/package summary. Save draft is enabled when
-   the required inputs are complete; submission remains unavailable.
+   the required inputs are complete. The toolbar retains Save draft; the final
+   Review action is Submit estimate, with an explicit confirmation.
+
+Submission uses `mode: "submit"` on the existing transactional Draft API. It saves
+current inputs and child snapshots, recalculates pricing, then changes status to
+Submitted and records `re_submittedon` in the same synchronous transaction.
+Invalid pricing, missing positive selling price, required margin justification
+or a required billing plan reject submission; Dataverse rolls back the operation.
+The app retains local edits on failure. Submission is not approval, email delivery
+or Salesforce integration. Submitted estimates can be opened from Requests in
+read-only Review; header and child edits remain blocked server-side.
+
+Deploy the updated Draft assembly before publishing this frontend. No new table,
+column or plug-in step is required. Existing synchronous pricing Update
+registration must include `re_estimatestatus`, with its complete `pre` image;
+existing header/child locks and status-history registrations must remain enabled.
+Test with a non-System Administrator account before rollout, including rejected
+submission, status history, read-only reopening and recovery after a timeout.
 
 This sequence uses the production MKO `KTOC PSR Estimator` header/cost/pricing
 sections and generated live `re_` fields/choices, not a new start-estimator form.
 The transcript adjusts the workbook: supervisor is optional and customer contact
-is confirmed at review. Proposal language is independent of the UI language.
+is entered on the first page and confirmed read-only at review. Building name has
+one editable input in Opportunity details. Proposal language is independent of the UI language.
 Equipment quantity is derived from selections, not a second conflicting input.
 Inputs survive in-app navigation; leaving/reloading warns about unsaved changes.
 Non-integer request inputs display two decimal places when unfocused; focusing

@@ -74,6 +74,7 @@ async function mockData(page, language, theme, state = 'records') {
           return structuredClone(window.__draftSaved);
         }
         window.__draftSaved = { ...structuredClone(input),
+          status:input.mode === 'submit' ? 126110002 : 126110000,
           version:String(Number(window.__draftSaved?.version || 0) + 1),
           number:'0000000042', salesperson:'Original Salesperson', pricingState:window.__pricingState,
           equipment:input.equipment.map((e) => ({...e,name:'Persisted equipment snapshot'})),
@@ -202,6 +203,8 @@ async function checkLayout(page, viewport, stage) {
   expect(metrics.headerTargetsAccessible, `${stage}: header control target sizes`).toBe(true)
   expect(metrics.left).toBe(0)
   if (viewport.width > 640) {
+    await expect(page.locator('.brand-copy strong')).toBeVisible()
+    await expect(page.locator('.brand-copy small')).toBeVisible()
     expect(metrics.position, `${stage}: laptop/tablet must retain left navigation`).toBe('sticky')
     expect(metrics.width).toBeLessThanOrEqual(240)
     expect(metrics.rowsHorizontal, `${stage}: icon and text must stay side by side`).toBe(true)
@@ -263,7 +266,7 @@ for (const viewport of viewports) {
 
       await page.locator('.main-nav .nav-item').nth(1).click()
       const opportunity = page.locator('.opportunity-card')
-      await expect(opportunity.locator('fieldset > legend')).toHaveCount(2)
+      await expect(opportunity.locator('fieldset > legend')).toHaveCount(3)
       await expect(page.locator('#salesperson')).toHaveAttribute('readonly', '')
       await expect(page.locator('#equipment-type')).toHaveAttribute('aria-required', 'true')
       await expect(page.locator('#opportunity-building')).toHaveAttribute('aria-required', 'true')
@@ -283,6 +286,8 @@ for (const viewport of viewports) {
       await branch.press('Enter')
       await page.locator('#equipment-type').selectOption('test-type')
       await page.locator('#opportunity-building').fill('Test building / Immeuble de démonstration')
+      await page.locator('#customer-name').fill('Test customer')
+      await page.locator('#customer-email').fill('test@example.invalid')
       await checkLayout(page, viewport, 'opportunity')
       await next(page)
 
@@ -305,8 +310,7 @@ for (const viewport of viewports) {
       await page.locator('#request-re_margincomments').fill('Representative margin comment / Commentaire représentatif.')
       await checkLayout(page, viewport, 'pricing')
       await next(page)
-      await page.locator('#customer-name').fill('Test customer')
-      await page.locator('#customer-email').fill('test@example.invalid')
+      await expect(page.locator('.customer-summary')).toContainText('Test customer')
       await page.locator('details').evaluateAll((details) => details.forEach((el) => { el.open = true }))
       await checkLayout(page, viewport, 'expanded review')
       await expect(page.locator('.footer-actions .button')).toBeDisabled()
@@ -899,6 +903,8 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await page.locator('#branch-select').press('Enter')
   await page.locator('#equipment-type').selectOption('test-type')
   await page.locator('#opportunity-building').fill('Building 42')
+  await page.locator('#customer-name').fill('Draft customer')
+  await page.locator('#customer-email').fill('draft@example.invalid')
   await next(page)
   await page.locator('#equipment-search').fill('TEST')
   await page.locator('.result-row button').click()
@@ -914,9 +920,93 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await next(page)
   await page.locator('#request-re_sellprice').fill('1500')
   await next(page)
-  await page.locator('#customer-name').fill('Draft customer')
-  await page.locator('#customer-email').fill('draft@example.invalid')
 }
+
+for (const language of ['en', 'fr']) {
+  test(`customer required marker stays inline and inputs align in ${language}`, async ({ page }) => {
+    await completeDraft(page, { width: 1366, height: 768 }, language)
+    for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+    const geometry = await page.locator('label[for=customer-name]').evaluate((label) => {
+      const caption = label.firstElementChild.getBoundingClientRect()
+      const marker = label.querySelector('.required').getBoundingClientRect()
+      const input = label.querySelector('input').getBoundingClientRect()
+      const email = document.querySelector('#customer-email').getBoundingClientRect()
+      return { inline: marker.top >= caption.top && marker.bottom <= caption.bottom + 1,
+        aligned: Math.abs(input.top - email.top) <= 1 }
+    })
+    expect(geometry).toEqual({ inline: true, aligned: true })
+  })
+}
+
+test('Review submission confirms, sends current edits and locks the submitted estimate', async ({ page }) => {
+  await completeDraft(page)
+  const submit = page.getByRole('button', { name: 'Submit estimate', exact: true })
+  await expect(submit).toBeVisible()
+  await page.locator('#request-re_notesforcttteam').fill('Current submission notes')
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await submit.click()
+  expect(await page.evaluate(() => window.__draftCalls?.length ?? 0)).toBe(0)
+  page.once('dialog', (dialog) => dialog.accept())
+  await submit.click()
+  await expect(page.locator('.draft-saved')).toContainText('Estimate submitted')
+  await expect(page.locator('.draft-save-action')).toBeDisabled()
+  await expect(page.locator('#request-re_notesforcttteam')).toBeDisabled()
+  const saved = await page.evaluate(() => window.__draftCalls.at(-1))
+  expect(saved.mode).toBe('submit')
+  expect(saved.fields).toContainEqual({ key: 're_notesforcttteam', value: 'Current submission notes' })
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await expect(page.locator('.unsaved-badge')).toContainText('Submitted')
+  await expect(page.locator('#request-re_notesforcttteam')).toBeDisabled()
+})
+
+test('submission failure preserves edits and permits correction without claiming success', async ({ page }) => {
+  await completeDraft(page)
+  await page.evaluate(() => { window.__draftFailure = 'RE-101|MARGIN_COMMENT_REQUIRED' })
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Submit estimate', exact: true }).click()
+  await expect(page.locator('.draft-error')).toContainText('MARGIN_COMMENT_REQUIRED')
+  await expect(page.locator('.draft-saved')).toHaveCount(0)
+  await expect(page.locator('#request-re_notesforcttteam')).toBeEditable()
+  await expect(page.locator('.customer-summary')).toContainText('Draft customer')
+})
+
+test('customer details edit only on opportunity page and survive save and reopen', async ({ page }) => {
+  await completeDraft(page, { width: 320, height: 700 })
+  await expect(page.locator('#customer-name')).toHaveCount(0)
+  await expect(page.locator('#building-name')).toHaveCount(0)
+  await expect(page.locator('.customer-summary')).toContainText('Building 42')
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  await page.locator('.draft-toolbar .draft-secondary-actions button').nth(1).click()
+  const customer = page.getByRole('group', { name: 'Customer details', exact: true })
+  await expect(customer.locator('#customer-name')).toHaveValue('Draft customer')
+  await expect(customer.locator('#customer-email')).toHaveValue('draft@example.invalid')
+  await expect(page.locator('#opportunity-building')).toHaveCount(1)
+  await customer.locator('#customer-phone').fill('1234567890')
+  await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 320)
+  await page.locator('.draft-save-action').click()
+  await expect.poll(() => page.evaluate(() => window.__draftCalls.at(-1).phone)).toBe('1234567890')
+})
+
+test('sidebar title stays visible across short-screen breakpoints after startup', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 640 })
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await expect(page.locator('.market-control select')).toBeEnabled()
+  await expect(page.locator('.dashboard-stat')).toHaveCount(4)
+  for (const height of [641, 640, 639, 390]) {
+    await page.setViewportSize({ width: 1024, height })
+    await expect(page.locator('.brand-copy strong')).toHaveText('Repair Estimator')
+    await expect(page.locator('.brand-copy small')).toHaveText('KTOC PSR')
+    const fits = await page.locator('.brand-copy').evaluate((element) => {
+      const title = element.getBoundingClientRect()
+      const navigation = document.querySelector('.main-nav').getBoundingClientRect()
+      return title.height > 0 && title.top >= 0 && title.bottom <= navigation.top
+    })
+    expect(fits).toBe(true)
+    await checkLayout(page, { width: 1024, height }, `sidebar title at ${height}px height`)
+  }
+})
 
 test('market switching restores English for CKE and MKO after CKQ', async ({ page }) => {
   await mockData(page, 'en', 'light')
@@ -991,7 +1081,7 @@ for (const { language, theme } of modes) {
     await next(page)
     await page.locator('#request-re_konesparessalespricevk13').fill('150')
     await next(page)
-    await page.locator('.footer-actions .button').click()
+    await page.locator('.draft-save-action').click()
     await expect(page.locator('.draft-saved')).toContainText('0000000042')
     const saved = await page.evaluate(() => window.__draftCalls.at(-1))
     expect(saved.packages).toHaveLength(5)
@@ -1014,7 +1104,7 @@ for (const { language, theme } of modes) {
 
 test('large saved package selections are paged in the browser without losing records', async ({ page }) => {
   await completeDraft(page)
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toContainText('0000000042')
   await page.evaluate(() => {
     const template = window.__draftSaved.packages[0]
@@ -1036,7 +1126,7 @@ test('large saved package selections are paged in the browser without losing rec
 
 test('custom line paging bounds rendered controls without dropping saved rows', async ({ page }) => {
   await completeDraft(page)
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toContainText('0000000042')
   await page.evaluate(() => {
     window.__draftSaved.packages[0].isCustom = true
@@ -1064,14 +1154,14 @@ test('lazy estimator preserves unsaved draft inputs, selections and step across 
   await completeDraft(page)
   await page.locator('.main-nav').getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'Return to workspace', exact: true }).click()
-  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  await expect(page.locator('.customer-summary')).toContainText('Draft customer')
   await expect(page.locator('[aria-current=step]')).toBeFocused()
   for (let index = 0; index < 4; index++) await page.locator('.form-footer > button').click()
   await expect(page.locator('#estimate-title')).toHaveValue('Motor repair draft')
   await expect(page.locator('#branch-select')).toHaveValue(/020/)
   for (let index = 0; index < 4; index++) await next(page)
-  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
-  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('.customer-summary')).toContainText('Draft customer')
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toContainText('0000000042')
   await expect(page.locator('.draft-toolbar button svg')).toHaveCount(3)
   const toolbarLayout = await page.locator('.draft-toolbar').evaluate((toolbar) => {
@@ -1097,7 +1187,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 
   test(`draft save, update, new and reopen at ${viewport.width}px`, async ({ page }) => {
     await completeDraft(page, viewport)
     await expect(page.locator('.footer-actions .button')).toBeEnabled()
-    await page.locator('.footer-actions .button').click()
+    await page.locator('.draft-save-action').click()
     await expect(page.locator('.draft-saved')).toContainText('0000000042')
     for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
     await expect(page.locator('#estimate-title')).toHaveValue('Motor repair draft')
@@ -1144,7 +1234,7 @@ for (const width of [320, 1366]) {
   for (const entry of ['dashboard', 'sidebar']) {
     test(`new request clears the previous saved draft via ${entry} at ${width}px`, async ({ page }) => {
       await completeDraft(page, { width, height: 900 })
-      await page.locator('.footer-actions .button').click()
+      await page.locator('.draft-save-action').click()
       await expect(page.locator('.draft-saved')).toBeVisible()
       const previous = await page.evaluate(() => structuredClone(window.__draftSaved))
       await page.locator('.main-nav .nav-item').nth(0).click()
@@ -1172,6 +1262,9 @@ for (const width of [320, 1366]) {
       await page.locator('#branch-select').press('Enter')
       await page.locator('#equipment-type').selectOption('test-type')
       await page.locator('#opportunity-building').fill('New building')
+      await expect(page.locator('#customer-name')).toHaveValue('')
+      await expect(page.locator('#customer-email')).toHaveValue('')
+      await page.locator('#customer-name').fill('New customer')
       await next(page)
       await expect(page.locator('.selected-card')).toHaveCount(0)
       await page.locator('#equipment-search').fill('TEST')
@@ -1187,10 +1280,8 @@ for (const width of [320, 1366]) {
       await expect(page.locator('#request-re_sellprice')).toHaveValue('')
       await page.locator('#request-re_sellprice').fill('2000')
       await next(page)
-      await expect(page.locator('#customer-name')).toHaveValue('')
-      await expect(page.locator('#customer-email')).toHaveValue('')
-      await page.locator('#customer-name').fill('New customer')
-      await page.locator('.footer-actions .button').click()
+      await expect(page.locator('.customer-summary')).toContainText('New customer')
+      await page.locator('.draft-save-action').click()
       await expect(page.locator('.draft-saved')).toBeVisible()
       const calls = await page.evaluate(() => window.__draftCalls)
       expect(calls).toHaveLength(2)
@@ -1203,7 +1294,7 @@ for (const width of [320, 1366]) {
 
 test('decimal inputs display two places while preserving saved precision and editable blanks', async ({ page }) => {
   await completeDraft(page)
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toBeVisible()
   await page.evaluate(() => {
     for (const field of window.__draftSaved.fields) {
@@ -1266,14 +1357,14 @@ for (const width of [320, 768, 1366, 1920]) {
 test('draft save serializes clicks, blocks editing while saving and preserves input after permission errors', async ({ page }) => {
   await completeDraft(page)
   await page.evaluate(() => { window.__draftDelay = 500; window.__draftFailure = '403: Write permission denied' })
-  await page.locator('.footer-actions .button').click()
-  await expect(page.locator('#customer-name')).toBeDisabled()
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('#request-re_notesforcttteam')).toBeDisabled()
   await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
   await expect(page.locator('.draft-error')).toContainText('403')
-  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  await expect(page.locator('.customer-summary')).toContainText('Draft customer')
   expect(await page.evaluate(() => window.__draftCalls.length)).toBe(1)
   await page.evaluate(() => { window.__draftDelay = 0; window.__draftFailure = '' })
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toBeVisible()
   const calls = await page.evaluate(() => window.__draftCalls)
   expect(calls[0].id).toBe(calls[1].id)
@@ -1282,9 +1373,9 @@ test('draft save serializes clicks, blocks editing while saving and preserves in
 test('uncertain create response recovers the same draft without duplicate creation', async ({ page }) => {
   await completeDraft(page)
   await page.evaluate(() => { window.__draftFailure = 'timeout-after-commit' })
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-error')).toContainText('outcome unknown')
-  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  await expect(page.locator('.customer-summary')).toContainText('Draft customer')
   await page.evaluate(() => { window.__draftFailure = '' })
   page.once('dialog', (dialog) => dialog.accept())
   await page.locator('.draft-error').getByRole('button', { name: 'Reload draft' }).click()
@@ -1297,7 +1388,7 @@ test('uncertain create response recovers the same draft without duplicate creati
 
 test('stale update errors retain local edits until explicit reload', async ({ page }) => {
   await completeDraft(page)
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toBeVisible()
   for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
   await page.locator('#estimate-title').fill('My unsaved revision')
@@ -1357,11 +1448,11 @@ test('draft adapter uses generated action service and validates its response', a
 test('saved draft explicitly reports unavailable pricing without claiming a failed save', async ({ page }) => {
   await completeDraft(page)
   await page.evaluate(() => { window.__pricingState = 'unavailable' })
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toContainText('0000000042')
-  await expect(page.getByRole('status').filter({ hasText: 'The draft is saved, but pricing is unavailable.' })).toBeVisible()
+  await expect(page.locator('.draft-notice[role=alert]')).toContainText('The draft is saved, but pricing and CMII are unavailable.')
   await expect(page.locator('.draft-error')).toHaveCount(0)
-  await expect(page.locator('.pricing-summary')).toContainText('Pricing is unavailable.')
+  await expect(page.locator('.pricing-summary')).toContainText('pricing and CMII are unavailable.')
   await expect(page.locator('.pricing-summary')).not.toContainText('$31,807.21')
 })
 
@@ -1370,7 +1461,7 @@ for (const width of [320, 1366]) {
     await completeDraft(page, { width, height: 768 })
     const summary = page.locator('.pricing-summary')
     await expect(summary).toContainText('Save the draft to calculate pricing.')
-    await page.locator('.footer-actions .button').click()
+    await page.locator('.draft-save-action').click()
     await expect(summary).toContainText('$31,807.21')
     await expect(summary).toContainText('48.81%')
     await expect(summary).toContainText('-65,028.16%')
@@ -1380,7 +1471,7 @@ for (const width of [320, 1366]) {
     const reads = await page.evaluate(() => window.__pricingReads)
     expect(reads[0].options.select).toContain('re_actualcmii')
     expect(reads[0].options.select).not.toContain('re_customername')
-    await page.locator('#customer-name').fill('Unsaved customer edit')
+    await page.locator('#request-re_notesforcttteam').fill('Unsaved notes edit')
     await expect(summary).toContainText('Unsaved changes:')
     await expect(summary).toContainText('$31,807.21')
     await changeLanguageInSettings(page, 'fr')
@@ -1397,7 +1488,7 @@ for (const width of [320, 1366]) {
 test('pricing read failure does not claim save failure and can be retried', async ({ page }) => {
   await completeDraft(page)
   await page.evaluate(() => { window.__pricingError = 'Permission denied' })
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toBeVisible()
   await expect(page.locator('.pricing-summary')).toContainText('Your saved draft is unchanged.')
   await expect(page.locator('.pricing-summary')).toContainText('Permission denied')
@@ -1411,7 +1502,7 @@ test('pricing uses saved CAD currency and never shows a different row version as
   await page.addInitScript(() => { window.__currencyCode = 'CAD' })
   await completeDraft(page)
   await page.evaluate(() => { window.__pricingDelay = 800 })
-  await page.locator('.footer-actions .button').click()
+  await page.locator('.draft-save-action').click()
   const summary = page.locator('.pricing-summary')
   await expect(summary).toContainText('Loading saved pricing')
   await expect(summary).toContainText('CA$31,807.21')
@@ -1555,7 +1646,7 @@ test('header search respects unsaved draft confirmation and retains inputs on ca
   await search.fill('Repair')
   page.once('dialog', (dialog) => dialog.dismiss())
   await search.press('Enter')
-  await expect(page.locator('#customer-name')).toBeVisible()
+  await expect(page.locator('.customer-summary')).toBeVisible()
   await expect(page.locator('.stepper')).toBeVisible()
   page.once('dialog', (dialog) => dialog.accept())
   await search.press('Enter')

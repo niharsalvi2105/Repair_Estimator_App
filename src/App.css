@@ -3,6 +3,11 @@
   min-height: 100vh;
 }
 
+.customer-summary dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .dashboard-metrics-toolbar {
   display: flex;
   align-items: center;
@@ -2226,7 +2231,7 @@
     display: none;
   }
   .brand-logo { height: 44px; }
-  .brand-copy, .sidebar-bottom { display: none; }
+  .sidebar-bottom { display: none; }
   .brand { padding-bottom: 8px; margin-bottom: 8px; }
 }
 

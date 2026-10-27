@@ -21,7 +21,8 @@ export function serializeDraft(input: unknown): string {
   return json
 }
 export type DraftRecord = {
-  mode: 'save' | 'load'; id: string; version: string | null; number?: string | null
+  mode: 'save' | 'load' | 'submit'; id: string; version: string | null; number?: string | null
+  status?: 126110000 | 126110002
   title: string; branchId: string; stateId: string; equipmentTypeId: string; jobTypeId: string
   building: string; customer: string; email: string; phone: string; market: Market
   salesperson?: string | null
@@ -40,6 +41,7 @@ export function parseDraft(value: unknown): DraftRecord {
     || !nullableString(record.email) || !nullableString(record.phone) || !nullableString(record.jobTypeId)
     || !nullableString(record.salesperson) || !nullableString(record.number)
     || !nullableString(record.pricingState)
+    || (record.status != null && ![126110000, 126110002].includes(record.status))
     || ![126110000, 126110001, 126110002].includes(record.market ?? -1)
     || !Array.isArray(record.fields) || !Array.isArray(record.equipment) || !Array.isArray(record.packages)) {
     throw new Error('The draft service returned incomplete data. Reload before editing.')

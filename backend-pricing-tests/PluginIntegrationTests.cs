@@ -16,6 +16,74 @@ namespace RepairEstimator.Tests
 {
     public class PluginIntegrationTests
     {
+        [Fact]
+        public void Submit_saves_current_inputs_validates_prices_and_locks_parent_and_children()
+        {
+            var db = new Pipeline();
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            var json = db.DraftJson().Replace("\"mode\":\"save\"", "\"mode\":\"submit\"")
+                .Replace("\"fields\":[", "\"fields\":[{\"key\":\"re_sellprice\",\"value\":\"1000\"},");
+            var response = db.Save(json);
+            Assert.Contains("\"status\":126110002", response);
+            var header = db.Rows[db.EstimateId];
+            Assert.Equal(Labels.SubmittedStatus, header.GetAttributeValue<OptionSetValue>(Names.Estimate.Status).Value);
+            Assert.True(header.Contains(Names.Estimate.SubmittedOn));
+            Assert.Contains("\"status\":126110002", db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Save(db.DraftJson(header.RowVersion)));
+            var line = db.Rows.Values.First(e => e.LogicalName == Names.EstimatePackage.Entity);
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Invoke(new ChildLockPlugin(), "Update",
+                new Entity(line.LogicalName, line.Id)));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Submission_enforces_configured_billing_plan_threshold(bool billingPlan)
+        {
+            var db = new Pipeline();
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            var fields = "{\"key\":\"re_sellprice\",\"value\":\"6000\"}," +
+                (billingPlan ? "{\"key\":\"re_billingplan\",\"value\":\"126110000\"}," : "");
+            var json = db.DraftJson().Replace("\"mode\":\"save\"", "\"mode\":\"submit\"")
+                .Replace("\"fields\":[", "\"fields\":[" + fields);
+            if (billingPlan) Assert.Contains("\"status\":126110002", db.Save(json));
+            else Assert.Contains("RE-103", Assert.Throws<InvalidPluginExecutionException>(() => db.Save(json)).Message);
+        }
+
+        [Fact]
+        public void Submission_rejects_stale_versions_and_unavailable_pricing()
+        {
+            var db = new Pipeline();
+            db.Save(db.DraftJson());
+            var version = db.Rows[db.EstimateId].RowVersion;
+            db.Save(db.DraftJson(version));
+            Assert.Contains("version conflict", Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Save(db.DraftJson(version).Replace("\"mode\":\"save\"", "\"mode\":\"submit\""))).Message);
+            db.RemoveTable(Names.LaborRate.Entity);
+            var json = db.DraftJson(db.Rows[db.EstimateId].RowVersion).Replace("\"mode\":\"save\"", "\"mode\":\"submit\"");
+            Assert.Contains("RE-102", Assert.Throws<InvalidPluginExecutionException>(() => db.Save(json)).Message);
+        }
+
+        [Theory]
+        [InlineData("0", null, "RE-100")]
+        [InlineData("100", null, "RE-101")]
+        [InlineData("100", "Required justification", null)]
+        public void Submission_applies_server_price_and_margin_justification_checks(string price, string comment, string error)
+        {
+            var db = new Pipeline();
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            var fields = "{\"key\":\"re_sellprice\",\"value\":\"" + price + "\"},";
+            if (comment != null) fields += "{\"key\":\"re_margincomments\",\"value\":\"" + comment + "\"},";
+            var json = db.DraftJson().Replace("\"mode\":\"save\"", "\"mode\":\"submit\"")
+                .Replace("\"fields\":[", "\"fields\":[" + fields);
+            if (error == null) Assert.Contains("\"status\":126110002", db.Save(json));
+            else {
+                var ex = Assert.Throws<InvalidPluginExecutionException>(() => db.Save(json));
+                Assert.Contains(error, ex.Message);
+                Assert.Equal(Labels.DraftStatus, db.Rows[db.EstimateId].GetAttributeValue<OptionSetValue>(Names.Estimate.Status).Value);
+            }
+        }
+
         [Theory]
         [InlineData(true, true, true)]
         [InlineData(false, true, false)]

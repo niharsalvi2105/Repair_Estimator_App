@@ -72,6 +72,7 @@ namespace RepairEstimator.Drafts
     public sealed class Draft
     {
         [DataMember] public string mode;
+        [DataMember] public int status;
         [DataMember] public string id;
         [DataMember] public string version;
         [DataMember] public string number;
@@ -147,10 +148,11 @@ namespace RepairEstimator.Drafts
                     context.OutputParameters["ResultJson"] = Serialize(Read(service, id));
                     return;
                 }
-                if (input.mode != "save") Fail("Unsupported draft operation.");
+                if (input.mode != "save" && input.mode != "submit") Fail("Unsupported draft operation.");
                 Save(service, context.UserId, input, id);
                 // Recalculate once, after all snapshot rows exist, if the pricing assembly is registered.
                 service.Update(new Entity(Estimate, id) { ["re_numberofequipment"] = input.equipment.Count });
+                if (input.mode == "submit") Submit(service, id);
                 context.OutputParameters["ResultJson"] = Serialize(Read(service, id));
             }
             catch (InvalidPluginExecutionException) { throw; }
@@ -201,6 +203,7 @@ namespace RepairEstimator.Drafts
                     old.GetAttributeValue<EntityReference>("transactioncurrencyid")?.Id != currency.Id)
                     Fail("An existing draft cannot change branch or currency. Start a new estimate instead.");
             }
+
             var header = new Entity(Estimate, id);
             header["re_estimatename"] = Required(input.title, 100, "Estimate title");
             header["re_buildingname"] = Required(input.building, 300, "Building name");
@@ -360,6 +363,36 @@ namespace RepairEstimator.Drafts
             service.Execute(path);
         }
 
+        static void Submit(IOrganizationService service, Guid id)
+        {
+            var row = service.Retrieve(Estimate, id, new ColumnSet("re_estimatestatus", "re_calculationversion",
+                "re_calculatedon", "re_totaltruecost", "re_suggestedprice", "re_recommendedcmii",
+                "re_sellprice", "re_actualcmii", "re_cmiivariance", "re_margincomments"));
+            if (row.GetAttributeValue<OptionSetValue>("re_estimatestatus")?.Value != DraftStatus)
+                Fail("Only Draft estimates can be submitted.");
+            var calculation = row.GetAttributeValue<string>("re_calculationversion");
+            var margin = row.GetAttributeValue<decimal?>("re_recommendedcmii");
+            if (string.IsNullOrWhiteSpace(calculation) || calculation == "unavailable" ||
+                !row.Contains("re_calculatedon") || row["re_calculatedon"] == null ||
+                row.GetAttributeValue<Money>("re_totaltruecost") == null ||
+                row.GetAttributeValue<Money>("re_suggestedprice") == null ||
+                !margin.HasValue || margin < 0 || margin >= 1)
+                Fail("RE-102|PRICING_NOT_AVAILABLE");
+            if ((row.GetAttributeValue<Money>("re_sellprice")?.Value ?? 0m) <= 0m)
+                Fail("RE-100|SELL_PRICE_REQUIRED");
+            if (!row.GetAttributeValue<decimal?>("re_actualcmii").HasValue ||
+                !row.GetAttributeValue<decimal?>("re_cmiivariance").HasValue)
+                Fail("RE-102|PRICING_NOT_AVAILABLE");
+            if (row.GetAttributeValue<decimal>("re_cmiivariance") < 0m &&
+                string.IsNullOrWhiteSpace(row.GetAttributeValue<string>("re_margincomments")))
+                Fail("RE-101|MARGIN_COMMENT_REQUIRED");
+            // This untagged status update runs the calculation plug-in's full submission validation.
+            service.Update(new Entity(Estimate, id) {
+                ["re_estimatestatus"] = new OptionSetValue(126110002),
+                ["re_submittedon"] = DateTime.UtcNow
+            });
+        }
+
         static List<Entity> BuildLines(IOrganizationService service, Draft input, List<Entity> priorLabor,
             List<Entity> priorMaterial, Entity header, Entity branch, EntityReference currency, EntityReference owner)
         {
@@ -495,9 +528,10 @@ namespace RepairEstimator.Drafts
         {
             var row = service.Retrieve(Estimate, id, new ColumnSet(true));
             Active(row);
-            if (row.GetAttributeValue<OptionSetValue>("re_estimatestatus")?.Value != DraftStatus) Fail("Only Draft estimates can be reopened here.");
+            var status = row.GetAttributeValue<OptionSetValue>("re_estimatestatus")?.Value;
+            if (status != DraftStatus && status != 126110002) Fail("This estimate status cannot be opened here.");
             var result = new Draft {
-                mode = "save", id = id.ToString(), version = row.RowVersion,
+                mode = "save", status = status.Value, id = id.ToString(), version = row.RowVersion,
                 number = row.GetAttributeValue<string>("re_name"), title = row.GetAttributeValue<string>("re_estimatename"),
                 branchId = Id(row, "re_branch"), stateId = Id(row, "re_buildingprovincestate"),
                 equipmentTypeId = Id(row, "re_equipmenttype"), jobTypeId = Id(row, "re_jobtype"),

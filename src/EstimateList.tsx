@@ -15,6 +15,7 @@ const text = {
     scope: 'Only records allowed by your Dataverse permissions are returned.',
     ownScope: 'Only your own requests are shown.',
     open: 'Open draft',
+    view: 'View estimate',
   },
   fr: {
     search: 'Rechercher par début de numéro, client ou immeuble',
@@ -27,6 +28,7 @@ const text = {
     scope: 'Seules les demandes autorisées par Dataverse sont affichées.',
     ownScope: 'Seules vos propres demandes sont affichées.',
     open: 'Ouvrir le brouillon',
+    view: 'Consulter le devis',
   },
 }
 
@@ -120,9 +122,9 @@ function PagedEstimateList({ language, market, ownerId, onOpen, busy = false, se
                     </h3>
                     <div className="request-record-actions">
                       <span className="preview-badge">{statuses[record.re_estimatestatus] ?? t.unknown}</span>
-                      {record.re_estimatestatus === 126110000 && onOpen && (
+                      {[126110000, 126110002].includes(record.re_estimatestatus) && onOpen && (
                         <button className="button secondary" disabled={busy}
-                          onClick={() => onOpen(record.re_repairestimateid)}>{t.open}</button>
+                          onClick={() => onOpen(record.re_repairestimateid)}>{record.re_estimatestatus === 126110000 ? t.open : t.view}</button>
                       )}
                     </div>
                   </div>

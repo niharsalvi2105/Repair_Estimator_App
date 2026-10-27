@@ -25,7 +25,8 @@ type Props = {
   draftId: string
   canWork: boolean
   draftComplete: boolean
-  saveDraft: () => Promise<void>
+  saveDraft: (submit?: boolean) => Promise<void>
+  submitted: boolean
   step: number
   estimateTitle: string
   setEstimateTitle: Dispatch<SetStateAction<string>>
@@ -102,7 +103,7 @@ function localizePackage(
 export default function EstimatorWorkspace({
   requestSection, t, draftVersion, draftDirty, dt,
   draftNumber, newDraft, draftBusy, canStart, openDraft,
-  draftId, canWork, draftComplete, saveDraft, step,
+  draftId, canWork, draftComplete, saveDraft, submitted, step,
   estimateTitle, setEstimateTitle, draftReferences, selectedBranch, draftReferenceError,
   setReferenceAttempt, branchLoading, branchError, loadBranches, market,
   marketBranches, branchId, changeBranch, language, referenceError,
@@ -139,7 +140,7 @@ export default function EstimatorWorkspace({
           <h1>{t.newTitle}</h1>
           <p>{t.newSubtitle}</p>
         </div>
-        <span className="unsaved-badge">{draftVersion && !draftDirty ? `${dt.saved} ${draftNumber}` : t.notSaved}</span>
+        <span className="unsaved-badge">{submitted ? `${language === 'fr' ? 'Soumis' : 'Submitted'} ${draftNumber}` : draftVersion && !draftDirty ? `${dt.saved} ${draftNumber}` : t.notSaved}</span>
       </div>
       <div className="draft-toolbar">
         <div className="draft-secondary-actions">
@@ -155,7 +156,7 @@ export default function EstimatorWorkspace({
             {dt.reload}
           </button>}
         </div>
-        <button className="button primary draft-save-action" disabled={draftBusy || !canWork || !draftComplete}
+        <button className="button primary draft-save-action" disabled={submitted || draftBusy || !canWork || !draftComplete}
           onClick={() => void saveDraft()}>
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
             strokeLinecap="round" strokeLinejoin="round"><path d="m19 21 2-2V7l-4-4H5L3 5v14l2 2h14ZM7 3v6h10V3M7 21v-8h10v8" /></svg>
@@ -163,7 +164,10 @@ export default function EstimatorWorkspace({
         </button>
       </div>
       {draftVersion && <p className="field-help">{dt.locked}</p>}
-      <fieldset className="draft-workspace" disabled={draftBusy}>
+      {submitted && <p className="draft-notice" role="status">{language === 'fr'
+        ? 'Ce devis a été soumis et ne peut plus être modifié.'
+        : 'This estimate has been submitted and is locked against editing.'}</p>}
+      <fieldset className="draft-workspace" disabled={draftBusy || submitted}>
 
       <p className="draft-notice">{t.workbookAlignment}</p>
       <div className="stepper" aria-label={`${t.stepOf} ${step} / 5`}>
@@ -286,6 +290,26 @@ export default function EstimatorWorkspace({
                     <option key={s.id} value={s.id}>{language === 'fr' ? s.fr || s.en : s.en}</option>
                   ))}
                 </select>
+              </div>
+              </fieldset>
+              <fieldset className="opportunity-group">
+              <legend>{language === 'fr' ? 'Coordonnées du client' : 'Customer details'}</legend>
+              <div className="input-grid">
+                <label className="field-label" htmlFor="customer-name">
+                  <span>{t.customerName}<span className="required" aria-hidden="true">*</span></span>
+                  <input id="customer-name" className="text-input" aria-required="true" maxLength={300}
+                    value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
+                </label>
+                <label className="field-label" htmlFor="customer-email">
+                  {t.customerEmail}
+                  <input id="customer-email" type="email" className="text-input" maxLength={100}
+                    value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
+                </label>
+                <label className="field-label" htmlFor="customer-phone">
+                  {t.customerPhone}
+                  <input id="customer-phone" type="tel" className="text-input" maxLength={100}
+                    value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
+                </label>
               </div>
               </fieldset>
               <fieldset className="opportunity-group">
@@ -550,7 +574,7 @@ export default function EstimatorWorkspace({
             {step === 4 && (laborLines.length > 0 || materialLines.length > 0) &&
               <p>{language === 'fr' ? 'Lignes personnalisées' : 'Custom lines'}: {laborLines.length} / {materialLines.length}</p>}
             {step === 4 && <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
-              language={language} currencies={draftReferences?.currencies ?? []} />}
+              language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted} />}
           </div>
         </div>
       )}
@@ -559,7 +583,7 @@ export default function EstimatorWorkspace({
         <div className="form-layout">
           <div className="form-main">
             <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
-              language={language} currencies={draftReferences?.currencies ?? []} />
+              language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted} />
             {(hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
               <CustomCostLines language={language} labor={laborLines} materials={materialLines}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={false} readOnly />}
@@ -571,24 +595,12 @@ export default function EstimatorWorkspace({
                   <p>{t.customerHint}</p>
                 </div>
                 </div>
-              <div className="input-grid">
-                <label className="field-label" htmlFor="customer-name">
-                  {t.customerName}
-                  <input id="customer-name" className="text-input" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
-                </label>
-                <label className="field-label" htmlFor="building-name">
-                  {t.buildingName}
-                  <input id="building-name" className="text-input" value={buildingName} onChange={(event) => setBuildingName(event.target.value)} />
-                </label>
-                <label className="field-label" htmlFor="customer-email">
-                  {t.customerEmail}
-                  <input id="customer-email" type="email" className="text-input" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
-                </label>
-                <label className="field-label" htmlFor="customer-phone">
-                  {t.customerPhone}
-                  <input id="customer-phone" type="tel" className="text-input" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
-                </label>
-              </div>
+              <dl className="summary-grid customer-summary">
+                {[[t.customerName, customerName], [t.buildingName, buildingName],
+                  [t.customerEmail, customerEmail], [t.customerPhone, customerPhone]].map(([label, value]) => (
+                  <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>
+                ))}
+              </dl>
               <h3>{t.partnerTitle}</h3>
               <RequestFields stage="partner" language={language} value={requestInputs} onChange={updateRequestInput} />
             </section>
@@ -663,9 +675,11 @@ export default function EstimatorWorkspace({
               <span aria-hidden="true">→</span>
             </button>
           ) : (
-            <button className="button primary" disabled={draftBusy || !draftComplete}
-              onClick={() => void saveDraft()} title={draftComplete ? dt.note : dt.required}>
-              {draftBusy ? dt.saving : dt.save}
+            <button className="button primary" disabled={submitted || draftBusy || !draftComplete}
+              onClick={() => void saveDraft(true)} title={draftComplete ? undefined : dt.required}>
+              {submitted ? language === 'fr' ? 'Soumis' : 'Submitted'
+                : draftBusy ? language === 'fr' ? 'Soumission…' : 'Submitting…'
+                  : language === 'fr' ? 'Soumettre le devis' : 'Submit estimate'}
             </button>
           )}
         </div>

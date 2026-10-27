@@ -18,7 +18,7 @@ import { DashboardMetrics } from './DashboardMetrics'
 import { Settings } from './Settings'
 import { loadSession, type AppSession } from './data/sessionRepository'
 import type { RequestInputs } from './RequestFields'
-import { pricingUnavailableMessage, statedRateError } from './data/requestValidation'
+import { pricingUnavailableMessage, statedRateError, submissionErrorMessage } from './data/requestValidation'
 import type { Market } from './data/estimateQuery'
 import { useUserPreferences } from './useUserPreferences'
 import { UserAvatar } from './UserAvatar'
@@ -155,7 +155,7 @@ const copy = {
     customerPhone: 'Customer phone',
     buildingName: 'Building name',
     customerHint:
-      'Confirm customer and building details before proceeding. These values are not saved yet.',
+      'Review customer and building details. To edit them, return to Opportunity details.',
     draftUnavailable:
       'Draft saving is not connected yet. The app will not claim this request was saved.',
     readyNext: 'Next implementation step',
@@ -294,7 +294,7 @@ const copy = {
     customerPhone: 'Téléphone du client',
     buildingName: 'Nom de l’immeuble',
     customerHint:
-      'Confirmez les renseignements du client et de l’immeuble. Ces valeurs ne sont pas encore enregistrées.',
+      'Vérifiez les renseignements du client et de l’immeuble. Pour les modifier, revenez aux détails de l’opportunité.',
     draftUnavailable:
       'L’enregistrement du brouillon n’est pas encore connecté. L’application ne prétendra pas que la demande est enregistrée.',
     readyNext: 'Prochaine étape d’implémentation',
@@ -409,6 +409,7 @@ function App() {
   const [draftNotice, setDraftNotice] = useState('')
   const [savedSalesperson, setSavedSalesperson] = useState('')
   const [pricingUnavailable, setPricingUnavailable] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
   const draftInFlight = useRef(false)
   const requestSection = useRef<HTMLElement>(null)
   function updateRequestInput(key: keyof RequestInputs, value: string) {
@@ -688,7 +689,7 @@ function App() {
     open: 'Ouvrir le brouillon', working: 'Opération en cours…', new: 'Nouveau brouillon',
     warning: 'Des modifications ne sont pas enregistrées. Les abandonner ?',
     required: 'Renseignez le nom du devis, le client, le bâtiment, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
-    note: 'Brouillon uniquement : prix enregistrés du serveur disponibles ; soumission non connectée.',
+    note: 'Enregistrez un brouillon ou soumettez le devis depuis la vérification finale. La soumission valide les prix et verrouille les modifications, sans envoyer de courriel.',
     error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
     reload: 'Recharger le brouillon', locked: 'La succursale et le marché sont fixes pour un brouillon enregistré.',
   } : {
@@ -697,7 +698,7 @@ function App() {
     open: 'Open draft', working: 'Operation in progress…', new: 'New draft',
     warning: 'There are unsaved changes. Discard them?',
     required: 'Complete estimate title, customer, building, province, equipment, packages, proposal language, time category, use tax and freight.',
-    note: 'Draft only: saved server pricing is available; submission is not connected.',
+    note: 'Save a draft or submit from Review. Submission validates pricing and locks editing; no email is sent.',
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
   }
@@ -726,6 +727,7 @@ function App() {
     setDraftId(record.id); setDraftVersion(record.version); setDraftNumber(record.number ?? '')
     setSavedSalesperson(record.salesperson ?? '')
     setPricingUnavailable(record.pricingState === 'unavailable')
+    setSubmitted(record.status === 126110002)
     setEstimateTitle(record.title); setBranchId(record.branchId); setStateId(record.stateId)
     setBuildingName(record.building); setCustomerName(record.customer)
     setCustomerEmail(record.email ?? ''); setCustomerPhone(record.phone ?? '')
@@ -747,23 +749,30 @@ function App() {
     setDraftBusy(true); setDraftError(''); setDraftNotice('')
     try {
       const record = await draftOperation({ mode: 'load', id })
-      applyDraft(record); setReferencesNeeded(true); setStep(1); setView('new')
+      applyDraft(record); setReferencesNeeded(true); setStep(record.status === 126110002 ? 5 : 1); setView('new')
     } catch (reason) { setDraftError(`${dt.error} ${message(reason)}`) }
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
 
-  async function saveDraft() {
-    if (draftInFlight.current) return
+  async function saveDraft(submit = false) {
+    if (draftInFlight.current || submitted) return
     setDraftError(''); setDraftNotice('')
     if (!draftComplete) { setDraftError(dt.required); return }
     const rateError = statedRateError(requestInputs.re_statedlaborrate, language)
     if (rateError) { setDraftError(rateError); setStep(1); return }
+    if (submit && !(Number(requestInputs.re_sellprice) > 0)) {
+      setDraftError(language === 'fr' ? 'Saisissez un prix de vente supérieur à zéro avant de soumettre.' : 'Enter a selling price greater than zero before submitting.')
+      setStep(4); return
+    }
     const controls = requestSection.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')
     if (controls && !Array.from(controls).every((input) => input.reportValidity())) return
+    if (submit && !window.confirm(language === 'fr'
+      ? 'Soumettre ce devis ? Toutes les modifications seront enregistrées et le devis ne sera plus modifiable.'
+      : 'Submit this estimate? All changes will be saved and the estimate will be locked against editing.')) return
     draftInFlight.current = true; setDraftBusy(true)
     try {
       const input: DraftRecord = {
-        mode: 'save', id: draftId, version: draftVersion, title: estimateTitle,
+        mode: submit ? 'submit' : 'save', id: draftId, version: draftVersion, title: estimateTitle,
         branchId, stateId, equipmentTypeId, jobTypeId, building: buildingName,
         customer: customerName, email: customerEmail, phone: customerPhone, market,
         fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
@@ -775,8 +784,11 @@ function App() {
       }
       serializeDraft(input)
       const record = await draftOperation(input)
-      applyDraft(record); setDraftNotice(`${dt.saved}: ${record.number || record.id}`)
-    } catch (reason) { setDraftError(`${dt.error} ${message(reason)}`) }
+      if (submit && record.status !== 126110002) throw new Error(language === 'fr'
+        ? 'La soumission n’a pas été confirmée par le serveur. Rechargez le devis avant de réessayer.'
+        : 'Submission was not confirmed by the server. Reload the estimate before retrying.')
+      applyDraft(record); setDraftNotice(`${submit ? language === 'fr' ? 'Devis soumis' : 'Estimate submitted' : dt.saved}: ${record.number || record.id}`)
+    } catch (reason) { setDraftError(`${dt.error} ${submit ? submissionErrorMessage(message(reason), language) : message(reason)}`) }
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
 
@@ -787,6 +799,7 @@ function App() {
     setDraftId(crypto.randomUUID()); setDraftVersion(null); setDraftNumber(''); setSavedSnapshot('')
     setSavedSalesperson('')
     setPricingUnavailable(false)
+    setSubmitted(false)
     setEstimateTitle(''); resetBranch(''); setStateId(''); setEquipmentTypeId(''); setJobTypeId('')
     setBuildingName(''); setCustomerName(''); setCustomerEmail(''); setCustomerPhone('')
     setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1); setView('new')
@@ -1035,7 +1048,7 @@ function App() {
               draftId,
               canWork,
               draftComplete,
-              saveDraft,
+              saveDraft, submitted,
               step,
               estimateTitle,
               setEstimateTitle,

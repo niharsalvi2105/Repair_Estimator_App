@@ -10,9 +10,10 @@ type Props = {
   dirty: boolean
   language: 'en' | 'fr'
   currencies: { id: string; code: string }[]
+  submitted?: boolean
 }
 
-export function PricingSummary({ id, version, dirty, language, currencies }: Props) {
+export function PricingSummary({ id, version, dirty, language, currencies, submitted = false }: Props) {
   const [result, setResult] = useState<{ id: string; version: string; row?: PricingRecord; error?: string }>()
   const [retry, setRetry] = useState(0)
   useEffect(() => {
@@ -106,6 +107,8 @@ export function PricingSummary({ id, version, dirty, language, currencies }: Pro
                 {row.re_actualcmii != null && row.re_actualcmii < 0 && <p className="draft-notice">{t.negative}</p>}
                 <p className="field-help">{t.footer}: {formatReportingTime(row.re_calculatedon!, locale)} · {row.re_calculationversion} · {currency}</p>
               </>}
-    <p className="field-help">{t.draft}</p>
+    <p className="field-help">{submitted
+      ? fr ? 'Devis soumis — aucune approbation ni aucun envoi de courriel implicite.' : 'Submitted estimate — not an approval or an email delivery confirmation.'
+      : t.draft}</p>
   </section>
 }
