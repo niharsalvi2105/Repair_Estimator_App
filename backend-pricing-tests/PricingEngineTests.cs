@@ -307,6 +307,59 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
+        public void Mixed_packages_scale_by_equipment_but_custom_lines_and_additions_count_once()
+        {
+            var i = Baseline();
+            i.IsCustomPath = true;
+            i.EquipmentLineCount = 2;
+            i.MechanicLaborRate = 100m;
+            i.Packages.Clear();
+            i.Packages.Add(new PackageInput { MechanicHoursPerUnit = 3m, MaterialCostPerUnit = 200m });
+            i.Packages.Add(new PackageInput { MechanicHoursPerUnit = 1m, MaterialCostPerUnit = 100m });
+            i.Packages.Add(new PackageInput()); // CSTM/T&M templates have no predefined costs.
+            i.AdditionalLaborHours = 2m;
+            i.AdditionalMaterial = 50m;
+            i.AdditionalMisc = 20m;
+            i.LaborLines.Add(new LaborLineInput { Hours = 4m, Rate = 150m });
+            i.MaterialLines.Add(new MaterialLineInput { Quantity = 2m, UnitCost = 25m, TaxApplicable = true, FreightApplicable = true });
+            var r = PricingEngine.Calculate(i);
+            Assert.Equal(8m, r.PackageLaborHours);
+            Assert.Equal(1514m, r.PackageEstimatedCost); // 800 + 600 * 1.19
+            Assert.Equal(600m, r.CustomLaborCost);
+            Assert.Equal(50m, r.CustomMaterialCost);
+            Assert.Equal(942.8m, r.TotalAdditionalCost); // 200 + 600 + (50 + 50 + 20) * 1.19
+            Assert.Equal(2456.8m, r.TotalTrueCost);
+            Assert.Equal(36m, r.UseTaxAmount);
+            Assert.Equal(100.8m, r.FreightAmount);
+        }
+
+        [Fact]
+        public void Many_packages_are_summed_without_truncation()
+        {
+            var i = Baseline();
+            i.Packages.Clear();
+            for (var n = 0; n < 125; n++)
+                i.Packages.Add(new PackageInput { MechanicHoursPerUnit = 1m, MaterialCostPerUnit = 10m });
+            i.EquipmentLineCount = 2;
+            var r = PricingEngine.Calculate(i);
+            Assert.Equal(250m, r.PackageLaborHours);
+            Assert.Equal(2500m, r.PackageMaterialCost);
+            Assert.Equal(45712.5m, r.TotalTrueCost);
+        }
+
+        [Fact]
+        public void Invalid_custom_values_are_rejected()
+        {
+            var i = Baseline();
+            i.IsCustomPath = true;
+            i.MaterialLines.Add(new MaterialLineInput { Quantity = -1m });
+            Assert.Equal("PRICING_INPUT_INVALID", Assert.Throws<PricingException>(() => PricingEngine.Calculate(i)).Key);
+            i.MaterialLines.Clear();
+            i.LaborLines.Add(new LaborLineInput { Hours = 1m, Rate = -1m });
+            Assert.Equal("PRICING_INPUT_INVALID", Assert.Throws<PricingException>(() => PricingEngine.Calculate(i)).Key);
+        }
+
+        [Fact]
         public void Custom_path_costs_lines_and_splits_kone_material()
         {
             var i = Baseline();
@@ -325,6 +378,8 @@ namespace RepairEstimator.Tests
             Assert.Equal(100m, r.KoneMaterialCost);
             Assert.Equal(2509.50m + 119m + 100m, r.TotalTrueCost);
             Assert.NotNull(r.SuggestedPriceWithKoneMaterial);
+            Assert.Equal(Math.Round((r.TotalTrueCost - 100m) / (1m - r.RecommendedCmii.Value) +
+                150m * 1.25m, 2, MidpointRounding.AwayFromZero), r.SuggestedPriceWithKoneMaterial);
         }
 
         [Fact]

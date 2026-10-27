@@ -8,7 +8,7 @@ namespace RepairEstimator.Plugins.Data
 {
     internal static class Query
     {
-        public static List<Entity> All(IOrganizationService service, QueryExpression query)
+        public static List<Entity> All(IOrganizationService service, QueryExpression query, int? maxRows = null)
         {
             var rows = new List<Entity>();
             query.PageInfo = new PagingInfo { PageNumber = 1, Count = 500 };
@@ -16,7 +16,11 @@ namespace RepairEstimator.Plugins.Data
             {
                 var page = service.RetrieveMultiple(query);
                 rows.AddRange(page.Entities);
+                if (maxRows.HasValue && rows.Count > maxRows.Value)
+                    throw new Pricing.PricingException("RE-142", "DRAFT_PROCESSING_BUDGET_EXCEEDED");
                 if (!page.MoreRecords) return rows;
+                if (maxRows.HasValue && page.Entities.Count == 0)
+                    throw new Pricing.PricingException("RE-142", "INVALID_PAGING_RESPONSE");
                 query.PageInfo.PageNumber++;
                 query.PageInfo.PagingCookie = page.PagingCookie;
             }

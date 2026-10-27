@@ -2,6 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveAppRole, parseRoleResponse, hasPrivilege, getEstimatePrivilegeNames, isDevelopmentAdminOverride, APP_ROLE_NAMES } from '../src/data/accessPolicy.ts'
 import { buildBranchQuery, buildEstimateQuery } from '../src/data/estimateQuery.ts'
+
+test('estimate owner filters apply on the server and reject malformed identities', () => {
+  const ownerId = '11111111-1111-1111-1111-111111111111'
+  for (const recent of [true, false]) {
+    const query = buildEstimateQuery({ search: 'Building', status: '126110000', market: 126110000, recent, ownerId })
+    assert.ok(query.filter.includes(`_ownerid_value eq ${ownerId}`))
+  }
+  assert.ok(!buildEstimateQuery({ search: '', status: '' }).filter.includes('_ownerid_value'))
+  for (const ownerId of ['', 'not-a-guid', '11111111-1111-1111-1111-111111111111 or true'])
+    assert.throws(() => buildEstimateQuery({ search: '', status: '', ownerId }), /owner filter/)
+})
 import { unwrap, withTimeout, DataverseError } from '../src/data/dataverseOperation.ts'
 
 test('branch queries select actual columns, not generated formatted choice-label properties', () => {

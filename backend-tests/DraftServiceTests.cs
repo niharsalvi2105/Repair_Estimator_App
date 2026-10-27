@@ -98,6 +98,7 @@ static class DraftServiceTests
         Reject(() => Run(service, input), "version conflict");
         Assert(service.Deletes == deletes, "Stale update must not delete children");
         input.version = result.version;
+        input.laborLines = null;
         service.Add(new Entity("re_estimatelaborline", Guid.NewGuid()) {
             ["re_repairestimate"] = new EntityReference("re_repairestimate", Guid.Parse(input.id))
         });
@@ -127,13 +128,114 @@ static class DraftServiceTests
         service = Setup(); input = Input(); Run(service, input); input.version = Load(service, input).version;
         service.Rows[Guid.Parse(input.id)]["re_estimatestatus"] = new OptionSetValue(126110002);
         Reject(() => Run(service, input), "Only Draft");
-        Console.WriteLine("Draft service cases passed: snapshots, totals, roundtrip, updates, stale version, dependent lines, duplicate create, French, currency, number, dates, status.");
+        TestFlexiblePackages();
+        TestCustomLines();
+        TestAllLaborCombinations();
+        Console.WriteLine("Draft service cases passed: snapshots, totals, roundtrip, updates, stale version, dependent lines, duplicate create, French, currency, number, dates, status, 125 packages, custom lines, all six labor combinations and rate-query caching.");
+    }
+
+    static void TestFlexiblePackages()
+    {
+        var service = Setup(); var input = Input();
+        for (int n = 1; n < 125; n++)
+        {
+            var master = new Entity("re_repairpackage", Guid.NewGuid());
+            foreach (var a in service.Rows[MasterPackage].Attributes) master[a.Key] = a.Value;
+            master["re_packagenumber"] = "P" + n;
+            master["re_istimematerial"] = n == 1;
+            service.Add(master);
+            input.packages.Add(new PackageInput { id = master.Id.ToString() });
+        }
+        Run(service, input);
+        var loaded = Load(service, input);
+        Assert(loaded.packages.Count == 125, "Paging must not truncate packages");
+        Assert(loaded.packages[1].isTimeMaterial, "T&M flag must roundtrip");
+        Assert(service.Rows.Values.Where(r => r.LogicalName == "re_estimatepackage")
+            .All(r => r.GetAttributeValue<OptionSetValue>("re_packagerole").Value <= 126110002), "Do not invent role choice values");
+        var equipmentId = service.Rows.Values.Single(r => r.LogicalName == "re_estimateequipment").Id;
+        input.version = loaded.version;
+        Run(service, input);
+        Assert(service.Rows.ContainsKey(equipmentId), "Equipment identity must remain stable");
+        Assert(Load(service, input).packages.Count == 125, "Large package set must resave intact");
+        input.version = Load(service, input).version;
+        input.packages.Add(input.packages[0]);
+        Reject(() => Run(service, input), "unique");
+        input.packages = Enumerable.Range(0, 1000).Select(n => new PackageInput { id = Guid.NewGuid().ToString() }).ToList();
+        Reject(() => Run(service, input), "technical processing budget");
+    }
+
+    static void TestCustomLines()
+    {
+        var service = Setup(); var input = Input();
+        service.Rows[MasterPackage]["re_iscustompackage"] = true;
+        var rate = new Entity("re_laborrate", Guid.NewGuid()) {
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110001),
+            ["re_timecategory"] = new OptionSetValue(126110001), ["re_hourlycost"] = 200m,
+            ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
+        };
+        service.Add(rate);
+        input.laborLines = new List<LaborInput> { new LaborInput {
+            id = Guid.NewGuid().ToString(), role = 126110001, time = 126110001, hours = 2m, rate = 1m
+        }};
+        input.materialLines = new List<MaterialInput> { new MaterialInput {
+            id = Guid.NewGuid().ToString(), description = "Motor", vendor = "KONE", part = "KM1", quantity = 2m, unitCost = 25m
+        }};
+        Run(service, input);
+        var loaded = Load(service, input);
+        Assert(loaded.laborLines.Single().rate == 200m, "Never trust browser rate");
+        Assert(loaded.materialLines.Single().unitCost == 25m, "Custom material roundtrip");
+        Assert(service.Rows[Guid.Parse(input.id)].GetAttributeValue<OptionSetValue>("re_estimatepath").Value == 126110001,
+            "Server must derive custom path");
+        input.version = loaded.version;
+        input.laborLines = loaded.laborLines; input.materialLines = loaded.materialLines;
+        var lineId = input.laborLines[0].id;
+        rate["re_hourlycost"] = 999m;
+        input.laborLines[0].hours = 3m;
+        Run(service, input);
+        loaded = Load(service, input);
+        Assert(loaded.laborLines.Single().rate == 200m && loaded.laborLines.Single().id == lineId,
+            "Unchanged role/time must preserve rate and stable line identity");
+        Assert(service.Rows[Guid.Parse(lineId)].GetAttributeValue<Money>("re_totalcost").Value == 600m, "Server labor cost");
+        input.version = loaded.version;
+        input.laborLines[0].hours = -1;
+        Reject(() => Run(service, input), "Invalid labor");
+        input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+        input.laborLines[0].hours = 2;
+        input.materialLines[0].quantity = -1;
+        Reject(() => Run(service, input), "Invalid material");
+    }
+
+    static void TestAllLaborCombinations()
+    {
+        var service = Setup(); var input = Input();
+        service.Rows[MasterPackage]["re_iscustompackage"] = true;
+        input.laborLines = new List<LaborInput>();
+        input.materialLines = new List<MaterialInput>();
+        for (int role = 0; role < 3; role++)
+        for (int time = 0; time < 2; time++)
+        {
+            service.Add(new Entity("re_laborrate", Guid.NewGuid()) {
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110000 + role),
+                ["re_timecategory"] = new OptionSetValue(126110000 + time),
+                ["re_hourlycost"] = 100m + role * 50m + time * 75m, ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
+            });
+            for (int duplicate = 0; duplicate < 2; duplicate++)
+                input.laborLines.Add(new LaborInput { id = Guid.NewGuid().ToString(),
+                    role = 126110000 + role, time = 126110000 + time, hours = 2m, rate = 1m });
+        }
+        Run(service, input);
+        var loaded = Load(service, input);
+        Assert(loaded.laborLines.Count == 12 && loaded.laborLines.All(l =>
+            l.rate == 100m + (l.role - 126110000) * 50m + (l.time - 126110000) * 75m),
+            "All six role/time combinations must resolve the correct trusted rate");
+        Assert(service.RateQueries == 6, "Rate lookups must be cached within the save");
     }
 
     sealed class FakeService : IOrganizationService
     {
         public readonly Dictionary<Guid, Entity> Rows = new Dictionary<Guid, Entity>();
         public int Deletes;
+        public int RateQueries;
         public ConcurrencyBehavior LastConcurrency;
         long version;
         public void Add(Entity row) { row["statecode"] = new OptionSetValue(0); row.RowVersion = (++version).ToString(); Rows[row.Id] = row; }
@@ -149,10 +251,28 @@ static class DraftServiceTests
         public Entity Retrieve(string name, Guid id, ColumnSet columns) => Clone(Rows[id]);
         public EntityCollection RetrieveMultiple(QueryBase query) {
             var q = (QueryExpression)query;
-            return new EntityCollection(Rows.Values.Where(r => r.LogicalName == q.EntityName &&
-                q.Criteria.Conditions.All(c => r.Contains(c.AttributeName) &&
-                    (r[c.AttributeName] is EntityReference reference ? reference.Id.Equals(c.Values[0]) :
-                        r[c.AttributeName].Equals(c.Values[0])))).Select(Clone).ToList());
+            if (q.EntityName == "re_laborrate") RateQueries++;
+            var rows = Rows.Values.Where(r => r.LogicalName == q.EntityName && Matches(r, q.Criteria));
+            var all = rows.ToList();
+            if (q.TopCount.HasValue) return new EntityCollection(all.Take(q.TopCount.Value).Select(Clone).ToList());
+            var count = q.PageInfo?.Count ?? 0;
+            if (count == 0) return new EntityCollection(all.Select(Clone).ToList());
+            var offset = (q.PageInfo.PageNumber - 1) * count;
+            return new EntityCollection(all.Skip(offset).Take(count).Select(Clone).ToList()) {
+                MoreRecords = offset + count < all.Count, PagingCookie = "page"
+            };
+        }
+        static object Scalar(object value) => value is EntityReference r ? (object)r.Id : value is OptionSetValue o ? o.Value : value;
+        static bool Matches(Entity row, FilterExpression filter) {
+            var results = filter.Conditions.Select(c => {
+                row.Attributes.TryGetValue(c.AttributeName, out var value); value = Scalar(value);
+                if (c.Operator == ConditionOperator.Null) return value == null;
+                if (c.Operator == ConditionOperator.Equal) return Equals(value, Scalar(c.Values[0]));
+                if (value == null) return false;
+                var comparison = ((IComparable)value).CompareTo(c.Values[0]);
+                return c.Operator == ConditionOperator.LessEqual ? comparison <= 0 : comparison >= 0;
+            }).Concat(filter.Filters.Select(f => Matches(row, f)));
+            return filter.FilterOperator == LogicalOperator.And ? results.All(x => x) : results.Any(x => x);
         }
         public void Update(Entity row) {
             foreach (var value in row.Attributes) Rows[row.Id][value.Key] = value.Value;
@@ -169,9 +289,12 @@ static class DraftServiceTests
                 Delete(delete.Target.LogicalName, delete.Target.Id);
                 return new DeleteResponse();
             }
-            var update = (UpdateRequest)request; LastConcurrency = update.ConcurrencyBehavior;
-            if (Rows[update.Target.Id].RowVersion != update.Target.RowVersion)
-                throw new InvalidPluginExecutionException("Row version conflict");
+            var update = (UpdateRequest)request;
+            if (update.ConcurrencyBehavior == ConcurrencyBehavior.IfRowVersionMatches) {
+                LastConcurrency = update.ConcurrencyBehavior;
+                if (Rows[update.Target.Id].RowVersion != update.Target.RowVersion)
+                    throw new InvalidPluginExecutionException("Row version conflict");
+            }
             Update(update.Target); return new UpdateResponse();
         }
         public void Associate(string name, Guid id, Relationship relationship, EntityReferenceCollection entities) =>

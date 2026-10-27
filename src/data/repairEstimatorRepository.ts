@@ -50,6 +50,8 @@ export type RepairPackage = Pick<
   | 're_mechanichours'
   | 're_effectivefrom'
   | 're_effectiveto'
+  | 're_iscustompackage'
+  | 're_istimematerial'
 >
 
 export type ReferenceOption = { id: string; en: string; fr?: string }
@@ -141,7 +143,7 @@ export async function searchEquipment(
   return unwrap(result)
 }
 
-export async function searchStandardPackages(
+export async function searchPackages(
   branchCountryId: string,
   searchText: string,
 ): Promise<RepairPackage[]> {
@@ -157,8 +159,10 @@ export async function searchStandardPackages(
       're_mechanichours',
       're_effectivefrom',
       're_effectiveto',
+      're_iscustompackage',
+      're_istimematerial',
     ],
-    filter: `statecode eq 0 and re_iscustompackage eq false and re_istimematerial eq false and (_re_country_value eq ${branchCountryId} or _re_country_value eq null) and (startswith(re_packagenumber,'${escapedSearch}') or startswith(re_packagenameen,'${escapedSearch}'))`,
+    filter: `statecode eq 0 and (_re_country_value eq ${branchCountryId} or _re_country_value eq null) and (startswith(re_packagenumber,'${escapedSearch}') or startswith(re_packagenameen,'${escapedSearch}'))`,
     orderBy: ['re_packagenumber asc'],
     top: 20,
     maxPageSize: 20,

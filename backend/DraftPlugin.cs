@@ -43,6 +43,29 @@ namespace RepairEstimator.Drafts
         [DataMember] public string scopeFr;
         [DataMember] public decimal hours;
         [DataMember] public decimal material;
+        [DataMember] public bool isCustom;
+        [DataMember] public bool isTimeMaterial;
+    }
+
+    [DataContract]
+    public sealed class LaborInput
+    {
+        [DataMember] public string id;
+        [DataMember] public int role;
+        [DataMember] public int time;
+        [DataMember] public decimal hours;
+        [DataMember] public decimal rate;
+    }
+
+    [DataContract]
+    public sealed class MaterialInput
+    {
+        [DataMember] public string id;
+        [DataMember] public string description;
+        [DataMember] public string vendor;
+        [DataMember] public string part;
+        [DataMember] public decimal quantity;
+        [DataMember] public decimal unitCost;
     }
 
     [DataContract]
@@ -67,6 +90,8 @@ namespace RepairEstimator.Drafts
         [DataMember] public List<Field> fields = new List<Field>();
         [DataMember] public List<EquipmentInput> equipment = new List<EquipmentInput>();
         [DataMember] public List<PackageInput> packages = new List<PackageInput>();
+        [DataMember] public List<LaborInput> laborLines;
+        [DataMember] public List<MaterialInput> materialLines;
     }
 
     public sealed class DraftPlugin : IPlugin
@@ -74,6 +99,10 @@ namespace RepairEstimator.Drafts
         const string Estimate = "re_repairestimate";
         const string Equipment = "re_estimateequipment";
         const string Package = "re_estimatepackage";
+        const string Labor = "re_estimatelaborline";
+        const string Material = "re_estimatematerialline";
+        const int MaxPayloadBytes = 200000;
+        const int MaxChildOperations = 1000;
         const int DraftStatus = 126110000;
         static readonly string[] TextFields = {
             "re_supervisor", "re_additionalscope", "re_margincomments", "re_prospectaccount",
@@ -84,7 +113,7 @@ namespace RepairEstimator.Drafts
         };
         static readonly string[] MoneyFields = {
             "re_subcontractorcost", "re_statedlaborrate", "re_additionalmaterial",
-            "re_additionalmiscellaneous", "re_sellprice"
+            "re_additionalmiscellaneous", "re_sellprice", "re_konesparessalespricevk13"
         };
         static readonly Dictionary<string, int> ChoiceFields = new Dictionary<string, int> {
             {"re_workcenterrequest", 2}, {"re_hasbeenapproved", 3}, {"re_nationalaccount", 2},
@@ -137,7 +166,18 @@ namespace RepairEstimator.Drafts
         {
             if (input.fields == null || input.equipment == null || input.packages == null) Fail("Incomplete draft payload.");
             if (input.equipment.Count < 1 || input.equipment.Count > 14) Fail("Select between 1 and 14 equipment units.");
-            if (input.packages.Count < 1 || input.packages.Count > 3) Fail("Select between 1 and 3 standard packages.");
+            if (input.packages.Count < 1) Fail("Select at least one package.");
+            if (input.equipment.Any(x => x == null) || input.packages.Any(x => x == null) || input.fields.Any(x => x == null))
+                Fail("Invalid draft row.");
+            var priorLabor = Children(service, Labor, id);
+            var priorMaterial = Children(service, Material, id);
+            if ((input.laborLines == null && priorLabor.Count != 0) || (input.materialLines == null && priorMaterial.Count != 0))
+                Fail("This draft contains labor lines or material lines. Reload with the current app before editing.");
+            input.laborLines = input.laborLines ?? new List<LaborInput>();
+            input.materialLines = input.materialLines ?? new List<MaterialInput>();
+            if (input.laborLines.Any(x => x == null) || input.materialLines.Any(x => x == null)) Fail("Invalid custom line.");
+            if (input.packages.Count + input.equipment.Count + input.laborLines.Count + input.materialLines.Count > MaxChildOperations)
+                Fail("Draft exceeds the technical processing budget. Split this request into smaller estimates.");
             if (input.equipment.Select(x => x.number?.Trim().ToUpperInvariant()).Distinct().Count() != input.equipment.Count)
                 Fail("Equipment numbers must be unique.");
             if (input.packages.Select(x => x.id).Distinct().Count() != input.packages.Count) Fail("Packages must be unique.");
@@ -160,10 +200,6 @@ namespace RepairEstimator.Drafts
                 if (old.GetAttributeValue<EntityReference>("re_branch")?.Id != branch.Id ||
                     old.GetAttributeValue<EntityReference>("transactioncurrencyid")?.Id != currency.Id)
                     Fail("An existing draft cannot change branch or currency. Start a new estimate instead.");
-                var labor = new QueryExpression("re_estimatelaborline") { ColumnSet = new ColumnSet(false), TopCount = 1 };
-                labor.Criteria.AddCondition("re_repairestimate", ConditionOperator.Equal, id);
-                if (service.RetrieveMultiple(labor).Entities.Count != 0)
-                    Fail("This draft contains labor lines. Editing it requires the line-preserving workflow, which is not available yet.");
             }
             var header = new Entity(Estimate, id);
             header["re_estimatename"] = Required(input.title, 100, "Estimate title");
@@ -219,6 +255,7 @@ namespace RepairEstimator.Drafts
                     (e.GetAttributeValue<EntityReference>("re_equipment")?.Id.ToString() ?? "") == (item.matched ? item.id : ""));
                 if (previous != null)
                 {
+                    row.Id = previous.Id;
                     Copy(previous, row, "re_equipment", "re_equipmentnamesnapshot", "re_functionallocation",
                         "re_soldtoname", "re_soldtonumber", "re_verticalcode", "re_oem", "re_equipmentage");
                 }
@@ -244,8 +281,9 @@ namespace RepairEstimator.Drafts
                 var previous = priorPackages.FirstOrDefault(p => p.GetAttributeValue<EntityReference>("re_repairpackage")?.Id == packageId);
                 if (previous != null)
                 {
+                    row.Id = previous.Id;
                     Copy(previous, row, "re_packagenumber", "re_packagenameen", "re_packagenamefr", "re_proposalscopeen",
-                        "re_proposalscopefr", "re_mechanichoursperunit", "re_materialcostperunit");
+                        "re_proposalscopefr", "re_mechanichoursperunit", "re_materialcostperunit", "re_iscustompackage", "re_istimematerial");
                 }
                 else
                 {
@@ -255,8 +293,6 @@ namespace RepairEstimator.Drafts
                             "re_currency", "transactioncurrencyid", "re_iscustompackage", "re_istimematerial",
                             "re_effectivefrom", "re_effectiveto", "statecode"));
                     Active(master);
-                    if (master.GetAttributeValue<bool>("re_iscustompackage") || master.GetAttributeValue<bool>("re_istimematerial"))
-                        Fail("This draft workflow supports standard packages only.");
                     var pc = master.GetAttributeValue<EntityReference>("re_country");
                     if (pc != null && pc.Id != country.Id) Fail("Package country does not match the branch.");
                     var mc = master.GetAttributeValue<EntityReference>("re_currency") ?? master.GetAttributeValue<EntityReference>("transactioncurrencyid");
@@ -268,30 +304,145 @@ namespace RepairEstimator.Drafts
                     if (!master.Contains("re_mechanichours") || !master.Contains("re_materialmisctaxcost")) Fail("Package hours or material cost is missing.");
                     row["re_mechanichoursperunit"] = master.GetAttributeValue<decimal>("re_mechanichours");
                     row["re_materialcostperunit"] = master.GetAttributeValue<Money>("re_materialmisctaxcost");
+                    row["re_iscustompackage"] = master.GetAttributeValue<bool>("re_iscustompackage");
+                    row["re_istimematerial"] = master.GetAttributeValue<bool>("re_istimematerial");
                 }
                 row["re_name"] = row.GetAttributeValue<string>("re_packagenumber");
+                if (row.GetAttributeValue<decimal>("re_mechanichoursperunit") < 0 ||
+                    row.GetAttributeValue<Money>("re_materialcostperunit").Value < 0)
+                    Fail("Package hours and material cost must be nonnegative.");
                 row["re_repairpackage"] = new EntityReference("re_repairpackage", packageId);
                 row["re_repairestimate"] = header.ToEntityReference();
                 row["ownerid"] = old?.GetAttributeValue<EntityReference>("ownerid") ?? new EntityReference("systemuser", user);
                 row["transactioncurrencyid"] = currency;
-                row["re_packagerole"] = new OptionSetValue(126110000 + i);
+                row["re_packagerole"] = new OptionSetValue(126110000 + Math.Min(i, 2));
+                row["re_sequence"] = i + 1;
                 row["re_quantity"] = input.equipment.Count;
                 row["re_totalhours"] = row.GetAttributeValue<decimal>("re_mechanichoursperunit") * input.equipment.Count;
                 row["re_totalmaterial"] = new Money(row.GetAttributeValue<Money>("re_materialcostperunit").Value * input.equipment.Count);
                 packageRows.Add(row);
             }
-            foreach (var row in priorPackages.Concat(priorEquipment))
+            bool custom = packageRows.Any(p => p.GetAttributeValue<bool>("re_iscustompackage"));
+            if (!custom && (input.laborLines.Count != 0 || input.materialLines.Count != 0))
+                Fail("Custom labor/material lines require a CSTM package. Remove the lines explicitly before removing CSTM.");
+            if (!custom && header.GetAttributeValue<Money>("re_konesparessalespricevk13")?.Value > 0)
+                Fail("KONE spares sales price requires a CSTM package.");
+            var lineRows = BuildLines(service, input, priorLabor, priorMaterial, header, branch, currency,
+                old?.GetAttributeValue<EntityReference>("ownerid") ?? new EntityReference("systemuser", user));
+            var prior = priorEquipment.Concat(priorPackages).Concat(priorLabor).Concat(priorMaterial).ToList();
+            var desired = equipmentRows.Concat(packageRows).Concat(lineRows).ToList();
+            var retained = new HashSet<Guid>(desired.Where(r => r.Id != Guid.Empty).Select(r => r.Id));
+            var removed = prior.Where(r => !retained.Contains(r.Id)).OrderBy(r => r.LogicalName == Equipment ? 1 : 0).ToList();
+            if (priorLabor.Concat(priorMaterial).Any(r => retained.Contains(r.Id) &&
+                r.GetAttributeValue<EntityReference>("re_estimateequipment") is EntityReference linked &&
+                removed.Any(e => e.LogicalName == Equipment && e.Id == linked.Id)))
+                Fail("Remove custom lines linked to removed equipment before saving.");
+            if (desired.Count + removed.Count > MaxChildOperations)
+                Fail("Draft exceeds the technical processing budget. Split this request into smaller estimates.");
+            foreach (var row in removed)
             {
                 var delete = new DeleteRequest { Target = row.ToEntityReference() };
                 delete["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
                 service.Execute(delete);
             }
-            foreach (var row in equipmentRows.Concat(packageRows))
+            var existing = new HashSet<Guid>(prior.Select(r => r.Id));
+            foreach (var row in desired)
             {
-                var create = new CreateRequest { Target = row };
-                create["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
-                service.Execute(create);
+                OrganizationRequest write = existing.Contains(row.Id)
+                    ? (OrganizationRequest)new UpdateRequest { Target = row } : new CreateRequest { Target = row };
+                write["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
+                service.Execute(write);
             }
+            var path = new UpdateRequest { Target = new Entity(Estimate, id) {
+                ["re_estimatepath"] = new OptionSetValue(custom ? 126110001 : 126110000)
+            }};
+            path["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
+            service.Execute(path);
+        }
+
+        static List<Entity> BuildLines(IOrganizationService service, Draft input, List<Entity> priorLabor,
+            List<Entity> priorMaterial, Entity header, Entity branch, EntityReference currency, EntityReference owner)
+        {
+            var rows = new List<Entity>();
+            var seen = new HashSet<string>();
+            var rates = new Dictionary<string, Entity>();
+            foreach (var line in input.laborLines)
+            {
+                if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
+                if (line.role < 126110000 || line.role > 126110002 || line.time < 126110000 || line.time > 126110001 ||
+                    line.hours < 0 || line.hours > 100000 || decimal.Round(line.hours, 2) != line.hours)
+                    Fail("Invalid labor role, time category or hours (maximum 100000, two decimals).");
+                var previous = priorLabor.FirstOrDefault(r => r.Id.ToString() == line.id);
+                var row = new Entity(Labor, previous?.Id ?? Guid.NewGuid());
+                if (previous != null && previous.GetAttributeValue<OptionSetValue>("re_laborrole")?.Value == line.role &&
+                    previous.GetAttributeValue<OptionSetValue>("re_timecategory")?.Value == line.time &&
+                    previous.Contains("re_hourlycost") && previous.Contains("re_laborrate"))
+                    Copy(previous, row, "re_hourlycost", "re_laborrate");
+                else
+                {
+                    var key = line.role + ":" + line.time;
+                    if (!rates.TryGetValue(key, out var rate))
+                    {
+                        var query = new QueryExpression("re_laborrate") {
+                            ColumnSet = new ColumnSet("re_hourlycost"), TopCount = 2
+                        };
+                        query.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
+                        query.Criteria.AddCondition("re_branch", ConditionOperator.Equal, branch.Id);
+                        query.Criteria.AddCondition("re_laborrole", ConditionOperator.Equal, line.role);
+                        query.Criteria.AddCondition("re_timecategory", ConditionOperator.Equal, line.time);
+                        query.Criteria.AddCondition("re_effectivefrom", ConditionOperator.LessEqual, DateTime.UtcNow.Date);
+                        var end = query.Criteria.AddFilter(LogicalOperator.Or);
+                        end.AddCondition("re_effectiveto", ConditionOperator.Null);
+                        end.AddCondition("re_effectiveto", ConditionOperator.GreaterEqual, DateTime.UtcNow.Date);
+                        var matches = service.RetrieveMultiple(query).Entities;
+                        if (matches.Count != 1 || !matches[0].Contains("re_hourlycost") ||
+                            matches[0].GetAttributeValue<decimal>("re_hourlycost") < 0)
+                            Fail("Labor rate is missing, invalid or ambiguous for the selected branch, role and time category.");
+                        rate = matches[0]; rates.Add(key, rate);
+                    }
+                    row["re_hourlycost"] = new Money(decimal.Round(rate.GetAttributeValue<decimal>("re_hourlycost"), 2, MidpointRounding.AwayFromZero));
+                    row["re_laborrate"] = rate.ToEntityReference();
+                }
+                row["re_name"] = "Custom labor";
+                row["re_laborrole"] = new OptionSetValue(line.role);
+                row["re_timecategory"] = new OptionSetValue(line.time);
+                row["re_hours"] = line.hours;
+                row["re_totalcost"] = new Money(decimal.Round(line.hours * row.GetAttributeValue<Money>("re_hourlycost").Value, 2, MidpointRounding.AwayFromZero));
+                rows.Add(row);
+            }
+            foreach (var line in input.materialLines)
+            {
+                if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
+                if (line.quantity < 0 || line.quantity > 100000 || line.unitCost < 0 || line.unitCost > 1000000000 ||
+                    decimal.Round(line.quantity, 2) != line.quantity || decimal.Round(line.unitCost, 2) != line.unitCost)
+                    Fail("Invalid material quantity or unit cost (two decimals required).");
+                var previous = priorMaterial.FirstOrDefault(r => r.Id.ToString() == line.id);
+                var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
+                row["re_name"] = "Custom material";
+                row["re_estimatematerialline"] = "Custom material";
+                row["re_entereddescription"] = Required(line.description, 2000, "Material description");
+                row["re_vendor"] = Optional(line.vendor, 100);
+                row["re_partnumber"] = Optional(line.part, 100);
+                row["re_quantity"] = line.quantity;
+                row["re_unitcost"] = new Money(line.unitCost);
+                row["re_taxapplicable"] = true;
+                row["re_freightapplicable"] = true;
+                row["re_extendedcost"] = new Money(decimal.Round(line.quantity * line.unitCost, 2, MidpointRounding.AwayFromZero));
+                var extended = line.quantity * line.unitCost;
+                var tax = header.GetAttributeValue<decimal>("re_usetax");
+                var freight = header.GetAttributeValue<decimal>("re_freight");
+                row["re_taxamount"] = new Money(decimal.Round(extended * tax, 2, MidpointRounding.AwayFromZero));
+                row["re_freightamount"] = new Money(decimal.Round(extended * freight, 2, MidpointRounding.AwayFromZero));
+                row["re_totalcost"] = new Money(decimal.Round(extended * (1m + tax + freight), 2, MidpointRounding.AwayFromZero));
+                rows.Add(row);
+            }
+            foreach (var row in rows)
+            {
+                row["re_repairestimate"] = header.ToEntityReference();
+                row["ownerid"] = owner;
+                row["transactioncurrencyid"] = currency;
+            }
+            return rows;
         }
 
         static void ApplyFields(Entity header, List<Field> fields)
@@ -372,24 +523,54 @@ namespace RepairEstimator.Drafts
                     location = e.GetAttributeValue<string>("re_functionallocation"), customer = e.GetAttributeValue<string>("re_soldtoname"),
                     oem = e.GetAttributeValue<string>("re_oem"), age = e.Contains("re_equipmentage") ? (int?)e.GetAttributeValue<int>("re_equipmentage") : null
                 });
-            foreach (var p in Children(service, Package, id).OrderBy(p => p.GetAttributeValue<OptionSetValue>("re_packagerole").Value))
+            var laborRows = Children(service, Labor, id);
+            var materialRows = Children(service, Material, id);
+            if (laborRows.Any(e => new[] { "re_laborrole", "re_timecategory", "re_hours", "re_hourlycost" }.Any(k => !e.Contains(k))))
+                Fail("Saved labor snapshot is incomplete. Ask an administrator to correct it before editing.");
+            if (materialRows.Any(e => new[] { "re_entereddescription", "re_quantity", "re_unitcost" }.Any(k => !e.Contains(k))))
+                Fail("Saved material snapshot is incomplete. Ask an administrator to correct it before editing.");
+            result.laborLines = laborRows.OrderBy(e => e.Id).Select(e => new LaborInput {
+                id = e.Id.ToString(), role = e.GetAttributeValue<OptionSetValue>("re_laborrole")?.Value ?? 0,
+                time = e.GetAttributeValue<OptionSetValue>("re_timecategory")?.Value ?? 0,
+                hours = e.GetAttributeValue<decimal>("re_hours"), rate = e.GetAttributeValue<Money>("re_hourlycost").Value
+            }).ToList();
+            result.materialLines = materialRows.OrderBy(e => e.Id).Select(e => new MaterialInput {
+                id = e.Id.ToString(), description = e.GetAttributeValue<string>("re_entereddescription"),
+                vendor = e.GetAttributeValue<string>("re_vendor"), part = e.GetAttributeValue<string>("re_partnumber"),
+                quantity = e.GetAttributeValue<decimal>("re_quantity"), unitCost = e.GetAttributeValue<Money>("re_unitcost").Value
+            }).ToList();
+            foreach (var p in Children(service, Package, id).OrderBy(p => p.GetAttributeValue<int?>("re_sequence") ??
+                p.GetAttributeValue<OptionSetValue>("re_packagerole").Value - 126110000))
                 result.packages.Add(new PackageInput {
                     id = Id(p, "re_repairpackage"), number = p.GetAttributeValue<string>("re_packagenumber"),
                     nameEn = p.GetAttributeValue<string>("re_packagenameen"), nameFr = p.GetAttributeValue<string>("re_packagenamefr"),
                     scopeEn = p.GetAttributeValue<string>("re_proposalscopeen"), scopeFr = p.GetAttributeValue<string>("re_proposalscopefr"),
                     hours = p.GetAttributeValue<decimal>("re_mechanichoursperunit"),
-                    material = p.GetAttributeValue<Money>("re_materialcostperunit").Value
+                    material = p.GetAttributeValue<Money>("re_materialcostperunit").Value,
+                    isCustom = p.GetAttributeValue<bool>("re_iscustompackage"), isTimeMaterial = p.GetAttributeValue<bool>("re_istimematerial")
                 });
+            if (Encoding.UTF8.GetByteCount(Serialize(result)) > 1000000)
+                Fail("Draft response exceeds the technical size budget. Split this request into smaller estimates.");
             return result;
         }
 
         static List<Entity> Children(IOrganizationService service, string table, Guid id)
         {
-            var query = new QueryExpression(table) { ColumnSet = new ColumnSet(true), TopCount = 100 };
+            var query = new QueryExpression(table) { ColumnSet = new ColumnSet(true),
+                PageInfo = new PagingInfo { Count = 100, PageNumber = 1 } };
             query.Criteria.AddCondition("re_repairestimate", ConditionOperator.Equal, id);
-            var records = service.RetrieveMultiple(query);
-            if (records.MoreRecords || records.Entities.Count >= 100) Fail("Draft child count exceeds the supported limit.");
-            return records.Entities.ToList();
+            query.AddOrder(table + "id", OrderType.Ascending);
+            var rows = new List<Entity>();
+            do
+            {
+                var records = service.RetrieveMultiple(query);
+                rows.AddRange(records.Entities);
+                if (rows.Count > MaxChildOperations) Fail("Draft exceeds the technical processing budget.");
+                if (!records.MoreRecords) return rows;
+                if (records.Entities.Count == 0) Fail("Invalid draft paging response.");
+                query.PageInfo.PageNumber++;
+                query.PageInfo.PagingCookie = records.PagingCookie;
+            } while (true);
         }
         static EntityReference Reference(IOrganizationService service, string table, string id)
         {
@@ -408,7 +589,8 @@ namespace RepairEstimator.Drafts
         static void Fail(string message) { throw new InvalidPluginExecutionException(message); }
         static T Deserialize<T>(string json)
         {
-            if (json == null || json.Length > 200000) throw new InvalidPluginExecutionException("Invalid draft payload size.");
+            if (json == null || json.Length > MaxPayloadBytes || Encoding.UTF8.GetByteCount(json) > MaxPayloadBytes)
+                throw new InvalidPluginExecutionException("Draft exceeds the 200000-byte request budget. Split this request into smaller estimates.");
             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
                 return (T)new DataContractJsonSerializer(typeof(T)).ReadObject(stream);
         }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { decimalInputDisplay } from './data/numberDisplay'
+import { statedRateError } from './data/requestValidation'
 import {
   Re_repairestimatesre_workcenterrequest,
   Re_repairestimatesre_hasbeenapproved,
@@ -54,6 +55,7 @@ const costFields = [
 ] as const satisfies readonly Field[]
 
 const pricingFields = [
+  { key: 're_konesparessalespricevk13', en: 'KONE spares sales price (VK13, custom estimates only)', fr: 'Prix de vente des pièces KONE (VK13, devis personnalisés uniquement)', type: 'number' },
   { key: 're_sellprice', en: 'Sell price ($, entered proposal price)', fr: 'Prix de vente ($, prix proposé saisi)', type: 'number' },
   { key: 're_billingplan', en: 'Billing plan', fr: 'Plan de facturation', options: Re_repairestimatesre_billingplan },
   { key: 're_margincomments', en: 'Comments on booked vs recommended margin', fr: 'Commentaires sur la marge prévue et recommandée', type: 'textarea' },
@@ -78,12 +80,13 @@ const frenchChoices: Record<string, string> = {
   'Double Time': 'Temps double', 'Final 100%': 'Solde 100 %', 'Other: See Notes': 'Autre : voir les notes',
 }
 
-export function RequestFields({ stage, language, value, onChange, readOnly = false }: {
+export function RequestFields({ stage, language, value, onChange, readOnly = false, custom = false }: {
   stage: 'request' | 'cost' | 'pricing' | 'partner'
   language: 'en' | 'fr'
   value: RequestInputs
   onChange: (key: InputKey, value: string) => void
   readOnly?: boolean
+  custom?: boolean
 }) {
   const [focusedKey, setFocusedKey] = useState<InputKey>()
   const fields: readonly (Omit<Field, 'key'> & { key: InputKey })[] = {
@@ -91,10 +94,12 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
   }[stage]
   return (
     <div className="input-grid">
-      {fields.map((field) => {
+      {fields.filter((field) => field.key !== 're_konesparessalespricevk13' || custom).map((field) => {
         const id = `request-${field.key}`
         const key = field.key
         const label = language === 'fr' ? field.fr : field.en
+        const rateField = key === 're_statedlaborrate'
+        const error = rateField ? statedRateError(value[key], language) : undefined
         return (
           <div className="field-label" key={key}>
             <label htmlFor={id}>{label}</label>
@@ -110,6 +115,8 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
                 onChange={(event) => onChange(key, event.target.value)} readOnly={readOnly} />
             ) : (
               <input id={id} className="text-input" type={field.type ?? 'text'}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={rateField ? `${id}-help${error ? ` ${id}-error` : ''}` : undefined}
                 min={field.type === 'number' ? field.integer ? 1 : 0 : undefined}
                 max={field.percent ? 100 : field.max}
                 step={field.type === 'number' ? field.integer ? 1 : 'any' : undefined}
@@ -120,6 +127,10 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
                 onFocus={() => setFocusedKey(key)} onBlur={() => setFocusedKey(undefined)}
                 onChange={(event) => onChange(key, event.target.value)} />
             )}
+            {rateField && <p className="field-help" id={`${id}-help`}>{language === 'fr'
+              ? 'Facultatif. Taux horaire de vente négocié, et non le prix total du devis. Laissez vide (ou zéro) pour le calcul standard du CMII. Un taux faible peut empêcher le calcul des prix; le serveur valide la marge lors de l’enregistrement.'
+              : 'Optional. Negotiated hourly selling rate, not the total estimate price. Leave blank (or zero) for standard CMII pricing. A low rate may prevent pricing; the server validates the margin on save.'}</p>}
+            {error && <p id={`${id}-error`} role="alert">{error}</p>}
           </div>
         )
       })}

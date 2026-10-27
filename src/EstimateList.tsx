@@ -13,6 +13,7 @@ const text = {
     request: 'Request', customer: 'Customer', building: 'Building', created: 'Created',
     draft: 'Draft', pending: 'Pending', submitted: 'Submitted', unknown: 'Unknown status',
     scope: 'Only records allowed by your Dataverse permissions are returned.',
+    ownScope: 'Only your own requests are shown.',
     open: 'Open draft',
   },
   fr: {
@@ -24,22 +25,25 @@ const text = {
     request: 'Demande', customer: 'Client', building: 'Immeuble', created: 'Création',
     draft: 'Brouillon', pending: 'En attente', submitted: 'Envoyée', unknown: 'État inconnu',
     scope: 'Seules les demandes autorisées par Dataverse sont affichées.',
+    ownScope: 'Seules vos propres demandes sont affichées.',
     open: 'Ouvrir le brouillon',
   },
 }
 
 export function EstimateList(props: {
   language: 'en' | 'fr'; market: Market; onOpen?: (id: string) => void; busy?: boolean; search?: string; recent?: boolean
+  ownerId: string | null
 }) {
   const [status, setStatus] = useState('')
-  return <PagedEstimateList key={`${props.market}:${props.search ?? ''}:${status}`} {...props}
+  return <PagedEstimateList key={`${props.ownerId}:${props.market}:${props.search ?? ''}:${status}`} {...props}
     status={status} onStatusChange={setStatus} />
 }
 
-function PagedEstimateList({ language, market, onOpen, busy = false, search = '', status, onStatusChange, recent = false }: {
+function PagedEstimateList({ language, market, ownerId, onOpen, busy = false, search = '', status, onStatusChange, recent = false }: {
   language: 'en' | 'fr'; market: Market; onOpen?: (id: string) => void; busy?: boolean; search?: string
   status: string; onStatusChange: (value: string) => void
   recent?: boolean
+  ownerId: string | null
 }) {
   const t = text[language]
   const [tokens, setTokens] = useState<(string | undefined)[]>([undefined])
@@ -55,7 +59,7 @@ function PagedEstimateList({ language, market, onOpen, busy = false, search = ''
     const timer = setTimeout(() => {
       setLoading(true)
       setError(undefined)
-      void listEstimates({ search, status, skipToken, market, recent })
+      void listEstimates({ search, status, skipToken, market, recent, ownerId: ownerId ?? undefined })
         .then((page) => {
           if (cancelled) return
           setRecords(page.records)
@@ -71,7 +75,7 @@ function PagedEstimateList({ language, market, onOpen, busy = false, search = ''
         .finally(() => { if (!cancelled) setLoading(false) })
     }, 300)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [search, status, skipToken, retry, market, recent])
+  }, [search, status, skipToken, retry, market, recent, ownerId])
 
   const statuses: Record<number, string> = {
     126110000: t.draft, 126110001: t.pending, 126110002: t.submitted,
@@ -79,7 +83,7 @@ function PagedEstimateList({ language, market, onOpen, busy = false, search = ''
 
   return (
     <div className={`estimate-list${recent ? ' recent-estimate-list' : ''}`}>
-      {!recent && <><p className="field-help">{t.scope}</p>
+      {!recent && <><p className="field-help">{ownerId === null ? t.scope : t.ownScope}</p>
       <div className="request-filters">
         {search && <p className="field-help">{t.search}: <strong>{search}</strong></p>}
         <label className="field-label">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getSavedPricing } from './data/pricingRepository'
 import type { PricingRecord } from './data/pricingContract'
 import { formatReportingTime } from './data/reportingTime'
+import { pricingUnavailableMessage } from './data/requestValidation'
 
 type Props = {
   id: string
@@ -72,14 +73,26 @@ export function PricingSummary({ id, version, dirty, language, currencies }: Pro
       : !current ? <p role="status">{t.loading}</p>
         : current.error ? <div role="alert"><p>{t.error}</p><p>{current.error}</p>
           <button type="button" className="button secondary" onClick={reload}>{t.retry}</button></div>
-          : !available ? <p role="status">{row?.re_calculationversion === 'unavailable' ? t.unavailable : t.notCalculated}</p>
+          : !available ? <p role={row?.re_calculationversion === 'unavailable' ? 'alert' : 'status'}>{row?.re_calculationversion === 'unavailable' ? pricingUnavailableMessage(language) : t.notCalculated}</p>
             : !currency ? <p role="alert">{t.currency}</p>
               : <>
                 <dl className="pricing-totals">
                   {([
                     [t.cost, money(row.re_totaltruecost)], [t.sell, money(row.re_sellprice)],
                     [t.suggested, money(row.re_suggestedprice)],
+                    ...(row.re_suggestedpricewithkonematerial != null
+                      ? [[fr ? 'Prix suggéré avec pièces KONE' : 'Suggested price with KONE material', money(row.re_suggestedpricewithkonematerial)]] : []),
                   ]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                </dl>
+                <dl className="pricing-margins">
+                  {([
+                    [fr ? 'Coût des forfaits' : 'Package estimated cost', row.re_packageestimatedcost],
+                    [fr ? 'Main-d’œuvre personnalisée' : 'Custom labor cost', row.re_customlaborcost],
+                    [fr ? 'Matériaux personnalisés (avant taxe/fret)' : 'Custom material cost (before tax/freight)', row.re_custommaterialcost],
+                    [fr ? 'Ajouts, incluant les coûts personnalisés' : 'Additional costs, including custom costs', row.re_totaladditionalcost],
+                    [fr ? 'Taxe' : 'Use tax', row.re_usetaxamount],
+                    [fr ? 'Fret' : 'Freight', row.re_freightamount],
+                  ] as const).map(([label, amount]) => <div key={label}><dt>{label}</dt><dd>{money(amount)}</dd></div>)}
                 </dl>
                 <dl className="pricing-margins">
                   {([

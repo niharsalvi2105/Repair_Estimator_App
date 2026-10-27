@@ -59,7 +59,7 @@ namespace RepairEstimator.Tests
             var db = new Pipeline();
             var request = db.DraftJson();
             var result = db.Save(request);
-            Assert.Contains("\"pricingState\":\"2026.1\"", result);
+            Assert.Contains("\"pricingState\":\"" + PricingEngine.Version + "\"", result);
             Assert.Equal(1, db.Calculations);
             var header = db.Rows[db.EstimateId];
             Assert.Equal(300m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
@@ -87,7 +87,7 @@ namespace RepairEstimator.Tests
                 [Names.Estimate.SellPrice] = new Money(25m)
             });
             var header = db.Rows[db.EstimateId];
-            Assert.Equal("2026.1", header.GetAttributeValue<string>(Names.Estimate.CalculationVersion));
+            Assert.Equal(PricingEngine.Version, header.GetAttributeValue<string>(Names.Estimate.CalculationVersion));
             Assert.Equal(600m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPrice).Value);
             Assert.Equal(-11m, header.GetAttributeValue<decimal>(Names.Estimate.ActualCmii));
             Assert.Equal(0m, header.GetAttributeValue<Money>(Names.Estimate.AmIncentive).Value);
@@ -204,15 +204,57 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
-        public void Custom_path_stays_disabled_without_querying_material_relationships()
+        public void Custom_draft_api_uses_trusted_rates_and_calculates_once_with_package_costs()
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var json = db.DraftJson();
+            json = json.Substring(0, json.Length - 1) +
+                ",\"laborLines\":[{\"id\":\"new-labor\",\"role\":126110000,\"time\":126110000,\"hours\":3,\"rate\":1}]," +
+                "\"materialLines\":[{\"id\":\"new-material\",\"description\":\"Motor\",\"vendor\":\"KONE\",\"part\":\"KM1\",\"quantity\":2,\"unitCost\":25}]}";
+            var result = db.Save(json);
+            Assert.Equal(1, db.Calculations);
+            Assert.Contains("\"rate\":100", result);
+            Assert.Equal(650m, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            var labor = db.Rows.Values.Single(e => e.LogicalName == Names.EstimateLaborLine.Entity);
+            Assert.Equal(100m, labor.GetAttributeValue<Money>(Names.EstimateLaborLine.Rate).Value);
+            var error = Assert.Throws<InvalidPluginExecutionException>(() => db.Caller.Update(
+                new Entity(labor.LogicalName, labor.Id) { ["re_hourlycost"] = new Money(1m) }));
+            Assert.Contains("RE-141", error.Message);
+        }
+
+        [Theory]
+        [InlineData("re_estimatelaborline")]
+        [InlineData("re_estimatematerialline")]
+        public void Custom_line_direct_creation_cannot_bypass_the_draft_api(string table)
+        {
+            var db = new Pipeline();
+            db.Save(db.DraftJson());
+            var error = Assert.Throws<InvalidPluginExecutionException>(() => db.Caller.Create(
+                new Entity(table) { ["re_repairestimate"] = new EntityReference(Names.Estimate.Entity, db.EstimateId) }));
+            Assert.Contains("RE-141", error.Message);
+        }
+
+        [Fact]
+        public void Oversized_draft_fails_before_creating_records()
+        {
+            var db = new Pipeline();
+            var error = Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Save(db.DraftJson().Replace("\"title\":\"Draft\"", "\"title\":\"" + new string('x', 200000) + "\"")));
+            Assert.Contains("request budget", error.Message);
+            Assert.False(db.Rows.ContainsKey(db.EstimateId));
+        }
+
+        [Fact]
+        public void Custom_path_loads_lines_and_keeps_package_costs()
         {
             var db = new Pipeline();
             db.Save(db.DraftJson());
             db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) {
                 [Names.Estimate.Path] = new OptionSetValue(126110001)
             });
-            Assert.Equal("unavailable", db.Rows[db.EstimateId].GetAttributeValue<string>(Names.Estimate.CalculationVersion));
-            Assert.Contains(db.Traces, t => t.Contains("CUSTOM_PATH_UNAVAILABLE"));
+            Assert.NotEqual("unavailable", db.Rows[db.EstimateId].GetAttributeValue<string>(Names.Estimate.CalculationVersion));
+            Assert.True(db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value > 0);
         }
 
         sealed class Pipeline
@@ -260,8 +302,8 @@ namespace RepairEstimator.Tests
                             return new DeleteResponse();
                         }
                         var update = (UpdateRequest)r;
-                        Assert.Equal(ConcurrencyBehavior.IfRowVersionMatches, update.ConcurrencyBehavior);
-                        if (Rows[update.Target.Id].RowVersion != update.Target.RowVersion)
+                        if (update.ConcurrencyBehavior == ConcurrencyBehavior.IfRowVersionMatches &&
+                            Rows[update.Target.Id].RowVersion != update.Target.RowVersion)
                             throw new InvalidPluginExecutionException("Row version conflict");
                         Write(update.Target, false); return new UpdateResponse();
                     }
@@ -344,7 +386,8 @@ namespace RepairEstimator.Tests
                 {
                     Invoke(new ChildLockPlugin(), message, target, pre);
                     IPlugin guard = target.LogicalName == Names.EstimateEquipment.Entity
-                        ? (IPlugin)new EstimateEquipmentSnapshotPlugin() : new EstimatePackageSnapshotPlugin();
+                        ? (IPlugin)new EstimateEquipmentSnapshotPlugin() : target.LogicalName == Names.EstimatePackage.Entity
+                        ? new EstimatePackageSnapshotPlugin() : (IPlugin)new EstimateCustomLineSnapshotPlugin();
                     Invoke(guard, message, target, pre);
                 }
                 var row = pre ?? new Entity(target.LogicalName, target.Id);

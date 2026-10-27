@@ -1,6 +1,8 @@
 export const pricingAmounts = [
   're_totaltruecost', 're_sellprice', 're_suggestedprice', 're_amincentive', 're_bdincentive',
   're_basetargetcmii', 're_recommendedcmii', 're_actualcmii', 're_cmiivariance',
+  're_packageestimatedcost', 're_customlaborcost', 're_custommaterialcost',
+  're_totaladditionalcost', 're_usetaxamount', 're_freightamount', 're_suggestedpricewithkonematerial',
 ] as const
 
 export type PricingRecord = {

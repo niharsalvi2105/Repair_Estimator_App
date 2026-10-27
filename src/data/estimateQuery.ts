@@ -1,7 +1,7 @@
 import type { IGetAllOptions } from '../generated/models/CommonModels'
 
 export type Market = 126110000 | 126110001 | 126110002
-export type EstimateQuery = { search: string; status: string; skipToken?: string; market?: Market; recent?: boolean }
+export type EstimateQuery = { search: string; status: string; skipToken?: string; market?: Market; recent?: boolean; ownerId?: string }
 
 export function buildBranchQuery(skipToken?: string): IGetAllOptions {
   return {
@@ -16,6 +16,11 @@ export function buildBranchQuery(skipToken?: string): IGetAllOptions {
 
 export function buildEstimateQuery(options: EstimateQuery): IGetAllOptions {
   const filters = ['statecode eq 0']
+  if (options.ownerId !== undefined) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(options.ownerId))
+      throw new Error('Invalid estimate owner filter.')
+    filters.push(`_ownerid_value eq ${options.ownerId}`)
+  }
   if (options.market !== undefined) {
     if (![126110000, 126110001, 126110002].includes(options.market)) {
       throw new Error('Unsupported estimate market filter.')

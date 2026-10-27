@@ -42,4 +42,9 @@ namespace RepairEstimator.Plugins.Plugins
     {
         protected override void ExecuteCore(LocalContext local) => SnapshotGuard.RequireDraftApi(local);
     }
+
+    public sealed class EstimateCustomLineSnapshotPlugin : PluginBase
+    {
+        protected override void ExecuteCore(LocalContext local) => SnapshotGuard.RequireDraftApi(local);
+    }
 }

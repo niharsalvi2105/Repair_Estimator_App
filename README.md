@@ -119,7 +119,8 @@ review when changing an unsaved draft's market. Market selection is a workspace
 filter, never an authorization boundary. Selecting CKQ automatically switches
 the UI language to French and saves French / `fr-CA` in user preferences,
 preserving the theme. Cancelling a market switch changes neither preference nor
-market. MKO and CKE preserve the current UI language; users can still change it
+market. Selecting MKO or CKE switches the UI back to English / `en-US`,
+preserving the theme; users can still change the UI language
 manually. Proposal language remains independent. Market selection is disabled
 while preferences are loading or saving so the automatic change is not lost.
 
@@ -163,9 +164,11 @@ The original equipment-first three-step skeleton has been replaced with:
    approval indication, National Account, emergency, subcontractor cost, budget,
    paper type, consultant, competing bids, stated billing rate and proposal language.
 2. **Equipment & packages**: existing branch-scoped equipment search, explicitly
-   unbound equipment entry and up to three standard packages.
+   unbound equipment entry (pre-existing, not extended in this release), and mixed
+   standard/PSR, CSTM and T&M packages without a three-package business cap.
 3. **Cost inputs**: time category, additional labor hours/material/miscellaneous,
-   use-tax/freight percentages and additional scope. No client cost calculation.
+   use-tax/freight percentages and additional scope. CSTM adds estimate-level
+   labor/material cards. No client cost calculation.
 4. **Pricing & margin**: entered sell price, billing plan and margin comments.
    Saved server pricing summary, also shown prominently in the final Review stage.
 5. **Review**: customer/contact and building confirmation, partner identifiers
@@ -190,7 +193,8 @@ discarding unsaved edits and are unavailable during a draft save/load.
 Changing branch requires confirmation before clearing selected equipment/packages.
 
 This is **not workbook pricing parity or a complete operational workflow**.
-Custom/T&M line entry and submission remain unconnected.
+Custom/T&M support is prepared locally; it requires the coordinated schema and
+assembly rollout in **Mixed packages and custom costs** below. Submission remains unconnected.
 Draft save, snapshots and required-field capture are prepared locally but need
 the administrator rollout below. The displayed salesperson is the authenticated
 user on create and the saved salesperson on reopen; creating on behalf of another
@@ -277,6 +281,16 @@ system customization simply to fix a UI error. Decide branch/region ownership
 and team scopes in Dataverse. Sharing the Code App is separate from table/row
 access. Security-role privileges from all assigned roles are cumulative.
 
+The Requests list (including header search) and dashboard Recent Requests apply
+an explicit owner filter for the Estimator app role, using the signed-in
+Dataverse system user ID. Admins see all estimates readable under their Dataverse
+permissions. Pagination retains this scope; changing scope resets the list.
+This is a display rule, not an authorization boundary: additional direct roles,
+team roles, sharing or hierarchy access can still grant access outside the app.
+For own-record-only authorization, review every effective grant. In particular,
+do not test an Estimator with System Customizer inherited from a maker team:
+its organization-level Read can override the intended own-record restriction.
+
 React role checks are **UX gates, not authorization**. Dataverse privileges and
 row access must reject prohibited API calls independently. Submitted-record
 locking, approved transitions, protected calculated fields, pricing and future
@@ -312,12 +326,12 @@ The client retains the same new-record GUID after failure. A timeout can mean
 the transaction committed: use **Reload draft** to reconcile that ID before
 retrying. A repeated create cannot create a second estimate with that ID.
 Reload/New prompts before discarding edits. Successful reload replaces local
-edits; it does not merge concurrent changes. Records with existing labor lines
-are explicitly rejected for editing until a line-preserving workflow exists.
-Snapshot child replacement currently requires own-record Delete/Create/Read as
-well as header Write and lookup Append/Append To; do not grant broad Delete.
-Read on Estimate Labor Line is needed for the dependency guard.
-Recreated children retain the estimate's owner; cross-owner administrative edits
+edits; it does not merge concurrent changes. The current contract loads/saves
+labor and material lines; older clients that omit existing line collections are
+rejected to avoid deleting them. Unchanged equipment, package and custom-line IDs
+are preserved. Children require own-record Create/Read/Write/Delete as well as
+header Write and lookup Append/Append To; do not grant broad Delete.
+Children retain the estimate's owner; cross-owner administrative edits
 may require scoped Assign privileges rather than transferring children to the
 administrator.
 
@@ -545,7 +559,7 @@ deployed by this change.
   must not be used for this coordination. Update **both** Draft and pricing
   assemblies together during maintenance before retrying a save; no step or
   image changes are required for this transport correction.
-- Missing or ambiguous pricing, missing snapshots, unsupported Custom/T&M input,
+- Missing or ambiguous pricing, missing snapshots, invalid custom input,
   invalid margins or incomplete configuration never become an apparently valid
   zero price. Drafts retain their inputs, clear calculated outputs and expose
   `re_calculationversion = unavailable`. The draft response's optional
@@ -572,9 +586,105 @@ deployed by this change.
   use SYSTEM. History records retain the estimate owner and initiating user.
   Runtime roles still need applicable Append/Append To for output lookups such
   as Margin Group, Margin Rule and Job Size Band; verify scopes with real users.
-- There is no dashboard aggregation API in this assembly. Custom/T&M remains
-  disabled: the live Material Line table lacks parent lookups. Do not add duplicate
-  relationships based on a columns-only export or register material-line hooks.
+- There is no dashboard aggregation API in this assembly. Custom/T&M requires
+  the schema prerequisites and new line registrations below. Do not enable the
+  new frontend or assemblies against an unprepared schema.
+
+### Mixed packages and custom costs
+
+Business rules confirmed October 27, 2026:
+
+- Allow mixed PSR/CSTM/T&M packages; each predefined package's hours/materials
+  apply to every selected equipment. There is no per-package equipment exclusion.
+- Custom labor/material lines and additional labor/material/miscellaneous inputs
+  are estimate-level additions, counted once, not multiplied by package or
+  equipment count. Avoid entering the same work in both places.
+- T&M is a zero-base-cost template in the supplied workbooks, using additional
+  estimate-level costs and an entered selling price. It is not actual-time billing.
+- Labor role (Mechanic/Helper/Adjuster) and Straight/Double Time select one active,
+  effective branch rate. New/changed role-time selections resolve rates server-side,
+  cached per combination within the save. Unchanged selections preserve saved
+  rate snapshots; no browser rate override is accepted. Missing/ambiguous rates
+  reject the transaction rather than silently produce zero labor cost.
+- Custom material tax/freight flags are server-set true for Excel parity; no
+  per-line exemption controls are exposed. Estimate tax/freight applies to
+  material and miscellaneous amounts, not labor. KONE classification uses the
+  existing vendor/part rules; VK13 sales price is available for CSTM. The special
+  suggested price uses configured KONE tax/freight/markup parameters.
+- Equipment workflow/limits are unchanged; new free-form equipment requirements,
+  submission/email, Salesforce and master-data refresh are outside this change.
+
+**Administrator schema prerequisite (manual; not applied by this change):**
+
+Read-only live metadata inspection confirmed labor line has `re_repairestimate`,
+`re_estimateequipment`, `re_laborrate`, `re_laborrole`, `re_timecategory`,
+`re_hours`, `re_hourlycost` (Money), and `re_totalcost`. Labor Rate's
+`re_hourlycost` is **Decimal**, not Money. Live Material Line has **no**
+estimate/equipment lookup or many-to-many link; this finding is from live
+relationship metadata, not the columns-only export.
+
+In the existing solution, first recheck these exact logical names. Reuse an
+existing matching column/relationship if it is now present; never create a duplicate.
+
+| Existing table | Required new column | Type / configuration |
+| --- | --- | --- |
+| `re_estimatematerialline` | `re_repairestimate` | Lookup to `re_repairestimate`; Business Required; creates the estimate-to-material 1:N relationship. Use referential Restrict Delete to avoid implicit material loss. Review existing orphan rows manually; never guess their parent. |
+| `re_estimatepackage` | `re_sequence` | Whole Number, minimum 1, maximum at least 1000; optional for legacy rows. |
+| `re_estimatepackage` | `re_iscustompackage` | Yes/No, default No; server-owned snapshot. |
+| `re_estimatepackage` | `re_istimematerial` | Yes/No, default No; server-owned snapshot. |
+
+No material-to-equipment lookup is required for this estimate-level release.
+No new package-role choice values are required: first/second/third remain
+compatible; later packages use the third role with the distinct sequence field
+as the authoritative order. Legacy rows fall back to their existing role order.
+Existing saved standard snapshots stay unchanged; new package flags come from
+the master only when selected, not from client input.
+Read-only live key metadata contained no alternate keys on these three child
+tables; recheck before deployment so a subsequently added estimate/role key does
+not prevent additional packages from sharing the legacy third role.
+
+Verify line quantity/hour precision (2 decimals), text lengths (description 2000,
+vendor/part 100), currency/owner lookups and Money precision before deployment.
+Existing equipment-linked custom lines retain their links; removing associated
+equipment requires explicitly removing those lines first.
+
+**Technical safeguards (not an unlimited-capacity promise):**
+
+- Save input: maximum **200,000 UTF-8 bytes**, checked in browser and backend;
+  errors never truncate records. Save/load response: maximum **1,000,000 bytes**,
+  checked in the API inside the transaction.
+- Maximum **1,000 child mutations per save**, including retained-row writes and
+  removed-row deletes across equipment/packages/labor/materials. Child reads and
+  pricing selection reads also stop above 1,000 rows per collection. These are
+  technical processing budgets, not a package business limit. A large replacement
+  may exceed the budget even when its final row count is smaller.
+- Draft API child reads page in blocks of 100, with deterministic ID ordering;
+  pricing reads page in blocks of 500. No old 100-row truncation.
+- Package search remains bounded at 20 results. Selected packages render 20 at
+  a time; labor/material cards render 10 per collection, including read-only review.
+- Equipment/package/custom-line saves are transactional, preserve unchanged child
+  identities and snapshots, and trigger one final calculation. Timeout recovery
+  still requires reload before retry; there is no automatic retry of uncertain writes.
+- Pricing version `2026.2` combines package and custom costs in a linear pass.
+  Stated labor billing rate remains optional; blank or zero uses standard CMII
+  pricing. Entered rates must be finite and nonnegative. Inline guidance and
+  save-time validation apply even when saving from another stage. Positive
+  rates are not given an arbitrary minimum: the server checks the resulting
+  margin. Unavailable pricing is an explicit alert with rate/configuration
+  remediation; it is not presented as a completed pricing calculation.
+  Stated-rate margin inputs include both cost paths. Existing standard formulas
+  and final two-decimal rounding remain unchanged.
+
+Deploy during a maintenance window: apply/publish schema, check scoped line
+Read/Create/Write/Delete and Append/Append To privileges for both app roles
+(including Labor Rate Read/Append To), update **both** signed assemblies, add
+the registrations below, then deploy the frontend. Do not deploy only the UI.
+Keep existing signing keys and Custom API association. No tenant schema, role,
+data, registration or frontend deployment is performed by this source change.
+Validate authenticated create/update/reopen, real transaction rollback, material
+parent authorization, both roles, all six labor combinations, mixed-package
+golden cases, and representative large drafts before enabling production use.
+Local tests do not establish the hosted plug-in timeout or production capacity.
 
 Build and validate both assemblies:
 
@@ -599,10 +709,11 @@ steps as part of an administrator-controlled maintenance window.
 | --- | --- | --- | --- | --- |
 | EstimateCalculationPlugin | re_repairestimate | Create, Update | PreOperation (20) | No filtering attributes; Update image `pre`, all columns |
 | EstimateLockPlugin | re_repairestimate | Update, Delete | PreValidation (10) | No filters or images |
-| ChildLockPlugin | re_estimateequipment, re_estimatepackage | Create, Update, Delete | PreValidation (10) | No filters or images |
+| ChildLockPlugin | re_estimateequipment, re_estimatepackage, re_estimatelaborline, re_estimatematerialline | Create, Update, Delete | PreValidation (10) | No filters or images |
 | EstimateEquipmentSnapshotPlugin | re_estimateequipment | Create, Update | PreOperation (20) | No filters or images |
 | EstimatePackageSnapshotPlugin | re_estimatepackage | Create, Update | PreOperation (20) | No filters or images |
-| ChildChangeTriggerPlugin | re_estimateequipment, re_estimatepackage | Create, Update, Delete | PostOperation (40) | No filters; Update/Delete image `pre` containing `re_repairestimate` |
+| EstimateCustomLineSnapshotPlugin | re_estimatelaborline, re_estimatematerialline | Create, Update | PreOperation (20) | No filters or images; register only after the material parent lookup exists |
+| ChildChangeTriggerPlugin | re_estimateequipment, re_estimatepackage, re_estimatelaborline, re_estimatematerialline | Create, Update, Delete | PostOperation (40) | No filters; Update/Delete image `pre` containing `re_repairestimate` |
 | StatusHistoryPlugin | re_repairestimate | Update | PostOperation (40) | Filter `re_estimatestatus`; image `pre` containing `re_estimatestatus` |
 
 Each table/message combination requires its own step. Header calculation has

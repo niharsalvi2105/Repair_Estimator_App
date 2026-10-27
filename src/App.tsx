@@ -5,7 +5,7 @@ import {
   getDraftReferences,
   type DraftReferences,
   searchEquipment,
-  searchStandardPackages,
+  searchPackages,
   type Branch,
   type Equipment,
   type RepairPackage,
@@ -18,11 +18,13 @@ import { DashboardMetrics } from './DashboardMetrics'
 import { Settings } from './Settings'
 import { loadSession, type AppSession } from './data/sessionRepository'
 import type { RequestInputs } from './RequestFields'
+import { pricingUnavailableMessage, statedRateError } from './data/requestValidation'
 import type { Market } from './data/estimateQuery'
 import { useUserPreferences } from './useUserPreferences'
 import { UserAvatar } from './UserAvatar'
 import koneLogo from './assets/kone-logo-small.jpg?no-inline'
 import { draftOperation, draftInputs, type DraftRecord } from './data/draftRepository'
+import { serializeDraft, MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -104,12 +106,12 @@ const copy = {
     costsHint: 'Inputs only. No costs, margins or incentives are calculated or saved in this browser.',
     pricingHint: 'Save the draft to calculate pricing in Dataverse. Saved results appear below; an entered selling price is not an approved quote.',
     equipmentNote: 'Equipment names are resolved from Dataverse. Unlisted numbers remain explicitly unbound.',
-    costsTitle: 'Standard package cost inputs',
-    costsUnavailable: 'Package labor, material, tax and freight totals require verified server calculation. Enter percentages as displayed in Excel (e.g. 5 for 5%); defaults are not loaded. Custom/T&M line entry is not implemented yet.',
+    costsTitle: 'Estimate costs and additions',
+    costsUnavailable: 'Save to calculate server totals. Enter 5 for 5%. Package costs scale with equipment; custom lines and additional costs are added once. Do not enter the same work in both.',
     proposalPrice: 'Proposal pricing',
     partnerTitle: 'Partner information & CTT notes',
     selectedCount: 'Equipment quantity (from selected units)',
-    workbookAlignment: 'Saved standard-package pricing is calculated in Dataverse. Excel reconciliation is still required; custom/T&M and submission are not connected.',
+    workbookAlignment: 'Pricing is calculated in Dataverse. Mixed/custom costs follow the confirmed business rules; Excel reconciliation is still required. Submission is not connected.',
     branchChangeWarning: 'Changing branch removes the selected equipment and packages. Continue?',
     missingCountry: 'This branch has no country lookup. Package search cannot run; ask an administrator to correct the branch data.',
     stepEquipment: 'Equipment',
@@ -137,16 +139,16 @@ const copy = {
     remove: 'Remove',
     continue: 'Continue',
     back: 'Back',
-    packagesTitle: 'Select standard packages',
+    packagesTitle: 'Select packages',
     packagesHint:
-      'Choose up to three packages. Hours and materials scale with the equipment count. Save the draft to view server pricing in Pricing & Margin or Review.',
+      'Mix standard, CSTM and T&M packages. Predefined costs scale with equipment. Save to view server pricing.',
     packageSearch: 'Search package number or name',
     packageSearchHelp: 'Enter at least 2 characters to search the package catalog.',
     searchingPackages: 'Searching package catalog...',
-    noPackages: 'No matching active standard packages found.',
+    noPackages: 'No matching active packages found.',
     selectedPackages: 'Selected packages',
     addPackage: 'Add package',
-    packageLimit: 'You can select up to 3 standard packages.',
+    packageLimit: 'All packages apply to all selected equipment. Request-size and processing safeguards apply.',
     reviewTitle: 'Review request details',
     customerName: 'Customer name',
     customerEmail: 'Customer email',
@@ -243,12 +245,12 @@ const copy = {
     costsHint: 'Saisie uniquement. Aucun coût, marge ou incitatif n’est calculé ou enregistré dans le navigateur.',
     pricingHint: 'Enregistrez le brouillon pour calculer les prix dans Dataverse. Les résultats enregistrés apparaissent ci-dessous ; le prix saisi n’est pas un devis approuvé.',
     equipmentNote: 'Les noms des équipements proviennent de Dataverse. Les numéros non répertoriés restent sans correspondance.',
-    costsTitle: 'Coûts supplémentaires du forfait standard',
-    costsUnavailable: 'Les totaux de main-d’œuvre, matériaux, taxes et fret nécessitent le calcul serveur vérifié. Saisissez les pourcentages comme dans Excel (ex. 5 pour 5 %) ; les valeurs par défaut ne sont pas chargées. La saisie personnalisée/T&M n’est pas encore implémentée.',
+    costsTitle: 'Coûts et ajouts au devis',
+    costsUnavailable: 'Enregistrez pour calculer les totaux serveur. Saisissez 5 pour 5 %. Les coûts des forfaits sont multipliés par les équipements ; les lignes personnalisées et les ajouts ne sont comptés qu’une fois. Évitez les doublons.',
     proposalPrice: 'Prix de la proposition',
     partnerTitle: 'Partenaires et notes CTT',
     selectedCount: 'Quantité d’équipements (unités sélectionnées)',
-    workbookAlignment: 'Les prix des forfaits standards enregistrés sont calculés dans Dataverse. La comparaison Excel reste nécessaire ; les coûts personnalisés/T&M et l’envoi ne sont pas connectés.',
+    workbookAlignment: 'Les prix sont calculés dans Dataverse. Les coûts mixtes et personnalisés suivent les règles confirmées ; la comparaison Excel reste nécessaire. L’envoi n’est pas connecté.',
     branchChangeWarning: 'Changer de succursale supprime les équipements et forfaits sélectionnés. Continuer ?',
     missingCountry: 'Cette succursale n’a pas de pays associé. La recherche de forfaits est impossible ; contactez un administrateur.',
     stepEquipment: 'Équipement',
@@ -276,16 +278,16 @@ const copy = {
     remove: 'Retirer',
     continue: 'Continuer',
     back: 'Retour',
-    packagesTitle: 'Choisir les forfaits standard',
+    packagesTitle: 'Choisir les forfaits',
     packagesHint:
-      'Choisissez jusqu’à trois forfaits. Les heures et matériaux varient selon le nombre d’équipements. Enregistrez le brouillon pour voir les prix dans Prix et marge ou Vérification.',
+      'Combinez les forfaits standard, CSTM et T&M. Les coûts prédéfinis varient selon le nombre d’équipements. Enregistrez pour voir les prix serveur.',
     packageSearch: 'Rechercher par numéro ou nom de forfait',
     packageSearchHelp: 'Saisissez au moins 2 caractères pour rechercher le catalogue.',
     searchingPackages: 'Recherche dans le catalogue…',
-    noPackages: 'Aucun forfait standard actif correspondant.',
+    noPackages: 'Aucun forfait actif correspondant.',
     selectedPackages: 'Forfaits sélectionnés',
     addPackage: 'Ajouter le forfait',
-    packageLimit: 'Vous pouvez choisir jusqu’à 3 forfaits standard.',
+    packageLimit: 'Chaque forfait s’applique à tous les équipements sélectionnés. Des limites techniques de taille et de traitement s’appliquent.',
     reviewTitle: 'Vérifier les détails de la demande',
     customerName: 'Nom du client',
     customerEmail: 'Courriel du client',
@@ -373,6 +375,8 @@ function App() {
   const [packageLoading, setPackageLoading] = useState(false)
   const [packageError, setPackageError] = useState('')
   const [selectedPackages, setSelectedPackages] = useState<Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]>([])
+  const [laborLines, setLaborLines] = useState<DraftLabor[]>([])
+  const [materialLines, setMaterialLines] = useState<DraftMaterial[]>([])
   const [step, setStep] = useState(1)
   const [customerName, setCustomerName] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
@@ -418,9 +422,9 @@ function App() {
   const canWork = canStart || Boolean(draftVersion)
   const currentSnapshot = useMemo(() => JSON.stringify({
     branchId, stateId, estimateTitle, buildingName, customerName, customerEmail, customerPhone,
-    equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages,
+    equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages, laborLines, materialLines,
   }), [branchId, stateId, estimateTitle, buildingName, customerName, customerEmail, customerPhone,
-    equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages])
+    equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages, laborLines, materialLines])
   const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || estimateTitle
     || customerName || customerEmail || customerPhone || equipmentTypeId || jobTypeId || Object.values(requestInputs).some(Boolean))
   const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty || masterDirty || masterBusy)
@@ -543,7 +547,7 @@ function App() {
     const timeout = window.setTimeout(() => {
       setPackageLoading(true)
       setPackageError('')
-      void searchStandardPackages(countryId, query)
+      void searchPackages(countryId, query)
         .then((records) => {
           if (!cancelled) setPackageResults(records)
         })
@@ -616,6 +620,7 @@ function App() {
     setPackageQuery('')
     setPackageResults([])
     setSelectedPackages([])
+    setLaborLines([]); setMaterialLines([])
     setEquipmentError('')
     setPackageError('')
     setEquipmentLoading(false)
@@ -646,9 +651,10 @@ function App() {
     resetBranch('')
     setMarket(nextMarket)
     setStep(1)
-    if (nextMarket === 126110002) {
-      void preferences.save({ language: 'fr', locale: 'fr-CA', theme: preferences.theme })
-    }
+    const french = nextMarket === 126110002
+    void preferences.save({
+      language: french ? 'fr' : 'en', locale: french ? 'fr-CA' : 'en-US', theme: preferences.theme,
+    })
   }
 
   function changeEquipmentQuery(value: string) {
@@ -664,7 +670,11 @@ function App() {
   }
 
   function addPackage(repairPackage: RepairPackage) {
-    if (selectedPackages.length >= 3 || selectedPackageIds.has(repairPackage.re_repairpackageid)) {
+    if (selectedPackageIds.has(repairPackage.re_repairpackageid)) {
+      return
+    }
+    if (selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length >= MAX_DRAFT_CHILD_OPERATIONS) {
+      setPackageError(language === 'fr' ? 'Limite technique atteinte. Divisez la demande.' : 'Technical processing budget reached. Split this request.')
       return
     }
     setSelectedPackages((current) => [...current, repairPackage])
@@ -708,7 +718,11 @@ function App() {
       re_repairpackageid: item.id, re_packagenumber: item.number, re_packagenameen: item.nameEn,
       re_packagenamefr: item.nameFr ?? undefined, re_proposalscopeen: item.scopeEn,
       re_proposalscopefr: item.scopeFr ?? undefined, re_mechanichours: item.hours,
+      re_iscustompackage: item.isCustom ?? false, re_istimematerial: item.isTimeMaterial ?? false,
     }))
+    const labor = record.laborLines ?? []
+    const materials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '' }))
+    setLaborLines(labor); setMaterialLines(materials)
     setDraftId(record.id); setDraftVersion(record.version); setDraftNumber(record.number ?? '')
     setSavedSalesperson(record.salesperson ?? '')
     setPricingUnavailable(record.pricingState === 'unavailable')
@@ -723,6 +737,7 @@ function App() {
       buildingName: record.building, customerName: record.customer, customerEmail: record.email ?? '',
       customerPhone: record.phone ?? '', equipmentTypeId: record.equipmentTypeId, jobTypeId: record.jobTypeId ?? '',
       market: record.market, requestInputs: inputs, selectedEquipment: equipment, selectedPackages: packages,
+      laborLines: labor, materialLines: materials,
     }))
   }
 
@@ -741,11 +756,13 @@ function App() {
     if (draftInFlight.current) return
     setDraftError(''); setDraftNotice('')
     if (!draftComplete) { setDraftError(dt.required); return }
-    const controls = requestSection.current?.querySelectorAll<HTMLInputElement>('input')
+    const rateError = statedRateError(requestInputs.re_statedlaborrate, language)
+    if (rateError) { setDraftError(rateError); setStep(1); return }
+    const controls = requestSection.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')
     if (controls && !Array.from(controls).every((input) => input.reportValidity())) return
     draftInFlight.current = true; setDraftBusy(true)
     try {
-      const record = await draftOperation({
+      const input: DraftRecord = {
         mode: 'save', id: draftId, version: draftVersion, title: estimateTitle,
         branchId, stateId, equipmentTypeId, jobTypeId, building: buildingName,
         customer: customerName, email: customerEmail, phone: customerPhone, market,
@@ -753,8 +770,11 @@ function App() {
         equipment: selectedEquipment.map((item) => ({ ...item, id: item.matched ? item.id : '' })),
         packages: selectedPackages.map((item) => ({ id: item.re_repairpackageid,
           number: item.re_packagenumber, nameEn: item.re_packagenameen, scopeEn: item.re_proposalscopeen ?? '',
-          hours: 0, material: 0 })),
-      })
+          hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial })),
+        laborLines, materialLines,
+      }
+      serializeDraft(input)
+      const record = await draftOperation(input)
       applyDraft(record); setDraftNotice(`${dt.saved}: ${record.number || record.id}`)
     } catch (reason) { setDraftError(`${dt.error} ${message(reason)}`) }
     finally { draftInFlight.current = false; setDraftBusy(false) }
@@ -933,10 +953,8 @@ function App() {
             <button className="button secondary" disabled={draftBusy} onClick={() => void openDraft(draftId)}>{dt.reload}</button>
           </div>}
           {draftNotice && <p className="inline-state draft-saved" role="status">{draftNotice}</p>}
-          {pricingUnavailable && <p className="draft-notice" role="status">
-            {language === 'fr'
-              ? 'Le brouillon est enregistré, mais le calcul des prix est indisponible. Vérifiez les données et la configuration avec votre administrateur avant toute soumission.'
-              : 'The draft is saved, but pricing is unavailable. Ask your administrator to check the inputs and configuration before submission.'}
+          {pricingUnavailable && <p className="draft-notice" role="alert">
+            {pricingUnavailableMessage(language)}
           </p>}
           {sessionLoading ? (
             <p className="inline-state" role="status">{t.checkingAccess}</p>
@@ -970,7 +988,7 @@ function App() {
                 <h1>{t.repairRequests}</h1>
                 <p>{t.recentRequestsHint}</p>
               </div></div>
-              <section className="dashboard-card"><EstimateList key={market} market={market} search={requestSearch} language={language} onOpen={(id) => void openDraft(id)} busy={draftBusy} /></section>
+              <section className="dashboard-card"><EstimateList key={market} market={market} ownerId={session.role === 'admin' ? null : session.userId} search={requestSearch} language={language} onOpen={(id) => void openDraft(id)} busy={draftBusy} /></section>
             </section>
             : null
           ) : view === 'new' && !canWork ? null : (
@@ -999,7 +1017,7 @@ function App() {
                     {t.viewRequests} <span aria-hidden="true">→</span>
                   </button>
                 </div>
-                {session?.canReadEstimates && <EstimateList recent key={market} market={market} language={language} onOpen={(id) => void openDraft(id)} busy={draftBusy} />}
+                {session?.canReadEstimates && <EstimateList recent key={market} market={market} ownerId={session.role === 'admin' ? null : session.userId} language={language} onOpen={(id) => void openDraft(id)} busy={draftBusy} />}
               </section>
             </section>
           ) : (
@@ -1060,6 +1078,7 @@ function App() {
               packageQuery,
               changePackageQuery,
               selectedPackages,
+              laborLines, materialLines, setLaborLines, setMaterialLines,
               packageLoading,
               packageError,
               packageResults,

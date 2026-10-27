@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction, type RefObject } from 'react'
 import type { Branch, DraftReferences, Equipment, RepairPackage, ReferenceOption } from './data/repairEstimatorRepository'
 import type { AppSession } from './data/sessionRepository'
 import type { Market } from './data/estimateQuery'
@@ -6,6 +6,8 @@ import type { AppCopy, SelectedEquipment } from './App'
 import { RequestFields, type RequestInputs } from './RequestFields'
 import { PricingSummary } from './PricingSummary'
 import { BranchSelect } from './BranchSelect'
+import { CustomCostLines } from './CustomCostLines'
+import { MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
 
 type Language = 'en' | 'fr'
 type Props = {
@@ -81,6 +83,10 @@ type Props = {
   setCustomerPhone: Dispatch<SetStateAction<string>>
   setStep: Dispatch<SetStateAction<number>>
   onDashboard: () => void
+  laborLines: DraftLabor[]
+  materialLines: DraftMaterial[]
+  setLaborLines: Dispatch<SetStateAction<DraftLabor[]>>
+  setMaterialLines: Dispatch<SetStateAction<DraftMaterial[]>>
 }
 
 function localizePackage(
@@ -108,8 +114,20 @@ export default function EstimatorWorkspace({
   selectedPackages, packageLoading, packageError, packageResults, addPackage,
   selectedPackageIds, setSelectedPackages, marketName, customerName, setCustomerName,
   customerEmail, setCustomerEmail, customerPhone, setCustomerPhone, setStep,
-  onDashboard,
+  onDashboard, laborLines, materialLines, setLaborLines, setMaterialLines,
 }: Props) {
+  const [packagePage, setPackagePage] = useState(0)
+  const pageSize = 20
+  const currentPackagePage = Math.min(packagePage, Math.max(0, Math.ceil(selectedPackages.length / pageSize) - 1))
+  const hasCustom = selectedPackages.some((p) => p.re_iscustompackage)
+  const canAdd = selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length < MAX_DRAFT_CHILD_OPERATIONS
+  const packagePaging = selectedPackages.length > pageSize && <div className="custom-line-actions">
+    <button type="button" className="button secondary" disabled={currentPackagePage === 0}
+      onClick={() => setPackagePage(currentPackagePage - 1)}>{language === 'fr' ? 'Précédent' : 'Previous'}</button>
+    <span>{currentPackagePage + 1} / {Math.ceil(selectedPackages.length / pageSize)}</span>
+    <button type="button" className="button secondary" disabled={(currentPackagePage + 1) * pageSize >= selectedPackages.length}
+      onClick={() => setPackagePage(currentPackagePage + 1)}>{language === 'fr' ? 'Suivant' : 'Next'}</button>
+  </div>
   useEffect(() => {
     requestSection.current?.querySelector<HTMLElement>('[aria-current="step"]')?.focus()
   }, [step, requestSection])
@@ -414,7 +432,7 @@ export default function EstimatorWorkspace({
                   value={packageQuery}
                   onChange={(event) => changePackageQuery(event.target.value)}
                   placeholder={t.packageSearch}
-                  disabled={!selectedBranch?._re_country_value || selectedPackages.length >= 3}
+                  disabled={!selectedBranch?._re_country_value}
                   autoComplete="off"
                 />
                 {packageLoading && <span className="spinner" aria-label={t.searchingPackages} />}
@@ -434,12 +452,13 @@ export default function EstimatorWorkspace({
                       <div className="result-main">
                         <strong>{repairPackage.re_packagenumber}</strong>
                         <span>{localizePackage(repairPackage, language)}</span>
+                        <small>{repairPackage.re_iscustompackage ? 'CSTM' : repairPackage.re_istimematerial ? 'T&M' : 'PSR'}</small>
                         {repairPackage.re_proposalscopeen && <small>{repairPackage.re_proposalscopeen}</small>}
                       </div>
                       <button
                         className="button small secondary"
                         onClick={() => addPackage(repairPackage)}
-                        disabled={selectedPackages.length >= 3 || selectedPackageIds.has(repairPackage.re_repairpackageid)}
+                        disabled={!canAdd || selectedPackageIds.has(repairPackage.re_repairpackageid)}
                       >
                         {t.addPackage}
                       </button>
@@ -458,16 +477,17 @@ export default function EstimatorWorkspace({
                   <span className="section-icon check-icon">✓</span>
                   <div>
                     <h2>{t.selectedPackages}</h2>
-                    <p>{selectedPackages.length} / 3</p>
+                    <p>{selectedPackages.length}</p>
                   </div>
                 </div>
                 <div className="selected-list">
-                  {selectedPackages.map((repairPackage) => (
+                  {selectedPackages.slice(currentPackagePage * pageSize, (currentPackagePage + 1) * pageSize).map((repairPackage) => (
                     <article className="equipment-card" key={repairPackage.re_repairpackageid}>
                       <div className="equipment-index">PK</div>
                       <div className="equipment-info">
                         <div className="equipment-title">
                           <strong>{repairPackage.re_packagenumber}</strong>
+                          <span>{repairPackage.re_iscustompackage ? 'CSTM' : repairPackage.re_istimematerial ? 'T&M' : 'PSR'}</span>
                         </div>
                         <span>{localizePackage(repairPackage, language)}</span>
                       </div>
@@ -481,6 +501,7 @@ export default function EstimatorWorkspace({
                     </article>
                   ))}
                 </div>
+                {packagePaging}
               </section>
             )}
           </div>
@@ -492,7 +513,7 @@ export default function EstimatorWorkspace({
               <div className="aside-divider" />
               <div className="aside-stat">
                 <span>{t.selectedPackages}</span>
-                <strong>{selectedPackages.length}<small> / 3</small></strong>
+                <strong>{selectedPackages.length}</strong>
               </div>
               <div className="aside-divider" />
               <div className="aside-stat">
@@ -520,9 +541,14 @@ export default function EstimatorWorkspace({
                 </div>
               </div>
               <RequestFields stage={step === 3 ? 'cost' : 'pricing'} language={language}
-                value={requestInputs} onChange={updateRequestInput} />
+                value={requestInputs} onChange={updateRequestInput} custom={hasCustom || Number(requestInputs.re_konesparessalespricevk13) > 0} />
               <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
             </section>
+            {step === 3 && (hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
+              <CustomCostLines language={language} labor={laborLines} materials={materialLines}
+                setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd} readOnly={draftBusy} />}
+            {step === 4 && (laborLines.length > 0 || materialLines.length > 0) &&
+              <p>{language === 'fr' ? 'Lignes personnalisées' : 'Custom lines'}: {laborLines.length} / {materialLines.length}</p>}
             {step === 4 && <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
               language={language} currencies={draftReferences?.currencies ?? []} />}
           </div>
@@ -534,6 +560,9 @@ export default function EstimatorWorkspace({
           <div className="form-main">
             <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
               language={language} currencies={draftReferences?.currencies ?? []} />
+            {(hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
+              <CustomCostLines language={language} labor={laborLines} materials={materialLines}
+                setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={false} readOnly />}
             <section className="form-card">
               <div className="section-heading">
                 <span className="section-icon">05</span>
@@ -590,14 +619,16 @@ export default function EstimatorWorkspace({
                   {equipment.number}{equipment.name ? ` — ${equipment.name}` : ''}
                   {!equipment.matched ? ` (${t.unbound})` : ''}
                 </li>)}
-                {selectedPackages.map((repairPackage) => <li key={repairPackage.re_repairpackageid}>
+                {selectedPackages.slice(currentPackagePage * pageSize, (currentPackagePage + 1) * pageSize).map((repairPackage) => <li key={repairPackage.re_repairpackageid}>
                   {repairPackage.re_packagenumber} — {localizePackage(repairPackage, language)}
                 </li>)}
               </ul>
+              {packagePaging}
               {(['request', 'cost', 'pricing'] as const).map((stage) => (
                 <details key={stage}>
                   <summary>{stage === 'request' ? t.requestDetails : stage === 'cost' ? t.stepCosts : t.stepPricing}</summary>
-                  <RequestFields stage={stage} language={language} value={requestInputs} onChange={updateRequestInput} readOnly />
+                  <RequestFields stage={stage} language={language} value={requestInputs} onChange={updateRequestInput}
+                    custom={hasCustom || Number(requestInputs.re_konesparessalespricevk13) > 0} readOnly />
                 </details>
               ))}
               <p className="draft-notice">{dt.note}</p>

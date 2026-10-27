@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseDraft, draftInputs } from '../src/data/draftContract.ts'
+import { parseDraft, draftInputs, serializeDraft } from '../src/data/draftContract.ts'
 
 const fixture = () => ({
   mode: 'save', id: 'draft-id', version: '17', number: '0000000042', title: 'Repair',
@@ -51,4 +51,22 @@ test('saved inputs cannot inject status or unsupported editor fields', () => {
   const record = fixture()
   record.fields.push({ key: 're_estimatestatus', value: '126110002' })
   assert.throws(() => draftInputs(parseDraft(record)), /Unsupported saved input/)
+})
+
+test('more than three packages and custom snapshots roundtrip without trusting malformed lines', () => {
+  const record = fixture()
+  record.packages = Array.from({ length: 125 }, (_, i) => ({ ...record.packages[0], id: `p${i}`, isCustom: i === 0 }))
+  record.laborLines = [{ id: 'l', role: 126110002, time: 126110001, hours: 2, rate: 250 }]
+  record.materialLines = [{ id: 'm', description: 'Part', vendor: 'KONE', part: 'KM1', quantity: 2, unitCost: 10 }]
+  assert.equal(parseDraft(record).packages.length, 125)
+  assert.equal(parseDraft(record).laborLines[0].rate, 250)
+  assert.throws(() => parseDraft({ ...record, laborLines: [{ ...record.laborLines[0], rate: -1 }] }), /labor/i)
+  assert.throws(() => parseDraft({ ...record, laborLines: {} }), /labor/i)
+  assert.throws(() => parseDraft({ ...record, materialLines: [{ ...record.materialLines[0], quantity: NaN }] }), /material/i)
+})
+
+test('request budget measures UTF-8 bytes and never truncates input', () => {
+  assert.equal(serializeDraft({ text: 'a'.repeat(199989) }).length, 200000)
+  assert.throws(() => serializeDraft({ text: 'a'.repeat(199990) }), /budget/i)
+  assert.throws(() => serializeDraft({ text: 'é'.repeat(100000) }), /budget/i)
 })

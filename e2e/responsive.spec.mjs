@@ -78,7 +78,9 @@ async function mockData(page, language, theme, state = 'records') {
           number:'0000000042', salesperson:'Original Salesperson', pricingState:window.__pricingState,
           equipment:input.equipment.map((e) => ({...e,name:'Persisted equipment snapshot'})),
           packages:input.packages.map((p) => ({...p,nameEn:'Persisted package snapshot',
-            nameFr:'Forfait enregistré',scopeEn:'Persisted scope',hours:2.5,material:125}))
+            nameFr:'Forfait enregistré',scopeEn:'Persisted scope',hours:2.5,material:125})),
+          laborLines:(input.laborLines || []).map((line) => ({...line,rate:line.rate ?? 200})),
+          materialLines:input.materialLines || []
         };
         if (failure === 'timeout-after-commit') throw new Error('Timeout: outcome unknown');
         return structuredClone(window.__draftSaved);
@@ -128,7 +130,7 @@ async function mockData(page, language, theme, state = 'records') {
         re_functionallocation:'Test location', re_soldtoname:'Customer with a long descriptive name',
         re_oem:'Test OEM', re_equipmentage:20
       }] }
-      export async function searchStandardPackages() { return [{
+      export async function searchPackages() { return window.__packageResults || [{
         re_repairpackageid:'test-package',re_packagenumber:'PKG001',
         re_packagenameen:'Repair package with a long descriptive name',
         re_packagenamefr:'Forfait de réparation avec un long nom descriptif',
@@ -864,9 +866,30 @@ test('master repository uses registered caller SDK sources, bounded queries and 
   ])
 })
 
-async function completeDraft(page, viewport = { width: 1366, height: 768 }) {
+for (const role of ['estimator', 'admin']) {
+  test(`${role} estimate list ownership scope survives navigation, filters and paging`, async ({ page }) => {
+    await page.addInitScript((role) => { window.__sessionRole = role }, role)
+    await mockData(page, 'en', 'light')
+    await page.goto('/')
+    const ownerId = role === 'estimator' ? '11111111-1111-1111-1111-111111111111' : undefined
+    await expect.poll(() => page.evaluate(() => window.__estimateQueries?.length ?? 0)).toBeGreaterThan(0)
+    expect(await page.evaluate(() => window.__estimateQueries.at(-1).ownerId)).toBe(ownerId)
+    await page.locator('.main-nav .nav-item').nth(2).click()
+    await expect(page.locator('.request-filters')).toBeVisible()
+    await page.locator('.request-filters select').selectOption('126110000')
+    await expect.poll(() => page.evaluate(() => window.__estimateQueries.at(-1).status)).toBe('126110000')
+    await page.locator('.request-pagination button').last().click()
+    await expect.poll(() => page.evaluate(() => window.__estimateQueries.at(-1).skipToken)).toBeTruthy()
+    const queries = await page.evaluate(() => window.__estimateQueries)
+    expect(queries.every((query) => query.ownerId === ownerId)).toBe(true)
+    expect(queries.some((query) => query.recent)).toBe(true)
+    expect(queries.some((query) => !query.recent)).toBe(true)
+  })
+}
+
+async function completeDraft(page, viewport = { width: 1366, height: 768 }, language = 'en', theme = 'light') {
   await page.setViewportSize(viewport)
-  await mockData(page, 'en', 'light')
+  await mockData(page, language, theme)
   await page.goto('/')
   await expect(page.locator('.market-control select')).toBeEnabled()
   await page.locator('.main-nav .nav-item').nth(1).click()
@@ -895,6 +918,148 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }) {
   await page.locator('#customer-email').fill('draft@example.invalid')
 }
 
+test('market switching restores English for CKE and MKO after CKQ', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  const market = page.locator('.market-control select')
+  for (const value of ['126110002', '126110001', '126110002', '126110000']) {
+    await expect(market).toBeEnabled()
+    await market.selectOption(value)
+    await expect(page.locator('html')).toHaveAttribute('lang', value === '126110002' ? 'fr-CA' : 'en-US')
+    await expect(market).toBeEnabled()
+  }
+})
+
+test('optional stated rate validates across stages and pricing failure gives actionable guidance', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  const rate = page.locator('#request-re_statedlaborrate')
+  await expect(rate).not.toHaveAttribute('required', '')
+  await rate.fill('-4')
+  await expect(rate).toHaveAttribute('aria-invalid', 'true')
+  await expect(page.getByText('Enter a valid hourly rate of zero or more, or leave this field blank.')).toBeVisible()
+  await next(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-error')).toContainText('Enter a valid hourly rate')
+  expect(await page.evaluate(() => window.__draftCalls?.length ?? 0)).toBe(0)
+  await expect(rate).toBeEditable()
+  await rate.focus()
+  await rate.press('ControlOrMeta+A')
+  await rate.press('Backspace')
+  await expect(rate).not.toHaveAttribute('aria-invalid')
+  await page.evaluate(() => { window.__pricingState = 'unavailable' })
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  await expect(page.locator('.draft-notice[role=alert]')).toContainText('If a stated labor billing rate is entered')
+  expect(await page.evaluate(() => window.__draftCalls.length)).toBe(1)
+})
+
+for (const { language, theme } of modes) {
+  test(`mixed CSTM, T&M and PSR custom lines save and reopen on mobile in ${language} ${theme}`, async ({ page }) => {
+    await completeDraft(page, { width: 320, height: 700 }, language, theme)
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    await page.evaluate(() => {
+      window.__packageResults = [
+        { re_repairpackageid: 'custom', re_packagenumber: 'CSTM: 0', re_packagenameen: 'Custom', re_iscustompackage: true },
+        { re_repairpackageid: 'tm', re_packagenumber: 'T&M: 001', re_packagenameen: 'Time & Material', re_istimematerial: true },
+        { re_repairpackageid: 'psr2', re_packagenumber: 'P2', re_packagenameen: 'Repair 2' },
+        { re_repairpackageid: 'psr3', re_packagenumber: 'P3', re_packagenameen: 'Repair 3' },
+      ]
+    })
+    for (const id of ['custom', 'tm', 'psr2', 'psr3']) {
+      await page.locator('#package-search').fill('PK')
+      const code = { custom: 'CSTM: 0', tm: 'T&M: 001', psr2: 'P2', psr3: 'P3' }[id]
+      await page.locator('.result-row').filter({ has: page.locator('strong', { hasText: code }) }).getByRole('button').click()
+    }
+    await expect(page.locator('.selected-card').last().locator('.equipment-card')).toHaveCount(5)
+    await next(page)
+    const custom = page.locator('.custom-cost-lines')
+    await custom.getByRole('button', { name: language === 'fr' ? 'Ajouter main-d’œuvre' : 'Add labor', exact: true }).click()
+    const labor = custom.locator('fieldset').first()
+    await labor.locator('select').nth(0).selectOption('126110001')
+    await labor.locator('select').nth(1).selectOption('126110001')
+    await labor.locator('input').fill('3.25')
+    await custom.getByRole('button', { name: language === 'fr' ? 'Ajouter un matériau' : 'Add material', exact: true }).click()
+    const material = custom.locator('fieldset').nth(1)
+    await material.locator('textarea').fill('Custom motor')
+    await material.locator('input').nth(0).fill('KONE')
+    await material.locator('input').nth(1).fill('KM123')
+    await material.locator('input').nth(2).fill('2')
+    await material.locator('input').nth(3).fill('25.50')
+    await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 320)
+    await checkLayout(page, { width: 320, height: 700 }, 'custom cost entry')
+    await next(page)
+    await page.locator('#request-re_konesparessalespricevk13').fill('150')
+    await next(page)
+    await page.locator('.footer-actions .button').click()
+    await expect(page.locator('.draft-saved')).toContainText('0000000042')
+    const saved = await page.evaluate(() => window.__draftCalls.at(-1))
+    expect(saved.packages).toHaveLength(5)
+    expect(saved.laborLines[0]).toMatchObject({ role: 126110001, time: 126110001, hours: 3.25 })
+    expect(saved.materialLines[0]).toMatchObject({ description: 'Custom motor', vendor: 'KONE', quantity: 2, unitCost: 25.5 })
+    await page.locator('.draft-toolbar .draft-secondary-actions button').nth(1).click()
+    await next(page); await next(page)
+    await expect(page.locator('.custom-cost-lines fieldset').first().locator('input')).toHaveValue('3.25')
+    await expect(page.locator('.custom-cost-lines fieldset').nth(1).locator('textarea')).toHaveValue('Custom motor')
+    await page.locator('.draft-toolbar .draft-secondary-actions button').first().click()
+    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await page.locator('#branch-select').fill('020')
+    await page.locator('#branch-select').press('ArrowDown'); await page.locator('#branch-select').press('Enter')
+    await page.locator('#equipment-type').selectOption('test-type')
+    await page.locator('#opportunity-building').fill('New building')
+    await next(page)
+    await expect(page.locator('.selected-card .equipment-card')).toHaveCount(0)
+  })
+}
+
+test('large saved package selections are paged in the browser without losing records', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  await page.evaluate(() => {
+    const template = window.__draftSaved.packages[0]
+    window.__draftSaved.packages = Array.from({ length: 125 }, (_, i) => ({
+      ...template, id: `p${i}`, number: `P${String(i + 1).padStart(3, '0')}`,
+    }))
+  })
+
+  await page.locator('.draft-toolbar .draft-secondary-actions button').nth(1).click()
+  await next(page)
+  await expect(page.locator('.selected-card').last().locator('.equipment-card')).toHaveCount(20)
+  await page.locator('.selected-card').last().getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(page.locator('.selected-card').last().locator('.equipment-card')).toHaveCount(20)
+  await expect(page.locator('.selected-card').last().locator('.equipment-card').first()).toContainText('P021')
+  await page.locator('.draft-toolbar .primary').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  expect(await page.evaluate(() => window.__draftCalls.at(-1).packages.length)).toBe(125)
+})
+
+test('custom line paging bounds rendered controls without dropping saved rows', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  await page.evaluate(() => {
+    window.__draftSaved.packages[0].isCustom = true
+    window.__draftSaved.laborLines = Array.from({ length: 11 }, (_, i) => ({
+      id: `labor${i}`, role: 126110000, time: 126110000, hours: i + 1, rate: 200,
+    }))
+    window.__draftSaved.materialLines = Array.from({ length: 11 }, (_, i) => ({
+      id: `material${i}`, description: `Part ${i + 1}`, vendor: '', part: '', quantity: 1, unitCost: 10,
+    }))
+  })
+  await page.locator('.draft-toolbar .draft-secondary-actions button').nth(1).click()
+  await next(page); await next(page)
+  const custom = page.locator('.custom-cost-lines')
+  await expect(custom.locator('fieldset')).toHaveCount(20)
+  await custom.locator('.custom-line-actions').first().getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(custom.locator('fieldset')).toHaveCount(11)
+  await expect(custom.locator('fieldset').first().locator('input')).toHaveValue('11')
+  await page.locator('.draft-toolbar .primary').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  expect(await page.evaluate(() => window.__draftCalls.at(-1).laborLines.length)).toBe(11)
+  expect(await page.evaluate(() => window.__draftCalls.at(-1).materialLines.length)).toBe(11)
+})
+
 test('lazy estimator preserves unsaved draft inputs, selections and step across workspace navigation', async ({ page }) => {
   await completeDraft(page)
   await page.locator('.main-nav').getByRole('button', { name: 'Settings', exact: true }).click()
@@ -915,7 +1080,7 @@ test('lazy estimator preserves unsaved draft inputs, selections and step across 
     return { actionsRight: actions.right, actionsBottom: actions.bottom, saveLeft: save.left,
       saveTop: save.top, saveWidth: save.width, actionsWidth: actions.width }
   })
-  if (viewport.width <= 640) {
+  if (page.viewportSize().width <= 640) {
     expect(toolbarLayout.saveTop).toBeGreaterThanOrEqual(toolbarLayout.actionsBottom)
     expect(Math.abs(toolbarLayout.saveWidth - toolbarLayout.actionsWidth)).toBeLessThan(2)
   } else {
@@ -1373,7 +1538,7 @@ for (const width of [320, 1366]) {
     await expect(page.locator('.request-pagination > span')).toContainText('1')
     await expect(status).toHaveValue('126110000')
     await expect.poll(() => page.evaluate(() => window.__estimateQueries.at(-1))).toEqual({
-      search: 'Building', status: '126110000', market: 126110000, recent: false, skipToken: undefined,
+      search: 'Building', status: '126110000', market: 126110000, recent: false, skipToken: undefined, ownerId: undefined,
     })
     await search.fill('')
     await search.press('Enter')

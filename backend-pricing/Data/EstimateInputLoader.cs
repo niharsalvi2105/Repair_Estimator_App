@@ -79,7 +79,7 @@ namespace RepairEstimator.Plugins.Data
             {
                 LoadEquipment(s, config, est, loaded);
                 LoadPackages(s, config, est, loaded);
-                if (loaded.IsCustomPath) throw new PricingException("RE-140", "CUSTOM_PATH_UNAVAILABLE");
+                if (loaded.IsCustomPath) LoadCustomLines(s, est, loaded);
             }
             else
             {
@@ -190,12 +190,13 @@ namespace RepairEstimator.Plugins.Data
         {
             var input = loaded.Input;
             var query = Query.Active(Names.EstimatePackage.Entity, Names.EstimatePackage.RepairPackage,
-                Names.EstimatePackage.Hours, Names.EstimatePackage.Material);
+                Names.EstimatePackage.Hours, Names.EstimatePackage.Material, "re_iscustompackage");
             query.Criteria.AddCondition(Names.ChildParentLookup, ConditionOperator.Equal, est.Id);
 
-            foreach (var line in Query.All(s, query))
+            foreach (var line in Query.All(s, query, 1000))
             {
                 loaded.HasPackages = true;
+                if (line.GetAttributeValue<bool>("re_iscustompackage")) loaded.IsCustomPath = true;
                 if (!line.Contains(Names.EstimatePackage.Hours) || !line.Contains(Names.EstimatePackage.Material))
                     throw new PricingException("RE-114", "PACKAGE_SNAPSHOT_MISSING");
                 input.Packages.Add(new PackageInput
@@ -205,7 +206,7 @@ namespace RepairEstimator.Plugins.Data
                 });
             }
 
-            loaded.IsCustomPath = IsCustomByPathChoice(config, est);
+            loaded.IsCustomPath = loaded.IsCustomPath || IsCustomByPathChoice(config, est);
             input.IsCustomPath = loaded.IsCustomPath;
         }
 
@@ -213,6 +214,38 @@ namespace RepairEstimator.Plugins.Data
         {
             string label = OptionMap.Label(s, Names.Sets.EstimatePath, est.GetAttributeValue<OptionSetValue>(Names.Estimate.Path));
             return label != null && label.IndexOf(Labels.Custom, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static void LoadCustomLines(IOrganizationService s, Entity est, LoadedEstimate loaded)
+        {
+            var labor = Query.Active(Names.EstimateLaborLine.Entity, Names.EstimateLaborLine.Hours, Names.EstimateLaborLine.Rate);
+            labor.Criteria.AddCondition(Names.ChildParentLookup, ConditionOperator.Equal, est.Id);
+            foreach (var row in Query.All(s, labor, 1000))
+            {
+                if (!row.Contains(Names.EstimateLaborLine.Hours) || !row.Contains(Names.EstimateLaborLine.Rate))
+                    throw new PricingException("RE-114", "LABOR_SNAPSHOT_MISSING");
+                loaded.Input.LaborLines.Add(new LaborLineInput {
+                    Hours = Query.Dec(row, Names.EstimateLaborLine.Hours).Value,
+                    Rate = Query.Money(row, Names.EstimateLaborLine.Rate).Value
+                });
+            }
+            var materials = Query.Active(Names.EstimateMaterialLine.Entity, Names.EstimateMaterialLine.Quantity,
+                Names.EstimateMaterialLine.UnitCost, Names.EstimateMaterialLine.TaxApplicable,
+                Names.EstimateMaterialLine.FreightApplicable, Names.EstimateMaterialLine.Vendor, Names.EstimateMaterialLine.PartNumber);
+            materials.Criteria.AddCondition(Names.ChildParentLookup, ConditionOperator.Equal, est.Id);
+            foreach (var row in Query.All(s, materials, 1000))
+            {
+                if (!row.Contains(Names.EstimateMaterialLine.Quantity) || !row.Contains(Names.EstimateMaterialLine.UnitCost))
+                    throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_MISSING");
+                loaded.Input.MaterialLines.Add(new MaterialLineInput {
+                    Quantity = Query.Dec(row, Names.EstimateMaterialLine.Quantity).Value,
+                    UnitCost = Query.Money(row, Names.EstimateMaterialLine.UnitCost).Value,
+                    TaxApplicable = row.GetAttributeValue<bool>(Names.EstimateMaterialLine.TaxApplicable),
+                    FreightApplicable = row.GetAttributeValue<bool>(Names.EstimateMaterialLine.FreightApplicable),
+                    Vendor = row.GetAttributeValue<string>(Names.EstimateMaterialLine.Vendor),
+                    PartNumber = row.GetAttributeValue<string>(Names.EstimateMaterialLine.PartNumber)
+                });
+            }
         }
 
         private static Entity Retrieve(IOrganizationService s, EntityReference reference, params string[] columns)
