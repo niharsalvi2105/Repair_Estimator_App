@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction, type RefObject } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction, type RefObject } from 'react'
 import type { Branch, DraftReferences, Equipment, RepairPackage, ReferenceOption } from './data/repairEstimatorRepository'
 import type { AppSession } from './data/sessionRepository'
 import type { Market } from './data/estimateQuery'
@@ -7,6 +7,9 @@ import { RequestFields, type RequestInputs } from './RequestFields'
 import { PricingSummary } from './PricingSummary'
 import { BranchSelect } from './BranchSelect'
 import { CustomCostLines } from './CustomCostLines'
+import { PackageSelect } from './PackageSelect'
+import { EquipmentSelect } from './EquipmentSelect'
+import { localizePackage, localizeScope } from './data/packageSearch'
 import { MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
 
 type Language = 'en' | 'fr'
@@ -62,17 +65,16 @@ type Props = {
   equipmentLoading: boolean
   equipmentError: string
   equipmentResults: Equipment[]
-  addMatchedEquipment: (equipment: Equipment) => void
+  toggleEquipment: (equipment: Equipment) => void
   selectedEquipment: SelectedEquipment[]
   addUnlistedEquipment: () => void
   setSelectedEquipment: Dispatch<SetStateAction<SelectedEquipment[]>>
-  packageQuery: string
-  changePackageQuery: (value: string) => void
   selectedPackages: Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]
   packageLoading: boolean
   packageError: string
   packageResults: RepairPackage[]
-  addPackage: (repairPackage: RepairPackage) => void
+  togglePackage: (repairPackage: RepairPackage) => void
+  retryPackages: () => void
   selectedPackageIds: Set<string>
   setSelectedPackages: Dispatch<SetStateAction<Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]>>
   marketName: 'MKO' | 'CKE' | 'CKQ'
@@ -90,16 +92,6 @@ type Props = {
   setMaterialLines: Dispatch<SetStateAction<DraftMaterial[]>>
 }
 
-function localizePackage(
-  repairPackage: Pick<RepairPackage, 're_packagenameen' | 're_packagenamefr'>,
-  language: Language,
-): string {
-  if (language === 'fr' && repairPackage.re_packagenamefr) {
-    return repairPackage.re_packagenamefr
-  }
-  return repairPackage.re_packagenameen
-}
-
 export default function EstimatorWorkspace({
   requestSection, t, draftVersion, draftDirty, dt,
   draftNumber, newDraft, draftBusy, canStart, openDraft,
@@ -110,9 +102,9 @@ export default function EstimatorWorkspace({
   setReferenceError, references, equipmentTypeId, setEquipmentTypeId, jobTypeId,
   setJobTypeId, savedSalesperson, session, buildingName, setBuildingName,
   stateId, setStateId, updateRequestInput, requestInputs, equipmentQuery,
-  changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, addMatchedEquipment,
-  selectedEquipment, addUnlistedEquipment, setSelectedEquipment, packageQuery, changePackageQuery,
-  selectedPackages, packageLoading, packageError, packageResults, addPackage,
+  changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, toggleEquipment,
+  selectedEquipment, addUnlistedEquipment, setSelectedEquipment,
+  selectedPackages, packageLoading, packageError, packageResults, togglePackage, retryPackages,
   selectedPackageIds, setSelectedPackages, marketName, customerName, setCustomerName,
   customerEmail, setCustomerEmail, customerPhone, setCustomerPhone, setStep,
   onDashboard, laborLines, materialLines, setLaborLines, setMaterialLines,
@@ -121,6 +113,7 @@ export default function EstimatorWorkspace({
   const pageSize = 20
   const currentPackagePage = Math.min(packagePage, Math.max(0, Math.ceil(selectedPackages.length / pageSize) - 1))
   const hasCustom = selectedPackages.some((p) => p.re_iscustompackage)
+  const selectedEquipmentNumbers = useMemo(() => new Set(selectedEquipment.map((item) => item.number)), [selectedEquipment])
   const canAdd = selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length < MAX_DRAFT_CHILD_OPERATIONS
   const packagePaging = selectedPackages.length > pageSize && <div className="custom-line-actions">
     <button type="button" className="button secondary" disabled={currentPackagePage === 0}
@@ -319,19 +312,9 @@ export default function EstimatorWorkspace({
               </>}
               {step === 2 && <>
               <label className="field-label search-label" htmlFor="equipment-search">{t.equipment}<span className="required">*</span></label>
-              <div className="search-control">
-                <span className="search-icon" aria-hidden="true" />
-                <input
-                  id="equipment-search"
-                  className="text-input search-input"
-                  value={equipmentQuery}
-                  onChange={(event) => changeEquipmentQuery(event.target.value)}
-                  placeholder={t.equipmentSearch}
-                  disabled={!branchId}
-                  autoComplete="off"
-                />
-                {equipmentLoading && <span className="spinner" aria-label={t.searching} />}
-              </div>
+              <EquipmentSelect results={equipmentResults} selectedNumbers={selectedEquipmentNumbers} onToggle={toggleEquipment}
+                query={equipmentQuery} onQueryChange={changeEquipmentQuery} loading={equipmentLoading}
+                disabled={!branchId} t={t} onAddUnlisted={addUnlistedEquipment} />
               <p className="field-help">
                 {branchId ? t.searchHelp : t.branchRequired}
               </p>
@@ -340,38 +323,6 @@ export default function EstimatorWorkspace({
                 <div className="error-box compact" role="alert">
                   <strong>{t.dataError}</strong>
                   <span>{equipmentError}</span>
-                </div>
-              )}
-
-              {equipmentResults.length > 0 && (
-                <div className="result-list" role="listbox" aria-label={t.equipment}>
-                  {equipmentResults.map((equipment) => (
-                    <div className="result-row" key={equipment.re_equipmentid}>
-                      <div className="result-main">
-                        <strong>{equipment.re_equipment}</strong>
-                        <span>{equipment.re_equipmentname}</span>
-                        <small>{equipment.re_functionallocation || t.location}: {equipment.re_soldtoname || t.customer}</small>
-                      </div>
-                      <button
-                        className="button small secondary"
-                        onClick={() => addMatchedEquipment(equipment)}
-                        disabled={selectedEquipment.length >= 14}
-                      >
-                        {t.selectEquipment}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {!equipmentLoading && equipmentQuery.trim().length >= 3 && !equipmentError && (
-                <div className="no-results">
-                  {equipmentResults.length === 0 && <p>{t.noEquipment}</p>}
-                  {!selectedEquipment.some((item) => item.number === equipmentQuery.trim()) && (
-                    <button className="text-button" onClick={addUnlistedEquipment}>
-                      {t.unlisted}: <strong>{equipmentQuery.trim()}</strong>
-                    </button>
-                  )}
                 </div>
               )}
               </>}
@@ -448,52 +399,17 @@ export default function EstimatorWorkspace({
                 </div>
               </div>
               <label className="field-label" htmlFor="package-search">{t.packagesTitle}</label>
-              <div className="search-control">
-                <span className="search-icon" aria-hidden="true" />
-                <input
-                  id="package-search"
-                  className="text-input search-input"
-                  value={packageQuery}
-                  onChange={(event) => changePackageQuery(event.target.value)}
-                  placeholder={t.packageSearch}
-                  disabled={!selectedBranch?._re_country_value}
-                  autoComplete="off"
-                />
-                {packageLoading && <span className="spinner" aria-label={t.searchingPackages} />}
-              </div>
+              <PackageSelect packages={packageResults} selectedIds={selectedPackageIds} onToggle={togglePackage}
+                language={language} t={t} loading={packageLoading} disabled={!selectedBranch?._re_country_value} />
               <p className="field-help">{t.packageSearchHelp}</p>
               {!selectedBranch?._re_country_value && <p className="error-box" role="alert">{t.missingCountry}</p>}
               {packageError && (
                 <div className="error-box compact" role="alert">
                   <strong>{t.dataError}</strong>
                   <span>{packageError}</span>
+                  <button type="button" className="button small secondary" onClick={retryPackages}>{t.retry}</button>
                 </div>
               )}
-              {packageResults.length > 0 && (
-                <div className="result-list">
-                  {packageResults.map((repairPackage) => (
-                    <div className="result-row" key={repairPackage.re_repairpackageid}>
-                      <div className="result-main">
-                        <strong>{repairPackage.re_packagenumber}</strong>
-                        <span>{localizePackage(repairPackage, language)}</span>
-                        <small>{repairPackage.re_iscustompackage ? 'CSTM' : repairPackage.re_istimematerial ? 'T&M' : 'PSR'}</small>
-                        {repairPackage.re_proposalscopeen && <small>{repairPackage.re_proposalscopeen}</small>}
-                      </div>
-                      <button
-                        className="button small secondary"
-                        onClick={() => addPackage(repairPackage)}
-                        disabled={!canAdd || selectedPackageIds.has(repairPackage.re_repairpackageid)}
-                      >
-                        {t.addPackage}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {!packageLoading &&
-                packageQuery.trim().length >= 2 &&
-                packageResults.length === 0 &&
-                !packageError && <div className="no-results"><p>{t.noPackages}</p></div>}
             </section>
             {selectedPackages.length > 0 && (
               <section className="form-card selected-card">
@@ -514,6 +430,10 @@ export default function EstimatorWorkspace({
                           <span>{repairPackage.re_iscustompackage ? 'CSTM' : repairPackage.re_istimematerial ? 'T&M' : 'PSR'}</span>
                         </div>
                         <span>{localizePackage(repairPackage, language)}</span>
+                        <div className="package-scope">
+                          <small className="package-scope-label">{t.scopeOfWork}</small>
+                          <p>{localizeScope(repairPackage, language) || t.noScope}</p>
+                        </div>
                       </div>
                       <button
                         className="icon-button remove-button"

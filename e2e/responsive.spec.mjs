@@ -131,13 +131,13 @@ async function mockData(page, language, theme, state = 'records') {
         re_functionallocation:'Test location', re_soldtoname:'Customer with a long descriptive name',
         re_oem:'Test OEM', re_equipmentage:20
       }] }
-      export async function searchPackages() { return window.__packageResults || [{
+      export async function listPackages() { return [{
         re_repairpackageid:'test-package',re_packagenumber:'PKG001',
         re_packagenameen:'Repair package with a long descriptive name',
         re_packagenamefr:'Forfait de réparation avec un long nom descriptif',
         re_proposalscopeen:'Representative scope text for responsive layout testing.',
         re_effectivefrom:'2020-01-01'
-      }] }
+      }, ...(window.__extraPackages || [])] }
       export async function listEstimates(options) {
         window.__estimateQueries ??= [];
         window.__estimateQueries.push(structuredClone(options));
@@ -292,13 +292,14 @@ for (const viewport of viewports) {
       await next(page)
 
       await page.locator('#equipment-search').fill('TEST')
-      await expect(page.locator('.result-row')).toHaveCount(1)
+      await expect(page.locator('#equipment-options [role=option]')).toHaveCount(2)
       await checkLayout(page, viewport, 'equipment results')
-      await page.locator('.result-row button').click()
+      await page.locator('#equipment-options button').first().click()
       await page.locator('#package-search').fill('PK')
-      await expect(page.locator('.result-row')).toHaveCount(1)
+      await expect(page.locator('#package-options [role=option]')).toHaveCount(1)
       await checkLayout(page, viewport, 'package results')
-      await page.locator('.result-row button').click()
+      await page.locator('#package-options button').first().click()
+      await page.locator('#package-search').press('Escape')
       await checkLayout(page, viewport, 'equipment and packages selected')
       await next(page)
 
@@ -900,6 +901,14 @@ for (const role of ['estimator', 'admin']) {
   })
 }
 
+async function pickEquipmentAndPackage(page) {
+  await page.locator('#equipment-search').fill('TEST')
+  await page.locator('#equipment-options button').first().click()
+  await page.locator('#package-search').fill('PK')
+  await page.locator('#package-options button').first().click()
+  await page.locator('#package-search').press('Escape')
+}
+
 async function completeDraft(page, viewport = { width: 1366, height: 768 }, language = 'en', theme = 'light') {
   await page.setViewportSize(viewport)
   await mockData(page, language, theme)
@@ -915,10 +924,7 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await page.locator('#customer-name').fill('Draft customer')
   await page.locator('#customer-email').fill('draft@example.invalid')
   await next(page)
-  await page.locator('#equipment-search').fill('TEST')
-  await page.locator('.result-row button').click()
-  await page.locator('#package-search').fill('PK')
-  await page.locator('.result-row button').click()
+  await pickEquipmentAndPackage(page)
   await next(page)
   // Missing branch defaults must remain blank, not silently become zero.
   await expect(page.locator('#request-re_usetax')).toHaveValue('')
@@ -1056,20 +1062,19 @@ test('optional stated rate validates across stages and pricing failure gives act
 
 for (const { language, theme } of modes) {
   test(`mixed CSTM, T&M and PSR custom lines save and reopen on mobile in ${language} ${theme}`, async ({ page }) => {
-    await completeDraft(page, { width: 320, height: 700 }, language, theme)
-    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
-    await page.evaluate(() => {
-      window.__packageResults = [
-        { re_repairpackageid: 'custom', re_packagenumber: 'CSTM: 0', re_packagenameen: 'Custom', re_iscustompackage: true },
-        { re_repairpackageid: 'tm', re_packagenumber: 'T&M: 001', re_packagenameen: 'Time & Material', re_istimematerial: true },
-        { re_repairpackageid: 'psr2', re_packagenumber: 'P2', re_packagenameen: 'Repair 2' },
-        { re_repairpackageid: 'psr3', re_packagenumber: 'P3', re_packagenameen: 'Repair 3' },
+    await page.addInitScript(() => {
+      window.__extraPackages = [
+        { re_repairpackageid: 'custom', re_packagenumber: 'CSTM: 0', re_packagenameen: 'Custom', re_iscustompackage: true, re_effectivefrom: '2020-01-01' },
+        { re_repairpackageid: 'tm', re_packagenumber: 'T&M: 001', re_packagenameen: 'Time & Material', re_istimematerial: true, re_effectivefrom: '2020-01-01' },
+        { re_repairpackageid: 'psr2', re_packagenumber: 'P2', re_packagenameen: 'Repair 2', re_effectivefrom: '2020-01-01' },
+        { re_repairpackageid: 'psr3', re_packagenumber: 'P3', re_packagenameen: 'Repair 3', re_effectivefrom: '2020-01-01' },
       ]
     })
-    for (const id of ['custom', 'tm', 'psr2', 'psr3']) {
-      await page.locator('#package-search').fill('PK')
-      const code = { custom: 'CSTM: 0', tm: 'T&M: 001', psr2: 'P2', psr3: 'P3' }[id]
-      await page.locator('.result-row').filter({ has: page.locator('strong', { hasText: code }) }).getByRole('button').click()
+    await completeDraft(page, { width: 320, height: 700 }, language, theme)
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    for (const code of ['CSTM: 0', 'T&M: 001', 'P2', 'P3']) {
+      await page.locator('#package-search').fill(code)
+      await page.locator('#package-options button').first().click()
     }
     await expect(page.locator('.selected-card').last().locator('.equipment-card')).toHaveCount(5)
     await next(page)
@@ -1321,10 +1326,7 @@ for (const width of [320, 1366]) {
       await page.locator('#customer-name').fill('New customer')
       await next(page)
       await expect(page.locator('.selected-card')).toHaveCount(0)
-      await page.locator('#equipment-search').fill('TEST')
-      await page.locator('.result-row button').click()
-      await page.locator('#package-search').fill('PK')
-      await page.locator('.result-row button').click()
+      await pickEquipmentAndPackage(page)
       await next(page)
       await expect(page.locator('#request-re_usetax')).toHaveValue('')
       await expect(page.locator('#request-re_additionallaborhours')).toHaveValue('')

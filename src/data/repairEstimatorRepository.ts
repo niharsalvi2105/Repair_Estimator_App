@@ -14,6 +14,7 @@ import type { Re_repairestimates } from '../generated/models/Re_repairestimatesM
 import type { Re_branchs } from '../generated/models/Re_branchsModel'
 import type { Re_equipments } from '../generated/models/Re_equipmentsModel'
 import type { Re_repairpackages } from '../generated/models/Re_repairpackagesModel'
+import type { IGetAllOptions } from '../generated/models/CommonModels'
 
 export type Branch = Pick<
   Re_branchs,
@@ -134,7 +135,7 @@ export async function searchEquipment(
       're_oem',
       're_equipmentage',
     ],
-    filter: `statecode eq 0 and _re_branch_value eq ${branchId} and (startswith(re_equipment,'${escapedSearch}') or startswith(re_equipmentname,'${escapedSearch}'))`,
+    filter: `statecode eq 0 and _re_branch_value eq ${branchId}${escapedSearch ? ` and (startswith(re_equipment,'${escapedSearch}') or startswith(re_equipmentname,'${escapedSearch}'))` : ''}`,
     orderBy: ['re_equipment asc'],
     top: 20,
     maxPageSize: 20,
@@ -143,12 +144,30 @@ export async function searchEquipment(
   return unwrap(result)
 }
 
-export async function searchPackages(
-  branchCountryId: string,
-  searchText: string,
-): Promise<RepairPackage[]> {
-  const escapedSearch = searchText.replaceAll("'", "''")
-  const result = await withTimeout(Re_repairpackagesService.getAll({
+export async function listPackages(branchCountryId: string): Promise<RepairPackage[]> {
+  const records: RepairPackage[] = []
+  const seenTokens = new Set<string>()
+  let skipToken: string | undefined
+  do {
+    const result = await withTimeout(Re_repairpackagesService.getAll(buildPackageQuery(branchCountryId, skipToken)))
+    records.push(...unwrap(result))
+    skipToken = result.skipToken
+    if (skipToken) {
+      if (seenTokens.has(skipToken)) throw new Error('Dataverse returned a repeated package paging token.')
+      seenTokens.add(skipToken)
+    }
+  } while (skipToken)
+
+  const today = new Date().toISOString().slice(0, 10)
+  return records.filter((repairPackage) => {
+    const startsOn = repairPackage.re_effectivefrom.slice(0, 10)
+    const endsOn = repairPackage.re_effectiveto?.slice(0, 10)
+    return startsOn <= today && (!endsOn || endsOn >= today)
+  })
+}
+
+function buildPackageQuery(branchCountryId: string, skipToken?: string): IGetAllOptions {
+  return {
     select: [
       're_repairpackageid',
       're_packagenumber',
@@ -162,18 +181,11 @@ export async function searchPackages(
       're_iscustompackage',
       're_istimematerial',
     ],
-    filter: `statecode eq 0 and (_re_country_value eq ${branchCountryId} or _re_country_value eq null) and (startswith(re_packagenumber,'${escapedSearch}') or startswith(re_packagenameen,'${escapedSearch}'))`,
-    orderBy: ['re_packagenumber asc'],
-    top: 20,
-    maxPageSize: 20,
-  }))
-
-  const today = new Date().toISOString().slice(0, 10)
-  return unwrap(result).filter((repairPackage) => {
-    const startsOn = repairPackage.re_effectivefrom.slice(0, 10)
-    const endsOn = repairPackage.re_effectiveto?.slice(0, 10)
-    return startsOn <= today && (!endsOn || endsOn >= today)
-  })
+    filter: `statecode eq 0 and (_re_country_value eq ${branchCountryId} or _re_country_value eq null)`,
+    orderBy: ['re_packagenumber asc', 're_repairpackageid asc'],
+    maxPageSize: 500,
+    skipToken,
+  }
 }
 
 export type EstimateSummary = Pick<Re_repairestimates,

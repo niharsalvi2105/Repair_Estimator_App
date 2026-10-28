@@ -5,7 +5,7 @@ import {
   getDraftReferences,
   type DraftReferences,
   searchEquipment,
-  searchPackages,
+  listPackages,
   type Branch,
   type Equipment,
   type RepairPackage,
@@ -123,9 +123,10 @@ const copy = {
     equipment: 'Equipment',
     equipmentHint:
       'Search by equipment number or name. Results are limited to the selected branch.',
-    equipmentSearch: 'Search equipment number or name',
-    searchHelp: 'Enter at least 3 characters to search Dataverse.',
+    equipmentSearch: 'Browse or search equipment by number or name',
+    searchHelp: 'Open the list to browse equipment for this branch, or type to filter. Select up to 14 units.',
     searching: 'Searching Dataverse...',
+    refineSearch: 'Showing the first 20 matches. Type to narrow the list.',
     noEquipment: 'No matching equipment found.',
     selectEquipment: 'Select',
     selectedEquipment: 'Selected equipment',
@@ -142,12 +143,17 @@ const copy = {
     packagesTitle: 'Select packages',
     packagesHint:
       'Mix standard, CSTM and T&M packages. Predefined costs scale with equipment. Save to view server pricing.',
-    packageSearch: 'Search package number or name',
-    packageSearchHelp: 'Enter at least 2 characters to search the package catalog.',
-    searchingPackages: 'Searching package catalog...',
+    packageSearch: 'Search by package number, description or scope of work',
+    packageSearchHelp: 'Open the list to browse every available package, or type to filter. Select as many packages as needed.',
+    searchingPackages: 'Loading package catalog...',
     noPackages: 'No matching active packages found.',
     selectedPackages: 'Selected packages',
     addPackage: 'Add package',
+    packagesAvailable: 'packages',
+    packagesChosen: 'selected',
+    showMore: 'Show more',
+    scopeOfWork: 'Scope of work',
+    noScope: 'No scope of work available.',
     packageLimit: 'All packages apply to all selected equipment. Request-size and processing safeguards apply.',
     reviewTitle: 'Review request details',
     customerName: 'Customer name',
@@ -262,9 +268,10 @@ const copy = {
     equipment: 'Équipement',
     equipmentHint:
       'Recherchez par numéro ou nom d’équipement. Les résultats sont limités à la succursale choisie.',
-    equipmentSearch: 'Rechercher par numéro ou nom',
-    searchHelp: 'Saisissez au moins 3 caractères pour rechercher dans Dataverse.',
+    equipmentSearch: 'Parcourir ou rechercher par numéro ou nom',
+    searchHelp: 'Ouvrez la liste pour parcourir les équipements de cette succursale, ou saisissez pour filtrer. Sélectionnez jusqu’à 14 unités.',
     searching: 'Recherche dans Dataverse…',
+    refineSearch: 'Affichage des 20 premiers résultats. Saisissez pour affiner.',
     noEquipment: 'Aucun équipement correspondant.',
     selectEquipment: 'Sélectionner',
     selectedEquipment: 'Équipement sélectionné',
@@ -281,12 +288,17 @@ const copy = {
     packagesTitle: 'Choisir les forfaits',
     packagesHint:
       'Combinez les forfaits standard, CSTM et T&M. Les coûts prédéfinis varient selon le nombre d’équipements. Enregistrez pour voir les prix serveur.',
-    packageSearch: 'Rechercher par numéro ou nom de forfait',
-    packageSearchHelp: 'Saisissez au moins 2 caractères pour rechercher le catalogue.',
-    searchingPackages: 'Recherche dans le catalogue…',
+    packageSearch: 'Rechercher par numéro, description ou portée des travaux',
+    packageSearchHelp: 'Ouvrez la liste pour parcourir tous les forfaits disponibles, ou saisissez pour filtrer. Sélectionnez autant de forfaits que nécessaire.',
+    searchingPackages: 'Chargement du catalogue…',
     noPackages: 'Aucun forfait actif correspondant.',
     selectedPackages: 'Forfaits sélectionnés',
     addPackage: 'Ajouter le forfait',
+    packagesAvailable: 'forfaits',
+    packagesChosen: 'sélectionné(s)',
+    showMore: 'Afficher plus',
+    scopeOfWork: 'Portée des travaux',
+    noScope: 'Aucune portée des travaux disponible.',
     packageLimit: 'Chaque forfait s’applique à tous les équipements sélectionnés. Des limites techniques de taille et de traitement s’appliquent.',
     reviewTitle: 'Vérifier les détails de la demande',
     customerName: 'Nom du client',
@@ -370,9 +382,8 @@ function App() {
   const [selectedEquipment, setSelectedEquipment] = useState<
     SelectedEquipment[]
   >([])
-  const [packageQuery, setPackageQuery] = useState('')
-  const [packageResults, setPackageResults] = useState<RepairPackage[]>([])
-  const [packageLoading, setPackageLoading] = useState(false)
+  const [packageCatalog, setPackageCatalog] = useState<{ key: string; records: RepairPackage[]; error: string }>()
+  const [packageAttempt, setPackageAttempt] = useState(0)
   const [packageError, setPackageError] = useState('')
   const [selectedPackages, setSelectedPackages] = useState<Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]>([])
   const [laborLines, setLaborLines] = useState<DraftLabor[]>([])
@@ -515,7 +526,7 @@ function App() {
 
   useEffect(() => {
     const query = equipmentQuery.trim()
-    if (!branchId || query.length < 3) return
+    if (!branchId || step !== 2) return
 
     let cancelled = false
     const timeout = window.setTimeout(() => {
@@ -531,51 +542,45 @@ function App() {
         .finally(() => {
           if (!cancelled) setEquipmentLoading(false)
         })
-    }, 300)
+    }, query ? 300 : 0)
 
     return () => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [branchId, equipmentQuery])
+  }, [branchId, equipmentQuery, step])
+
+  const packageCountryId = selectedBranch?._re_country_value
+  const packageKey = packageCountryId ? `${packageCountryId}:${packageAttempt}` : ''
 
   useEffect(() => {
-    const query = packageQuery.trim()
-    const countryId = selectedBranch?._re_country_value
-    if (!countryId || query.length < 2) return
-
+    if (!packageCountryId) return
     let cancelled = false
-    const timeout = window.setTimeout(() => {
-      setPackageLoading(true)
-      setPackageError('')
-      void searchPackages(countryId, query)
-        .then((records) => {
-          if (!cancelled) setPackageResults(records)
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) setPackageError(message(error))
-        })
-        .finally(() => {
-          if (!cancelled) setPackageLoading(false)
-        })
-    }, 300)
+    listPackages(packageCountryId)
+      .then((records) => {
+        if (!cancelled) setPackageCatalog({ key: packageKey, records, error: '' })
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setPackageCatalog({ key: packageKey, records: [], error: message(error) })
+      })
+    return () => { cancelled = true }
+  }, [packageCountryId, packageKey])
 
-    return () => {
-      cancelled = true
-      window.clearTimeout(timeout)
-    }
-  }, [packageQuery, selectedBranch])
+  const packageLoading = packageKey !== '' && packageCatalog?.key !== packageKey
+  const packageResults = packageCatalog?.key === packageKey ? packageCatalog.records : []
+  const packageLoadError = packageCatalog?.key === packageKey ? packageCatalog.error : ''
 
   const selectedPackageIds = useMemo(
     () => new Set(selectedPackages.map((repairPackage) => repairPackage.re_repairpackageid)),
     [selectedPackages],
   )
 
-  function addMatchedEquipment(equipment: Equipment) {
-    if (selectedEquipment.length >= 14) return
+  function toggleEquipment(equipment: Equipment) {
     if (selectedEquipment.some((item) => item.number === equipment.re_equipment)) {
+      setSelectedEquipment((current) => current.filter((item) => item.number !== equipment.re_equipment))
       return
     }
+    if (selectedEquipment.length >= 14) return
     setSelectedEquipment((current) => [
       ...current,
       {
@@ -589,8 +594,6 @@ function App() {
         matched: true,
       },
     ])
-    setEquipmentQuery('')
-    setEquipmentResults([])
   }
 
   function addUnlistedEquipment() {
@@ -618,14 +621,11 @@ function App() {
     setEquipmentQuery('')
     setEquipmentResults([])
     setSelectedEquipment([])
-    setPackageQuery('')
-    setPackageResults([])
     setSelectedPackages([])
     setLaborLines([]); setMaterialLines([])
     setEquipmentError('')
     setPackageError('')
     setEquipmentLoading(false)
-    setPackageLoading(false)
   }
 
   function changeBranch(nextBranchId: string) {
@@ -672,23 +672,18 @@ function App() {
     setEquipmentError('')
   }
 
-  function changePackageQuery(value: string) {
-    setPackageQuery(value)
-    setPackageResults([])
-    setPackageError('')
-  }
-
-  function addPackage(repairPackage: RepairPackage) {
+  function togglePackage(repairPackage: RepairPackage) {
     if (selectedPackageIds.has(repairPackage.re_repairpackageid)) {
+      setSelectedPackages((current) => current.filter((item) => item.re_repairpackageid !== repairPackage.re_repairpackageid))
+      setPackageError('')
       return
     }
     if (selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length >= MAX_DRAFT_CHILD_OPERATIONS) {
       setPackageError(language === 'fr' ? 'Limite technique atteinte. Divisez la demande.' : 'Technical processing budget reached. Split this request.')
       return
     }
+    setPackageError('')
     setSelectedPackages((current) => [...current, repairPackage])
-    setPackageQuery('')
-    setPackageResults([])
   }
 
   const dt = language === 'fr' ? {
@@ -741,7 +736,7 @@ function App() {
     setCustomerEmail(record.email ?? ''); setCustomerPhone(record.phone ?? '')
     setEquipmentTypeId(record.equipmentTypeId); setJobTypeId(record.jobTypeId ?? '')
     setMarket(record.market); setRequestInputs(inputs); setSelectedEquipment(equipment); setSelectedPackages(packages)
-    setEquipmentQuery(''); setEquipmentResults([]); setPackageQuery(''); setPackageResults([])
+    setEquipmentQuery(''); setEquipmentResults([])
     setSavedSnapshot(JSON.stringify({
       branchId: record.branchId, stateId: record.stateId, estimateTitle: record.title,
       buildingName: record.building, customerName: record.customer, customerEmail: record.email ?? '',
@@ -1082,18 +1077,17 @@ function App() {
               equipmentLoading,
               equipmentError,
               equipmentResults,
-              addMatchedEquipment,
+              toggleEquipment,
               selectedEquipment,
               addUnlistedEquipment,
               setSelectedEquipment,
-              packageQuery,
-              changePackageQuery,
               selectedPackages,
               laborLines, materialLines, setLaborLines, setMaterialLines,
               packageLoading,
-              packageError,
+              packageError: packageError || packageLoadError,
               packageResults,
-              addPackage,
+              togglePackage,
+              retryPackages: () => setPackageAttempt((current) => current + 1),
               selectedPackageIds,
               setSelectedPackages,
               marketName,
