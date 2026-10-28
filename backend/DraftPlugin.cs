@@ -139,7 +139,8 @@ namespace RepairEstimator.Drafts
                 if (input.mode == "dashboard")
                 {
                     context.OutputParameters["ResultJson"] = Serialize(
-                        DashboardReader.Read(service, context.InitiatingUserId, input.market, DateTime.UtcNow));
+                        DashboardReader.Read(factory.CreateOrganizationService(context.InitiatingUserId),
+                            context.InitiatingUserId, input.market, DateTime.UtcNow));
                     return;
                 }
                 var id = Guid.Parse(input.id);

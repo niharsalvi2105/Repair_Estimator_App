@@ -6,11 +6,11 @@ import { parseDashboard } from '../src/data/dashboardContract.ts'
 test('Central reporting year changes at Lisle midnight, not UTC midnight', () => {
   assert.equal(reportingYear(new Date('2027-01-01T05:59:59Z')), 2026)
   assert.equal(reportingYear(new Date('2027-01-01T06:00:00Z')), 2027)
-  const row = { mode: 'dashboard', ownerId: 'user', market: 126110000, year: 2026,
+  const row = { mode: 'dashboard', ownerId: 'user', market: 126110000, period: 'all-time',
     generatedAt: '2027-01-01T05:59:59Z', total: 0, marginCount: 0, averageCmii: null,
     statuses: [], jobTypes: [] }
-  assert.equal(parseDashboard(row, 126110000, 'user').year, 2026)
-  assert.throws(() => parseDashboard({ ...row, generatedAt: '2027-01-01T06:00:00Z' }, 126110000, 'user'))
+  assert.equal(parseDashboard(row, 126110000, 'user').period, 'all-time')
+  assert.equal(parseDashboard({ ...row, generatedAt: '2027-01-01T06:00:00Z' }, 126110000, 'user').period, 'all-time')
 })
 
 test('Central display follows both daylight-saving transitions and is independent of locale', () => {

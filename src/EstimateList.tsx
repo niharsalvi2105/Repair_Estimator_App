@@ -117,9 +117,7 @@ function PagedEstimateList({ language, market, ownerId, onOpen, busy = false, se
               {(recent ? records.slice(0, 5) : records).map((record) => (
                 <article className="request-record" key={record.re_repairestimateid}>
                   <div className="request-record-heading">
-                    <h3>{record.re_name || record.re_estimatename}
-                      {recent && record.re_name && <small>{record.re_estimatename}</small>}
-                    </h3>
+                    <h3>{record.re_estimatename || '—'}</h3>
                     <div className="request-record-actions">
                       <span className="preview-badge">{statuses[record.re_estimatestatus] ?? t.unknown}</span>
                       {[126110000, 126110002].includes(record.re_estimatestatus) && onOpen && (
@@ -129,7 +127,6 @@ function PagedEstimateList({ language, market, ownerId, onOpen, busy = false, se
                     </div>
                   </div>
                   <dl className="request-record-details">
-                    {!recent && <div><dt>{t.request}</dt><dd>{record.re_estimatename || '—'}</dd></div>}
                     <div><dt>{t.customer}</dt><dd>{record.re_customername || '—'}</dd></div>
                     <div><dt>{t.building}</dt><dd>{record.re_buildingname || '—'}</dd></div>
                     <div><dt>{t.created}</dt><dd>{record.createdon

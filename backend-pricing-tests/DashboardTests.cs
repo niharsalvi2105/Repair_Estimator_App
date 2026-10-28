@@ -13,14 +13,18 @@ namespace RepairEstimator.Tests
     public class DashboardTests
     {
         [Theory]
-        [InlineData("2027-01-01T05:59:59Z", 2026)]
-        [InlineData("2027-01-01T06:00:00Z", 2027)]
-        public void Server_uses_Lisle_midnight_at_the_year_boundary(string instant, int year)
+        [InlineData(false, false)]
+        [InlineData(true, false)]
+        [InlineData(false, true)]
+        public void Server_derives_direct_or_team_admin_scope_and_includes_all_dates(bool directAdmin, bool teamAdmin)
         {
             var service = new Mock<IOrganizationService>(MockBehavior.Strict);
             var queries = new List<string>();
             service.Setup(s => s.RetrieveMultiple(It.IsAny<QueryBase>())).Returns((QueryBase q) => {
                 var xml = ((FetchExpression)q).Query;
+                if (xml.Contains("<entity name='role'>"))
+                    return new EntityCollection((xml.Contains("name='systemuserroles'") ? directAdmin : teamAdmin)
+                        ? new[] { new Entity("role", Guid.NewGuid()) } : new Entity[0]);
                 queries.Add(xml);
                 if (!xml.Contains("alias='average'")) return new EntityCollection();
                 var row = new Entity("aggregate");
@@ -30,26 +34,28 @@ namespace RepairEstimator.Tests
             var reader = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.DashboardReader");
             var result = (DashboardResult)reader.GetMethod("Read").Invoke(null, new object[] {
                 service.Object, Guid.NewGuid(), 126110000,
-                DateTime.Parse(instant, System.Globalization.CultureInfo.InvariantCulture,
+                DateTime.Parse("2027-01-01T05:59:59Z", System.Globalization.CultureInfo.InvariantCulture,
                     System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal)
             });
-            Assert.Equal(year, result.year);
+            Assert.Equal("all-time", result.period);
+            Assert.Equal(directAdmin || teamAdmin, result.ownerId == null);
             Assert.All(queries, xml => {
-                Assert.Contains("value='" + year + "-01-01T06:00:00Z'", xml);
-                Assert.Contains("value='" + (year + 1) + "-01-01T06:00:00Z'", xml);
+                Assert.DoesNotContain("createdon", xml);
+                Assert.Equal(!(directAdmin || teamAdmin), xml.Contains("attribute='ownerid'"));
             });
         }
 
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
-        public void Dashboard_is_read_only_and_uses_caller_owner_market_and_current_year(bool empty)
+        public void Dashboard_is_read_only_and_uses_caller_owner_market_and_all_dates(bool empty)
         {
             var user = Guid.NewGuid();
             var queries = new List<string>();
             var service = new Mock<IOrganizationService>(MockBehavior.Strict);
             service.Setup(s => s.RetrieveMultiple(It.IsAny<QueryBase>())).Returns((QueryBase q) => {
                 var xml = ((FetchExpression)q).Query;
+                if (xml.Contains("<entity name='role'>")) return new EntityCollection();
                 queries.Add(xml);
                 var count = empty ? 0 : 2;
                 var row = new Entity("aggregate");
@@ -75,18 +81,52 @@ namespace RepairEstimator.Tests
                     (string)c.Attribute("value") == "126110000");
                 Assert.Contains(conditions, c => (string)c.Attribute("attribute") == "statecode" &&
                     (string)c.Attribute("value") == "0");
-                Assert.Contains(conditions, c => (string)c.Attribute("attribute") == "createdon" &&
-                    (string)c.Attribute("operator") == "ge" &&
-                    (string)c.Attribute("value") == TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow,
-                        TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time")).Year + "-01-01T06:00:00Z");
-                Assert.Contains(conditions, c => (string)c.Attribute("attribute") == "createdon" &&
-                    (string)c.Attribute("operator") == "lt" &&
-                    (string)c.Attribute("value") == (TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow,
-                        TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time")).Year + 1) + "-01-01T06:00:00Z");
+                Assert.DoesNotContain(conditions, c => (string)c.Attribute("attribute") == "createdon");
             }
             Assert.Contains("value='unavailable'", queries[2]);
             Assert.Contains("attribute='re_sellprice' operator='gt' value='0'", queries[2]);
             Assert.Contains("attribute='re_actualcmii' operator='not-null'", queries[2]);
+        }
+
+        [Fact]
+        public void Four_drafts_across_owners_and_years_match_admin_table_but_estimator_counts_own()
+        {
+            var user = Guid.NewGuid();
+            foreach (bool admin in new[] { false, true })
+            {
+                var service = new Mock<IOrganizationService>(MockBehavior.Strict);
+                service.Setup(s => s.RetrieveMultiple(It.IsAny<QueryBase>())).Returns((QueryBase q) => {
+                    var xml = ((FetchExpression)q).Query;
+                    if (xml.Contains("<entity name='role'>"))
+                    {
+                        Assert.Contains(user.ToString("D"), xml);
+                        return new EntityCollection(admin
+                            ? new[] { new Entity("role", Guid.NewGuid()) } : new Entity[0]);
+                    }
+                    var conditions = XDocument.Parse(xml).Descendants("condition").ToList();
+                    var drafts = new[] {
+                        new { Owner = user, Created = new DateTime(2026, 1, 1) },
+                        new { Owner = user, Created = new DateTime(2025, 1, 1) },
+                        new { Owner = Guid.NewGuid(), Created = new DateTime(2026, 1, 1) },
+                        new { Owner = Guid.NewGuid(), Created = new DateTime(2024, 1, 1) }
+                    };
+                    Assert.DoesNotContain(conditions, c => (string)c.Attribute("attribute") == "createdon");
+                    int count = drafts.Count(d => conditions.Where(c => (string)c.Attribute("attribute") == "ownerid")
+                        .All(c => d.Owner == Guid.Parse((string)c.Attribute("value"))));
+                    var row = new Entity("aggregate");
+                    row["count"] = new AliasedValue("re_repairestimate", "count", count);
+                    if (xml.Contains("alias='average'"))
+                        row["average"] = new AliasedValue("re_repairestimate", "average", 0.25m);
+                    else if (xml.Contains("alias='status'"))
+                        row["status"] = new AliasedValue("re_repairestimate", "status", new OptionSetValue(126110000));
+                    return new EntityCollection(new[] { row });
+                });
+                var output = Run(service.Object, user,
+                    "{\"mode\":\"dashboard\",\"market\":126110000,\"ownerId\":null,\"period\":\"all-time\",\"role\":\"admin\"}");
+                Assert.Contains("\"total\":" + (admin ? 4 : 2), output);
+                Assert.Contains("\"period\":\"all-time\"", output);
+                Assert.Contains(admin ? "\"ownerId\":null" : "\"ownerId\":\"" + user.ToString("D") + "\"", output);
+            }
         }
 
         [Fact]
@@ -96,7 +136,9 @@ namespace RepairEstimator.Tests
             Assert.Throws<InvalidPluginExecutionException>(() => Run(service.Object, Guid.NewGuid(),
                 "{\"mode\":\"dashboard\",\"market\":7}"));
             service.Setup(s => s.RetrieveMultiple(It.IsAny<QueryBase>()))
-                .Returns(new EntityCollection { MoreRecords = true });
+                .Returns((QueryBase q) => new EntityCollection {
+                    MoreRecords = !((FetchExpression)q).Query.Contains("<entity name='role'>")
+                });
             Assert.Contains("truncated", Assert.Throws<InvalidPluginExecutionException>(() =>
                 Run(service.Object, Guid.NewGuid(), "{\"mode\":\"dashboard\",\"market\":126110000}")).Message);
         }

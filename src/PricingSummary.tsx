@@ -11,9 +11,13 @@ type Props = {
   language: 'en' | 'fr'
   currencies: { id: string; code: string }[]
   submitted?: boolean
+  calculate: () => Promise<void>
+  calculating: boolean
+  canCalculate: boolean
 }
 
-export function PricingSummary({ id, version, dirty, language, currencies, submitted = false }: Props) {
+export function PricingSummary({ id, version, dirty, language, currencies, submitted = false,
+  calculate, calculating, canCalculate }: Props) {
   const [result, setResult] = useState<{ id: string; version: string; row?: PricingRecord; error?: string }>()
   const [retry, setRetry] = useState(0)
   useEffect(() => {
@@ -30,11 +34,14 @@ export function PricingSummary({ id, version, dirty, language, currencies, submi
   const fr = language === 'fr'
   const t = fr ? {
     title: 'Résumé des prix et du CMII', subtitle: 'Résultats enregistrés du calcul Dataverse. Aucun calcul dans le navigateur.',
-    unsaved: 'Enregistrez le brouillon pour calculer les prix.',
-    stale: 'Modifications non enregistrées : ces résultats correspondent au dernier enregistrement, pas aux valeurs actuelles.',
+    unsaved: 'Cliquez sur Calculer pour obtenir les prix et le CMII.',
+    stale: 'Modifications non enregistrées : résultats obsolètes. Cliquez sur Recalculer pour utiliser les valeurs actuelles.',
+    calculate: 'Calculer', recalculate: 'Recalculer', calculating: 'Calcul en cours…',
+    calculateHelp: 'Le calcul enregistre le brouillon et utilise les règles de tarification Dataverse. Il ne soumet pas le devis.',
+    required: 'Complétez les champs obligatoires avant de calculer.',
     loading: 'Chargement des prix enregistrés…', retry: 'Réessayer',
     unavailable: 'Calcul des prix indisponible. Vérifiez les données et la configuration avec votre administrateur.',
-    notCalculated: 'Aucun calcul enregistré. Enregistrez le brouillon pour lancer le calcul.',
+    notCalculated: 'Aucun calcul enregistré. Cliquez sur Recalculer pour lancer le calcul.',
     error: 'Impossible de charger les prix. Le brouillon enregistré n’est pas modifié.',
     cost: 'Coût réel total', sell: 'Prix de vente saisi', suggested: 'Prix de vente suggéré',
     base: 'CMII cible de base', recommended: 'CMII recommandé', actual: 'CMII réel',
@@ -44,11 +51,14 @@ export function PricingSummary({ id, version, dirty, language, currencies, submi
     currency: 'La devise du calcul est inconnue. Rechargez les références avant de consulter les montants.',
   } : {
     title: 'Pricing & CMII summary', subtitle: 'Saved Dataverse calculation results. No browser-side pricing.',
-    unsaved: 'Save the draft to calculate pricing.',
-    stale: 'Unsaved changes: these results belong to the last save, not your current inputs.',
+    unsaved: 'Select Calculate to get pricing and CMII.',
+    stale: 'Unsaved changes: results are out of date. Select Recalculate to use your current inputs.',
+    calculate: 'Calculate', recalculate: 'Recalculate', calculating: 'Calculating…',
+    calculateHelp: 'Calculating saves your draft and uses Dataverse pricing rules. It does not submit the estimate.',
+    required: 'Complete the required fields before calculating.',
     loading: 'Loading saved pricing…', retry: 'Retry',
     unavailable: 'Pricing is unavailable. Ask your administrator to check the inputs and configuration.',
-    notCalculated: 'No saved calculation. Save the draft to run pricing.',
+    notCalculated: 'No saved calculation. Select Recalculate to run pricing.',
     error: 'Pricing could not be loaded. Your saved draft is unchanged.',
     cost: 'Total true cost', sell: 'Entered selling price', suggested: 'Suggested selling price',
     base: 'Base target CMII', recommended: 'Recommended CMII', actual: 'Actual CMII',
@@ -69,6 +79,15 @@ export function PricingSummary({ id, version, dirty, language, currencies, submi
   function reload() { setResult(undefined); setRetry((n) => n + 1) }
   return <section className="form-card pricing-summary" aria-label={t.title}>
     <div className="section-heading"><div><h2>{t.title}</h2><p>{t.subtitle}</p></div></div>
+    {!submitted && <div>
+      <button type="button" className="button primary pricing-calculate-action"
+        disabled={calculating || !canCalculate} aria-busy={calculating}
+        aria-describedby="pricing-calculate-help" onClick={() => void calculate()}>
+        {calculating ? t.calculating : version ? t.recalculate : t.calculate}
+      </button>
+      <p className="field-help" id="pricing-calculate-help">{t.calculateHelp}
+        {!canCalculate && !calculating && ` ${t.required}`}</p>
+    </div>}
     {dirty && version && <p className="draft-notice" role="status">{t.stale}</p>}
     {!version ? <p className="inline-state">{t.unsaved}</p>
       : !current ? <p role="status">{t.loading}</p>

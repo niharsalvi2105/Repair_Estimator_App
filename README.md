@@ -91,9 +91,9 @@ Navigation has no independent scroll container. Only widths up to 640px use
 compact bottom navigation for the three available workspaces. Wider windows
 keep left navigation with icons and labels horizontally aligned, including on
 short laptops and landscape tablets. At heights up to 800px, branding and spacing
-compact; at heights up to 640px, already-disabled future sections are hidden to
-keep available workspaces accessible. The app title and KTOC PSR subtitle remain
-visible beneath the logo at all left-navigation heights. Disabled sections are also hidden on mobile.
+compact to keep available workspaces accessible. Quotes and Reports placeholders
+are not shown for either role. The app title and KTOC PSR subtitle remain
+visible beneath the logo at all left-navigation heights.
 Bottom safe-area padding keeps navigation and page content clear of device
 gesture areas.
 
@@ -235,7 +235,13 @@ language. Summary cards stack on phones and wrap large negative margins.
 Pricing is fetched after save/reopen when the user views either summary stage.
 The retrieved row version must match the editor's saved version; concurrent
 updates require a draft reload. Unsaved edits leave the previous saved results
-visible with a prominent out-of-date notice. New drafts show a save prompt,
+visible with a prominent out-of-date notice. Both summary stages offer Calculate
+for a new draft and Recalculate for a saved draft, including after input changes.
+The action saves the current draft using the existing transactional save and
+server calculation; it does not submit the estimate or offer an unsaved what-if
+preview. It requires the same mandatory fields and validation as Save draft.
+While saving/calculating, editing and repeat actions are disabled. Submitted
+estimates do not offer calculation. New drafts show a calculation prompt,
 unavailable/uncomputed calculations show no monetary results, and read errors
 have an independent Retry action without claiming that a successful draft save
 failed. No pricing is calculated or persisted in the browser. No new plug-in
@@ -303,6 +309,8 @@ and team scopes in Dataverse. Sharing the Code App is separate from table/row
 access. Security-role privileges from all assigned roles are cumulative.
 
 The Requests list (including header search) and dashboard Recent Requests apply
+estimate titles as row headings instead of displaying request numbers. Numbers
+remain stored and searchable. Both lists apply
 an explicit owner filter for the Estimator app role, using the signed-in
 Dataverse system user ID. Admins see all estimates readable under their Dataverse
 permissions. Pagination retains this scope; changing scope resets the list.
@@ -479,7 +487,7 @@ schema migration, tenant write, deployment or publication was performed for thes
 pages. Until role configuration and authenticated-host testing are complete, the
 new editing surface is **not production-verified**.
 
-## Personal live dashboard
+## Role-scoped live dashboard
 
 Dashboard presentation follows the user-supplied RE_App mockup: blue KPI values,
 cyan/yellow/mint icon tiles, white rounded panels, a three-status doughnut with
@@ -507,32 +515,40 @@ search is unavailable during draft operations or without estimate Read access.
 On narrower windows search wraps to its own header row. Labels and actions are
 localized; this change requires no backend update.
 
-The approved dashboard reports **only active estimates owned directly by the
-initiating user**, filtered by selected market and `createdon` in the current
-Lisle/Central Time calendar year (`America/Chicago`, January 1 local midnight
-inclusive to the next January 1 exclusive; these boundaries are 06:00Z under
-current rules). The net462 plug-in uses Windows `Central Standard Time` rules,
-not a fixed UTC offset. Dashboard refresh and pricing calculation timestamps
+The dashboard reports **active estimates in the selected market across all
+creation dates**, matching the unsearched, unfiltered request lists. Estimators
+see only estimates owned directly by the initiating user; Admins see all
+estimates accessible through their Dataverse permissions. The server checks
+the dedicated `Repair Estimator - Admin` role through direct and team membership,
+not a client-selected scope. Dashboard refresh and pricing calculation timestamps
 are displayed in Central Time with a zone abbreviation, including daylight
 saving time, independently of browser location and UI language. Stored times
-remain UTC. Update the Draft assembly for this reporting-boundary change;
+remain UTC. Update the Draft assembly for this scope change;
 pricing assembly and registration steps do not change.
-It does not include team-owned records or all records accessible to Admin.
+Estimator metrics exclude team-owned records; Admin metrics include accessible
+team-owned records.
 Cards are labelled literally Draft, Pending and Submitted; these are not claims
 that quotes were sent or that an approval action is waiting.
+The status donut and its legend show Draft and Submitted only. Pending is
+excluded from the donut total and percentage denominator, but remains in the
+Pending KPI, overall record total, job-type distribution and CMII eligibility.
+A Pending-only result shows a zero donut total and an explicit empty-chart message.
 
 Average actual CMII is a simple (not revenue-weighted) average of saved actual
 CMII values where sell price is positive, calculation version is populated and
 not `unavailable`, and calculated time/actual CMII are populated. Negative margins
 are included. A lack of eligible calculations displays a dash, distinct from a
 valid zero average; the denominator is shown. Status and job-type distributions
-use the same owner/market/year/active scope; missing job types have a separate
+use the same role/market/all-time/active scope; missing job types have a separate
 Not specified category, and French labels fall back to English.
 
 `backend/DashboardReader.cs` performs server-side FetchXML aggregates using the
 caller service, invoked through the existing `re_DraftEstimate` action with
 `InputJson = {"mode":"dashboard","market":126110000}`. The server derives owner
-and year; clients cannot select another owner or year. This mode does not write
+scope; clients cannot select another owner or elevate their role. Responses
+include `period: "all-time"` and a null owner for Admin, or the initiating
+user ID for Estimator. The frontend rejects old current-year responses rather
+than displaying misleading counts. This mode does not write
 records and never uses SYSTEM for reads. It returns a separate dashboard-shaped
 `ResultJson`; save/load contracts and Custom API parameter metadata are unchanged.
 No new connector, API registration, pricing steps or schema changes are needed.
@@ -546,19 +562,19 @@ support dashboard mode and the app displays an explicit load error, not zeros.
 
 Dashboard results reload on entry, market changes and manual Refresh. Old-scope
 numbers are hidden during loading/errors; failed queries have a Refresh action.
-The source is not the recent-request list. Its bounded query retains the existing
-accessible-record, all-time scope; the dashboard displays five entries and the
-full request page retains 25-row paging. Neither is the dashboard denominator.
+The source is not the recent-request list. Both lists use the same role, market,
+active and all-time scope; the dashboard displays five entries and the
+full request page retains 25-row paging. Counts cover every matching record,
+not just the visible page. Request search/status filters do not filter metrics.
 Dataverse aggregate scan limits (normally 50,000 input rows) fail explicitly,
 as do truncated results or inconsistent group totals; no partial totals or
 browser-side whole-table fallback are used. Three aggregate queries are issued,
 not a guaranteed single instant snapshot under concurrent changes.
 
-Read-only verification of the live personal/current-year margin query returned
-one eligible estimate with average actual CMII `-650.2816` (displayed as
-`-65,028.16%` in English). This is the existing below-cost test estimate, not a
-dashboard bug. Local tests validate the new action path; end-to-end deployed
-action transport and non-admin role checks still require rollout verification.
+Local tests validate role-based aggregate filters and all-time response scope;
+end-to-end deployed action transport and non-admin role checks still require
+rollout verification. This scope update requires deploying the rebuilt Draft
+assembly before publishing the updated frontend; no tenant data is changed.
 
 ## Adapted pricing plug-ins: local only, manual rollout required
 

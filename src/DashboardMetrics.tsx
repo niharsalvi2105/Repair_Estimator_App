@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { getDashboard } from './data/dashboardRepository'
 import type { DashboardRecord } from './data/dashboardContract'
 import type { Market } from './data/estimateQuery'
-import { formatReportingTime, reportingYear } from './data/reportingTime'
+import { formatReportingTime } from './data/reportingTime'
 
 export function DashboardMetrics({ market, owner, language }: {
-  market: Market; owner: string; language: 'en' | 'fr'
+  market: Market; owner: string | null; language: 'en' | 'fr'
 }) {
   const [attempt, setAttempt] = useState(0)
-  const [result, setResult] = useState<{ market: Market; owner: string; data?: DashboardRecord; error?: string }>()
+  const [result, setResult] = useState<{ market: Market; owner: string | null; data?: DashboardRecord; error?: string }>()
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     let active = true
@@ -25,21 +25,23 @@ export function DashboardMetrics({ market, owner, language }: {
   }, [market, owner, attempt])
   const fr = language === 'fr'
   const t = fr ? {
-    title: 'Indicateurs réels', scope: 'Mes devis actifs · marché sélectionné · année de création',
-    year: 'Année civile · heure du Centre (Lisle)', draft: 'Brouillons', pending: 'En attente', submitted: 'Soumis',
+    title: 'Indicateurs réels', scope: `${owner === null ? 'Devis actifs accessibles' : 'Mes devis actifs'} · marché sélectionné · toutes les dates de création`,
+    draft: 'Brouillons', pending: 'En attente', submitted: 'Soumis',
     avg: 'CMII réel moyen', status: 'Répartition par statut', types: 'Répartition par type de travail',
     refresh: 'Actualiser', loading: 'Chargement des indicateurs…', error: 'Impossible de charger les indicateurs.',
-    empty: 'Aucun devis pour cette période et ce marché.', noMargin: 'Aucun calcul admissible',
+    empty: 'Aucun devis pour ce marché.', noMargin: 'Aucun calcul admissible',
     eligible: 'calculs admissibles', definition: 'Moyenne simple des CMII réels calculés avec un prix de vente positif.',
-    unassigned: 'Non renseigné', updated: 'Mis à jour', total: 'Total', statusHint: 'Répartition des devis de la période',
+    unassigned: 'Non renseigné', updated: 'Mis à jour', total: 'Total', statusHint: 'Brouillons et devis soumis uniquement. Les devis en attente sont exclus.',
+    chartEmpty: 'Aucun brouillon ni devis soumis pour ce marché.',
   } : {
-    title: 'Live metrics', scope: 'My active estimates · selected market · creation year',
-    year: 'Calendar year · Central Time (Lisle)', draft: 'Draft', pending: 'Pending', submitted: 'Submitted',
+    title: 'Live metrics', scope: `${owner === null ? 'Accessible active estimates' : 'My active estimates'} · selected market · all creation dates`,
+    draft: 'Draft', pending: 'Pending', submitted: 'Submitted',
     avg: 'Average actual CMII', status: 'Status distribution', types: 'Job type distribution',
     refresh: 'Refresh', loading: 'Loading dashboard metrics…', error: 'Dashboard metrics could not be loaded.',
-    empty: 'No estimates for this period and market.', noMargin: 'No eligible calculations',
+    empty: 'No estimates for this market.', noMargin: 'No eligible calculations',
     eligible: 'eligible calculations', definition: 'Simple average of successfully calculated actual CMII with a positive selling price.',
-    unassigned: 'Not specified', updated: 'Updated', total: 'Total', statusHint: 'Current reporting-period estimate distribution',
+    unassigned: 'Not specified', updated: 'Updated', total: 'Total', statusHint: 'Draft and Submitted only. Pending estimates are excluded.',
+    chartEmpty: 'No Draft or Submitted estimates for this market.',
   }
   const current = result?.market === market && result.owner === owner ? result : undefined
   const data = current?.data
@@ -49,6 +51,8 @@ export function DashboardMetrics({ market, owner, language }: {
   const statusLabels = [t.draft, t.pending, t.submitted]
   const counts = [126110000, 126110001, 126110002].map((status) =>
     data?.statuses.find((s) => s.status === status)?.count ?? 0)
+  const chartIndices = [0, 2]
+  const chartTotal = counts[0] + counts[2]
   const icons = [
     'M5 17 17 5M5 5h12v12',
     'M7 3h10M7 21h10M8 3v4l8 10v4M16 3v4L8 17v4',
@@ -57,7 +61,7 @@ export function DashboardMetrics({ market, owner, language }: {
   ]
   return <section className="dashboard-metrics" aria-label={t.title}>
     <div className="dashboard-metrics-toolbar">
-      <p>{t.scope} · {data?.year ?? reportingYear(new Date())} ({t.year})</p>
+      <p>{t.scope}</p>
       <button className="button metric-refresh" disabled={busy} onClick={() => {
         setLoading(true); setResult(undefined); setAttempt((n) => n + 1)
       }}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -90,21 +94,22 @@ export function DashboardMetrics({ market, owner, language }: {
                   <div className="status-donut" aria-hidden="true">
                     <svg viewBox="0 0 120 120">
                       <circle className="donut-track" cx="60" cy="60" r="46" fill="none" strokeWidth="20" />
-                      {counts.map((count, i) => <circle key={i} className={`donut-segment segment-${i}`}
+                      {chartTotal > 0 && chartIndices.map((i, index) => <circle key={i} className={`donut-segment segment-${i}`}
                         cx="60" cy="60" r="46" fill="none" strokeWidth="20" pathLength="100"
-                        strokeDasharray={`${count / data.total * 100} ${100 - count / data.total * 100}`}
-                        strokeDashoffset={-counts.slice(0, i).reduce((sum, n) => sum + n, 0) / data.total * 100}
+                        strokeDasharray={`${counts[i] / chartTotal * 100} ${100 - counts[i] / chartTotal * 100}`}
+                        strokeDashoffset={-chartIndices.slice(0, index).reduce((sum, previous) => sum + counts[previous], 0) / chartTotal * 100}
                         transform="rotate(-90 60 60)" />)}
                     </svg>
-                    <div className="donut-total"><strong>{number.format(data.total)}</strong><span>{t.total}</span></div>
+                    <div className="donut-total"><strong>{number.format(chartTotal)}</strong><span>{t.total}</span></div>
                   </div>
-                  <ul className="status-legend">{statusLabels.map((label, i) =>
-                    <li key={label}><span className={`legend-swatch segment-${i}`} aria-hidden="true" />
-                      <span>{label}</span><strong>{number.format(counts[i])}</strong>
-                      <meter className="status-accessible-meter" min={0} max={data.total} value={counts[i]} aria-label={label} />
+                  <ul className="status-legend">{chartIndices.map((i) =>
+                    <li key={i}><span className={`legend-swatch segment-${i}`} aria-hidden="true" />
+                      <span>{statusLabels[i]}</span><strong>{number.format(counts[i])}</strong>
+                      <meter className="status-accessible-meter" min={0} max={chartTotal || 1} value={counts[i]} aria-label={statusLabels[i]} />
                     </li>)}
                   </ul>
                 </div>
+                {chartTotal === 0 && <p className="inline-state">{t.chartEmpty}</p>}
               </section>
               <section className="dashboard-card job-chart-card">
                 <div className="dashboard-card-heading"><div><h2>{t.types}</h2><p>{t.scope}</p></div></div>

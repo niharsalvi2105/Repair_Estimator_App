@@ -574,7 +574,8 @@ export default function EstimatorWorkspace({
             {step === 4 && (laborLines.length > 0 || materialLines.length > 0) &&
               <p>{language === 'fr' ? 'Lignes personnalisées' : 'Custom lines'}: {laborLines.length} / {materialLines.length}</p>}
             {step === 4 && <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
-              language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted} />}
+              language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted}
+              calculate={saveDraft} calculating={draftBusy} canCalculate={canWork && draftComplete} />}
           </div>
         </div>
       )}
@@ -583,7 +584,8 @@ export default function EstimatorWorkspace({
         <div className="form-layout">
           <div className="form-main">
             <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
-              language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted} />
+              language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted}
+              calculate={saveDraft} calculating={draftBusy} canCalculate={canWork && draftComplete} />
             {(hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
               <CustomCostLines language={language} labor={laborLines} materials={materialLines}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={false} readOnly />}

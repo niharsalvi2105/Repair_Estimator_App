@@ -30,9 +30,9 @@ async function mockData(page, language, theme, state = 'records') {
       if (window.__dashboardError) throw new Error(window.__dashboardError);
       const empty = window.__dashboardEmpty || market !== 126110000;
       return {
-        mode:'dashboard',ownerId:owner,market,year:2026,generatedAt:'2026-10-26T11:15:58Z',
+        mode:'dashboard',ownerId:owner,market,period:'all-time',generatedAt:'2026-10-26T11:15:58Z',
         total:empty ? 0 : 125,marginCount:empty ? 0 : 100,averageCmii:empty ? null : window.__dashboardAverage ?? -0.25,
-        statuses:empty ? [] : [{status:126110000,count:100},{status:126110001,count:20},{status:126110002,count:5}],
+        statuses:empty ? [] : window.__dashboardStatuses ?? [{status:126110000,count:100},{status:126110001,count:20},{status:126110002,count:5}],
         jobTypes:empty ? [] : [{id:'job',en:'Equipment repair',fr:'',count:120},
           {id:null,en:null,fr:null,count:5}]
       };
@@ -876,10 +876,19 @@ for (const role of ['estimator', 'admin']) {
     await mockData(page, 'en', 'light')
     await page.goto('/')
     const ownerId = role === 'estimator' ? '11111111-1111-1111-1111-111111111111' : undefined
+    await expect.poll(() => page.evaluate(() => window.__dashboardCalls?.length ?? 0)).toBeGreaterThan(0)
+    expect(await page.evaluate(() => window.__dashboardCalls.at(-1).owner)).toBe(ownerId ?? null)
+    await expect(page.locator('.dashboard-metrics')).toContainText('all creation dates')
+    await expect(page.locator('.dashboard-metrics')).toContainText(role === 'admin' ? 'Accessible active estimates' : 'My active estimates')
+    await expect(page.locator('.main-nav').getByRole('button', { name: /^(Quotes|Reports)$/ })).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => window.__estimateQueries?.length ?? 0)).toBeGreaterThan(0)
     expect(await page.evaluate(() => window.__estimateQueries.at(-1).ownerId)).toBe(ownerId)
+    await expect(page.locator('.request-record h3').first()).toHaveText('Request with a long name / Demande avec un nom long')
+    await expect(page.locator('.request-records')).not.toContainText('RE-TEST-0001')
     await page.locator('.main-nav .nav-item').nth(2).click()
     await expect(page.locator('.request-filters')).toBeVisible()
+    await expect(page.locator('.request-record h3').first()).toHaveText('Request with a long name / Demande avec un nom long')
+    await expect(page.locator('.request-records')).not.toContainText('RE-TEST-0001')
     await page.locator('.request-filters select').selectOption('126110000')
     await expect.poll(() => page.evaluate(() => window.__estimateQueries.at(-1).status)).toBe('126110000')
     await page.locator('.request-pagination button').last().click()
@@ -950,6 +959,7 @@ test('Review submission confirms, sends current edits and locks the submitted es
   await submit.click()
   await expect(page.locator('.draft-saved')).toContainText('Estimate submitted')
   await expect(page.locator('.draft-save-action')).toBeDisabled()
+  await expect(page.locator('.pricing-calculate-action')).toHaveCount(0)
   await expect(page.locator('#request-re_notesforcttteam')).toBeDisabled()
   const saved = await page.evaluate(() => window.__draftCalls.at(-1))
   expect(saved.mode).toBe('submit')
@@ -1460,8 +1470,9 @@ for (const width of [320, 1366]) {
   test(`saved pricing summary shows server values, localization and stale state at ${width}px`, async ({ page }) => {
     await completeDraft(page, { width, height: 768 })
     const summary = page.locator('.pricing-summary')
-    await expect(summary).toContainText('Save the draft to calculate pricing.')
-    await page.locator('.draft-save-action').click()
+    await expect(summary).toContainText('Select Calculate to get pricing and CMII.')
+    await expect(summary).toContainText('Calculating saves your draft')
+    await summary.getByRole('button', { name: 'Calculate', exact: true }).click()
     await expect(summary).toContainText('$31,807.21')
     await expect(summary).toContainText('48.81%')
     await expect(summary).toContainText('-65,028.16%')
@@ -1473,10 +1484,12 @@ for (const width of [320, 1366]) {
     expect(reads[0].options.select).not.toContain('re_customername')
     await page.locator('#request-re_notesforcttteam').fill('Unsaved notes edit')
     await expect(summary).toContainText('Unsaved changes:')
+    await expect(summary.getByRole('button', { name: 'Recalculate', exact: true })).toBeEnabled()
     await expect(summary).toContainText('$31,807.21')
     await changeLanguageInSettings(page, 'fr')
     await expect(summary).toContainText('Résumé des prix et du CMII')
     await expect(summary).toContainText('Modifications non enregistrées')
+    await expect(summary.getByRole('button', { name: 'Recalculer', exact: true })).toBeEnabled()
     await expect(summary).toContainText(/48,81\s*%/)
     await checkLayout(page, { width, height: 768 }, 'saved French pricing summary')
     await page.locator('.form-footer > button').click()
@@ -1484,6 +1497,64 @@ for (const width of [320, 1366]) {
     await expect(summary).toContainText('Résumé des prix et du CMII')
   })
 }
+
+for (const language of ['en', 'fr']) {
+  test(`calculate saves current pricing inputs and recalculates after changes in ${language}`, async ({ page }) => {
+    await completeDraft(page, { width: 320, height: 768 }, language)
+    await page.locator('.form-footer > button').click()
+    const summary = page.locator('.pricing-summary')
+    const calculate = summary.getByRole('button', { name: language === 'fr' ? 'Calculer' : 'Calculate', exact: true })
+    await page.evaluate(() => { window.__draftDelay = 800 })
+    await calculate.click()
+    await expect(summary.getByRole('button', { name: language === 'fr' ? 'Calcul en cours…' : 'Calculating…' })).toBeDisabled()
+    await expect(page.locator('#request-re_sellprice')).toBeDisabled()
+    await expect(page.locator('.draft-save-action')).toBeDisabled()
+    const recalculate = summary.getByRole('button', { name: language === 'fr' ? 'Recalculer' : 'Recalculate', exact: true })
+    await expect(recalculate).toBeEnabled()
+    expect(await page.evaluate(() => window.__draftCalls.length)).toBe(1)
+    await page.locator('#request-re_sellprice').focus()
+    await page.keyboard.press('ControlOrMeta+A')
+    await page.keyboard.press('Backspace')
+    await page.keyboard.type('2400')
+    await expect(page.locator('#request-re_sellprice')).toHaveValue('2400')
+    await expect(summary).toContainText(language === 'fr' ? 'résultats obsolètes' : 'results are out of date')
+    await recalculate.click()
+    await expect(recalculate).toBeEnabled()
+    const calls = await page.evaluate(() => window.__draftCalls)
+    expect(calls.map((call) => call.mode)).toEqual(['save', 'save'])
+    expect(calls[1].id).toBe(calls[0].id)
+    expect(calls[1].version).toBe('1')
+    expect(calls[1].fields).toContainEqual({ key: 're_sellprice', value: '2400' })
+    await expect(summary).not.toContainText(language === 'fr' ? 'résultats obsolètes' : 'results are out of date')
+    await checkLayout(page, { width: 320, height: 768 }, 'calculate and recalculate')
+  })
+}
+
+test('calculate preserves edits on save failure and requires mandatory inputs', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.form-footer > button').click()
+  const calculate = page.locator('.pricing-summary').getByRole('button', { name: 'Calculate', exact: true })
+  await page.locator('.form-footer > button').click()
+  await page.locator('#request-re_usetax').focus()
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.press('Backspace')
+  await expect(page.locator('#request-re_usetax')).toHaveValue('')
+  await next(page)
+  await expect(calculate).toBeDisabled()
+  await expect(page.locator('.pricing-summary')).toContainText('Complete the required fields before calculating.')
+  await page.locator('.form-footer > button').click()
+  await page.locator('#request-re_usetax').fill('5')
+  await next(page)
+  await page.evaluate(() => { window.__draftFailure = '403: Write permission denied' })
+  await calculate.click()
+  await expect(page.locator('.draft-error')).toContainText('403')
+  await expect(page.locator('#request-re_sellprice')).toHaveValue(/^1500(?:\.00)?$/)
+  await expect(calculate).toBeEnabled()
+  await expect(page.locator('.draft-saved')).toHaveCount(0)
+  await page.evaluate(() => { window.__draftFailure = '' })
+  await calculate.click()
+  await expect(page.locator('.pricing-summary')).toContainText('$31,807.21')
+})
 
 test('pricing read failure does not claim save failure and can be retried', async ({ page }) => {
   await completeDraft(page)
@@ -1520,7 +1591,7 @@ test('dashboard aggregates are independent of list paging and refresh safely acr
   await expect(metrics).toContainText('125 estimates')
   await expect(page.locator('.dashboard-stats strong')).toHaveText(['100', '20', '5', '-25.00%'])
   await expect(page.locator('.request-record')).toHaveCount(1)
-  await expect(metrics.getByRole('meter')).toHaveCount(5)
+  await expect(metrics.getByRole('meter')).toHaveCount(4)
   await page.evaluate(() => { window.__dashboardError = 'Permission denied' })
   await metrics.getByRole('button', { name: 'Refresh' }).click()
   await expect(metrics.getByRole('alert')).toContainText('Permission denied')
@@ -1531,7 +1602,7 @@ test('dashboard aggregates are independent of list paging and refresh safely acr
   await expect(metrics).toContainText('125 estimates')
   await page.locator('.market-control select').selectOption('126110001')
   await expect(metrics.locator('.dashboard-stats')).toHaveCount(0)
-  await expect(metrics).toContainText('No estimates for this period and market.')
+  await expect(metrics).toContainText('No estimates for this market.')
   await expect(metrics.locator('.dashboard-stats strong')).toHaveText(['0', '0', '0', '—'])
   await page.locator('.market-control select').selectOption('126110000')
   await expect(metrics).toContainText('125 estimates')
@@ -1540,7 +1611,7 @@ test('dashboard aggregates are independent of list paging and refresh safely acr
   await expect(metrics).toContainText('Equipment repair')
   await checkLayout(page, { width: 320, height: 768 }, 'French live dashboard')
   const calls = await page.evaluate(() => window.__dashboardCalls)
-  expect(calls.every((c) => c.owner === '11111111-1111-1111-1111-111111111111')).toBe(true)
+  expect(calls.every((c) => c.owner === null)).toBe(true)
 })
 
 for (const theme of ['light', 'dark']) {
@@ -1587,8 +1658,10 @@ test('mockup dashboard charts retain exact totals and accessible legends', async
   await page.setViewportSize({ width: 1440, height: 1000 })
   await mockData(page, 'en', 'light')
   await page.goto('/')
-  await expect(page.locator('.donut-total strong')).toHaveText('125')
-  await expect(page.locator('.status-legend strong')).toHaveText(['100', '20', '5'])
+  await expect(page.locator('.donut-total strong')).toHaveText('105')
+  await expect(page.locator('.status-legend strong')).toHaveText(['100', '5'])
+  await expect(page.locator('.status-legend')).not.toContainText('Pending')
+  await expect(page.locator('.dashboard-stats strong')).toHaveText(['100', '20', '5', '-25.00%'])
   await expect(page.locator('.job-chart-card .metric-bars strong')).toHaveText(['96% (120)', '4% (5)'])
   await expect(page.locator('.dashboard-stat-icon svg')).toHaveCount(4)
   await expect(page.locator('.recent-card .request-record')).toHaveCount(1)
@@ -1599,7 +1672,10 @@ test('mockup dashboard charts retain exact totals and accessible legends', async
   await expect(page.locator('.user-avatar')).toHaveCSS('background-color', 'rgb(20, 80, 245)')
   const arcs = await page.locator('.donut-segment').evaluateAll((segments) =>
     segments.map((segment) => Number(segment.getAttribute('stroke-dasharray').split(' ')[0])))
-  expect(arcs).toEqual([80, 16, 4])
+  expect(arcs).toHaveLength(2)
+  expect(arcs[0]).toBeCloseTo(100 / 105 * 100)
+  expect(arcs[1]).toBeCloseTo(5 / 105 * 100)
+  expect(arcs[0] + arcs[1]).toBeCloseTo(100)
   await page.screenshot({ path: testInfo.outputPath('dashboard-desktop.png'), fullPage: true })
   await page.locator('.recent-card').getByRole('button', { name: 'View requests' }).click()
   await expect(page.locator('.operations-dashboard')).toHaveCount(0)
@@ -1654,6 +1730,22 @@ test('header search respects unsaved draft confirmation and retains inputs on ca
   await expect(page.locator('.request-record')).toHaveCount(1)
 })
 
+for (const language of ['en', 'fr']) {
+  test(`Pending-only donut has a zero total and no invalid segments in ${language}`, async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 768 })
+    await mockData(page, language, 'light')
+    await page.addInitScript(() => { window.__dashboardStatuses = [{ status: 126110001, count: 125 }] })
+    await page.goto('/')
+    await expect(page.locator('.donut-total strong')).toHaveText('0')
+    await expect(page.locator('.status-legend strong')).toHaveText(['0', '0'])
+    await expect(page.locator('.donut-segment')).toHaveCount(0)
+    await expect(page.locator('.status-chart-card')).toContainText(language === 'fr'
+      ? 'Aucun brouillon ni devis soumis' : 'No Draft or Submitted estimates')
+    await expect(page.locator('.dashboard-stats strong').nth(1)).toHaveText('125')
+    await checkLayout(page, { width: 320, height: 768 }, 'Pending-only donut')
+  })
+}
+
 test('dashboard adapter calls the existing generated action without a client-selected owner or year', async ({ page }) => {
   await mockData(page, 'en', 'light')
   await page.unroute('**/src/data/dashboardRepository.ts*')
@@ -1668,7 +1760,7 @@ test('dashboard adapter calls the existing generated action without a client-sel
   }))
   await page.goto('/')
   const response = {
-    mode: 'dashboard', ownerId: 'user', market: 126110000, year: 2026,
+    mode: 'dashboard', ownerId: 'user', market: 126110000, period: 'all-time',
     generatedAt: '2026-10-26T11:15:58Z', total: 0, marginCount: 0, averageCmii: null,
     statuses: [], jobTypes: [],
   }

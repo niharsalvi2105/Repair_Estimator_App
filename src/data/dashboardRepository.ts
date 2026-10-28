@@ -3,7 +3,7 @@ import { unwrap, withTimeout } from './dataverseOperation'
 import { parseDashboard } from './dashboardContract'
 import type { Market } from './estimateQuery'
 
-export async function getDashboard(market: Market, owner: string) {
+export async function getDashboard(market: Market, owner: string | null) {
   const result = unwrap(await withTimeout(
     Re_DraftEstimateService.re_DraftEstimate(JSON.stringify({ mode: 'dashboard', market })), 120000,
   ))

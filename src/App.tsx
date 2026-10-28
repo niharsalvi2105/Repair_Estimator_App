@@ -104,7 +104,7 @@ const copy = {
     opportunityHint: 'Estimator header inputs for the selected market. Supervisor is optional; customer contact details are confirmed at review.',
     nextEquipment: 'Continue to equipment & packages',
     costsHint: 'Inputs only. No costs, margins or incentives are calculated or saved in this browser.',
-    pricingHint: 'Save the draft to calculate pricing in Dataverse. Saved results appear below; an entered selling price is not an approved quote.',
+    pricingHint: 'Use Calculate below to save your draft and calculate pricing in Dataverse. After changing inputs, use Recalculate. An entered selling price is not an approved quote.',
     equipmentNote: 'Equipment names are resolved from Dataverse. Unlisted numbers remain explicitly unbound.',
     costsTitle: 'Estimate costs and additions',
     costsUnavailable: 'Save to calculate server totals. Enter 5 for 5%. Package costs scale with equipment; custom lines and additional costs are added once. Do not enter the same work in both.',
@@ -243,7 +243,7 @@ const copy = {
     opportunityHint: 'En-tête de l’estimateur pour le marché sélectionné. Le superviseur est facultatif ; les coordonnées du client sont confirmées à la vérification.',
     nextEquipment: 'Continuer vers les équipements et forfaits',
     costsHint: 'Saisie uniquement. Aucun coût, marge ou incitatif n’est calculé ou enregistré dans le navigateur.',
-    pricingHint: 'Enregistrez le brouillon pour calculer les prix dans Dataverse. Les résultats enregistrés apparaissent ci-dessous ; le prix saisi n’est pas un devis approuvé.',
+    pricingHint: 'Utilisez Calculer ci-dessous pour enregistrer le brouillon et calculer les prix dans Dataverse. Après modification, utilisez Recalculer. Le prix saisi n’est pas un devis approuvé.',
     equipmentNote: 'Les noms des équipements proviennent de Dataverse. Les numéros non répertoriés restent sans correspondance.',
     costsTitle: 'Coûts et ajouts au devis',
     costsUnavailable: 'Enregistrez pour calculer les totaux serveur. Saisissez 5 pour 5 %. Les coûts des forfaits sont multipliés par les équipements ; les lignes personnalisées et les ajouts ne sont comptés qu’une fois. Évitez les doublons.',
@@ -880,22 +880,6 @@ function App() {
             onClick={() => navigate('settings')} disabled={!session?.role}>
             <NavigationIcon name="settings" />{t.settingsNav}
           </button>
-          {[
-            [t.quotesNav, 'quotes'],
-            ...(session?.role === 'admin' ? [
-              [t.reportsNav, 'reports'],
-            ] : []),
-          ].map(([label, icon]) => (
-            <button
-              className="nav-item future"
-              disabled
-              key={label}
-              title={t.comingSoon}
-            >
-              <NavigationIcon name={icon} />
-              {label}
-            </button>
-          ))}
         </nav>
         <div className="sidebar-bottom">
           <span className="sidebar-status" aria-hidden="true" />
@@ -1019,7 +1003,7 @@ function App() {
                   {t.startEstimate}
                 </button>
               </div>
-              {session?.canReadEstimates && <DashboardMetrics market={market} owner={session.userId} language={language} />}
+              {session?.canReadEstimates && <DashboardMetrics market={market} owner={session.role === 'admin' ? null : session.userId} language={language} />}
               <section className="dashboard-card recent-card">
                 <div className="dashboard-card-heading">
                   <div>

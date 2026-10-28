@@ -1,24 +1,23 @@
 import type { Market } from './estimateQuery'
-import { reportingYear } from './reportingTime.ts'
 
 export type DashboardRecord = {
-  mode: 'dashboard'; ownerId: string; market: Market; year: number; generatedAt: string
+  mode: 'dashboard'; ownerId: string | null; market: Market; period: 'all-time'; generatedAt: string
   total: number; marginCount: number; averageCmii: number | null
   statuses: { status: number; count: number }[]
   jobTypes: { id: string | null; en: string | null; fr: string | null; count: number }[]
 }
 
-export function parseDashboard(value: unknown, market: Market, owner: string): DashboardRecord {
+export function parseDashboard(value: unknown, market: Market, owner: string | null): DashboardRecord {
   const invalid = () => { throw new Error('Invalid dashboard response. Verify the updated Draft plug-in is deployed, then refresh.') }
   if (!value || typeof value !== 'object') return invalid()
   const row = value as Partial<DashboardRecord>
   const count = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
   const label = (v: unknown) => v === null || typeof v === 'string'
-  if (row.mode !== 'dashboard' || typeof row.ownerId !== 'string'
-    || row.ownerId.toLowerCase() !== owner.toLowerCase() || row.market !== market
-    || !count(row.year) || row.year < 2026
+  if (row.mode !== 'dashboard'
+    || (owner === null ? row.ownerId !== null
+      : typeof row.ownerId !== 'string' || row.ownerId.toLowerCase() !== owner.toLowerCase())
+    || row.market !== market || row.period !== 'all-time'
     || typeof row.generatedAt !== 'string' || !Number.isFinite(Date.parse(row.generatedAt))
-    || reportingYear(new Date(row.generatedAt)) !== row.year
     || !count(row.total) || !count(row.marginCount) || row.marginCount > row.total
     || (row.marginCount === 0 ? row.averageCmii !== null
       : typeof row.averageCmii !== 'number' || !Number.isFinite(row.averageCmii))
