@@ -646,10 +646,18 @@ function App() {
   }
 
   function changeMarket(nextMarket: Market) {
-    if (!preferences.ready || preferences.busy) return
+    if (!preferences.ready || preferences.busy || draftBusy || draftInFlight.current) return
     if (market === nextMarket) return
-    if (branchId && !window.confirm(t.marketChangeWarning)) return
-    resetBranch('')
+    const inWorkspace = view === 'new' || (view === 'settings' && settingsReturnView.current === 'new')
+    if (inWorkspace) {
+      if (draftVersion) return
+      if (branchId && !window.confirm(t.marketChangeWarning)) return
+      resetBranch('')
+    } else {
+      if (draftDirty && !window.confirm(dt.warning)) return
+      if (!leaveMaster()) return
+      resetDraftWorkspace()
+    }
     setMarket(nextMarket)
     setStep(1)
     const french = nextMarket === 126110002
@@ -792,17 +800,22 @@ function App() {
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
 
-  function newDraft() {
-    if (!canStart || draftInFlight.current || draftBusy || (draftDirty && !window.confirm(dt.warning))) return
-    if (!leaveMaster()) return
-    setReferencesNeeded(true)
+  function resetDraftWorkspace() {
     setDraftId(crypto.randomUUID()); setDraftVersion(null); setDraftNumber(''); setSavedSnapshot('')
     setSavedSalesperson('')
     setPricingUnavailable(false)
     setSubmitted(false)
     setEstimateTitle(''); resetBranch(''); setStateId(''); setEquipmentTypeId(''); setJobTypeId('')
     setBuildingName(''); setCustomerName(''); setCustomerEmail(''); setCustomerPhone('')
-    setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1); setView('new')
+    setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1)
+  }
+
+  function newDraft() {
+    if (!canStart || draftInFlight.current || draftBusy || (draftDirty && !window.confirm(dt.warning))) return
+    if (!leaveMaster()) return
+    setReferencesNeeded(true)
+    resetDraftWorkspace()
+    setView('new')
   }
 
   function leaveMaster() {
@@ -912,7 +925,8 @@ function App() {
           <div className="topbar-actions">
             <label className="market-control">
               <span className="sr-only">{t.market}</span>
-              <select aria-label={t.market} value={market} disabled={!preferences.ready || preferences.busy || draftBusy || Boolean(draftVersion)} onChange={(event) => {
+              <select aria-label={t.market} value={market} disabled={!preferences.ready || preferences.busy || draftBusy
+                || (Boolean(draftVersion) && (view === 'new' || (view === 'settings' && settingsReturnView.current === 'new')))} onChange={(event) => {
                 const value = Number(event.target.value)
                 if (value === 126110000 || value === 126110001 || value === 126110002) changeMarket(value)
               }}>

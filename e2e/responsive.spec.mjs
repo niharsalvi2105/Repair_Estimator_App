@@ -252,7 +252,7 @@ for (const viewport of viewports) {
       await expect(market).toBeEnabled()
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
       await expect(page.locator('.request-record')).toHaveCount(1)
-      await expect(page.locator('.dashboard-stats strong').first()).toHaveText('100')
+      await expect(page.locator('.dashboard-stats strong').first()).toHaveText('125')
       const logo = page.locator('.brand-logo')
       await expect(logo).toHaveAttribute('src', /kone-logo-small\.jpg/)
       await expect.poll(() => logo.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true)
@@ -1193,6 +1193,50 @@ test('lazy estimator preserves unsaved draft inputs, selections and step across 
   expect(saved.fields).toEqual(expect.arrayContaining([{ key: 're_sellprice', value: '1500' }]))
 })
 
+for (const width of [320, 1366]) {
+  test(`market unlocks on dashboard and clears saved workspace when changed at ${width}px`, async ({ page }) => {
+    await completeDraft(page, { width, height: 768 })
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    const market = page.locator('.market-control select')
+    await expect(market).toBeDisabled()
+    await page.locator('.main-nav').getByRole('button', { name: 'Dashboard', exact: true }).click()
+    await expect(market).toBeEnabled()
+    await market.selectOption('126110001')
+    await expect(page.locator('.operations-dashboard h1')).toContainText('CKE')
+    await expect.poll(() => page.evaluate(() => window.__estimateQueries?.at(-1)?.market)).toBe(126110001)
+    await page.locator('.main-nav .nav-item').nth(1).click()
+    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await expect(page.locator('#customer-name')).toHaveValue('')
+    await expect(page.locator('#opportunity-building')).toHaveValue('')
+    await expect(page.locator('#branch-select')).toBeEnabled()
+    await expect(market).toBeEnabled()
+    expect(await page.evaluate(() => window.__draftCalls.length)).toBe(1)
+  })
+}
+
+test('dashboard market change confirms unsaved edits and cancellation keeps the saved workspace intact', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  await page.locator('#request-re_notesforcttteam').fill('Keep these local edits')
+  await page.locator('.main-nav').getByRole('button', { name: 'Dashboard', exact: true }).click()
+  const market = page.locator('.market-control select')
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await market.selectOption('126110001')
+  await expect(market).toHaveValue('126110000')
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await expect(page.locator('.operations-dashboard')).toBeVisible()
+  expect(await page.evaluate(() => window.__draftCalls.length)).toBe(1)
+  page.once('dialog', (dialog) => dialog.accept())
+  await market.selectOption('126110001')
+  await expect(market).toHaveValue('126110001')
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await expect(page.locator('#estimate-title')).toHaveValue('')
+  await expect(market).toBeEnabled()
+})
+
 for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 }]) {
   test(`draft save, update, new and reopen at ${viewport.width}px`, async ({ page }) => {
     await completeDraft(page, viewport)
@@ -1589,7 +1633,7 @@ test('dashboard aggregates are independent of list paging and refresh safely acr
   await page.goto('/')
   const metrics = page.locator('.dashboard-metrics')
   await expect(metrics).toContainText('125 estimates')
-  await expect(page.locator('.dashboard-stats strong')).toHaveText(['100', '20', '5', '-25.00%'])
+  await expect(page.locator('.dashboard-stats strong')).toHaveText(['125', '100', '5', '-25.00%'])
   await expect(page.locator('.request-record')).toHaveCount(1)
   await expect(metrics.getByRole('meter')).toHaveCount(4)
   await page.evaluate(() => { window.__dashboardError = 'Permission denied' })
@@ -1661,7 +1705,10 @@ test('mockup dashboard charts retain exact totals and accessible legends', async
   await expect(page.locator('.donut-total strong')).toHaveText('105')
   await expect(page.locator('.status-legend strong')).toHaveText(['100', '5'])
   await expect(page.locator('.status-legend')).not.toContainText('Pending')
-  await expect(page.locator('.dashboard-stats strong')).toHaveText(['100', '20', '5', '-25.00%'])
+  await expect(page.locator('.dashboard-stats strong')).toHaveText(['125', '100', '5', '-25.00%'])
+  await expect(page.locator('.dashboard-stat-copy > span')).toHaveText(['Total estimates', 'Draft', 'Submitted', 'Average actual CMII'])
+  await expect(page.locator('.dashboard-stat').first()).toContainText('All statuses')
+  await expect(page.locator('.dashboard-stats')).not.toContainText('Pending')
   await expect(page.locator('.job-chart-card .metric-bars strong')).toHaveText(['96% (120)', '4% (5)'])
   await expect(page.locator('.dashboard-stat-icon svg')).toHaveCount(4)
   await expect(page.locator('.recent-card .request-record')).toHaveCount(1)
@@ -1741,7 +1788,11 @@ for (const language of ['en', 'fr']) {
     await expect(page.locator('.donut-segment')).toHaveCount(0)
     await expect(page.locator('.status-chart-card')).toContainText(language === 'fr'
       ? 'Aucun brouillon ni devis soumis' : 'No Draft or Submitted estimates')
-    await expect(page.locator('.dashboard-stats strong').nth(1)).toHaveText('125')
+    await expect(page.locator('.dashboard-stats strong').first()).toHaveText('125')
+    await expect(page.locator('.dashboard-stat-copy > span')).toHaveText(language === 'fr'
+      ? ['Total des devis', 'Brouillons', 'Soumis', 'CMII réel moyen']
+      : ['Total estimates', 'Draft', 'Submitted', 'Average actual CMII'])
+    await expect(page.locator('.dashboard-stats')).not.toContainText(language === 'fr' ? 'En attente' : 'Pending')
     await checkLayout(page, { width: 320, height: 768 }, 'Pending-only donut')
   })
 }

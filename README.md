@@ -115,9 +115,15 @@ Escape dismisses without changing the branch, and Tab leaves the control without
 committing typed text. Unmatched text cannot become a branch lookup.
 If a draft has a branch, switching market asks for confirmation before clearing
 its branch/equipment/package selections and returning to opportunity details.
-This applies before the first save; saved drafts lock the market and branch,
+This applies before the first save; saved drafts lock the market and branch
+only while the estimate workspace is open (including its Settings round trip),
 and New draft starts a separate record. Other entered fields are retained for
-review when changing an unsaved draft's market. Market selection is a workspace
+review when changing an unsaved draft's market. Outside the workspace, including
+the dashboard and request lists, market switching is available even if a saved
+estimate remains loaded. Switching there clears the entire local estimate
+workspace without deleting its saved Dataverse record, and confirms first if
+there are unsaved edits; cancelling keeps the market and workspace unchanged.
+Market selection is a workspace
 filter, never an authorization boundary. Selecting CKQ automatically switches
 the UI language to French and saves French / `fr-CA` in user preferences,
 preserving the theme. Cancelling a market switch changes neither preference nor
@@ -527,11 +533,13 @@ remain UTC. Update the Draft assembly for this scope change;
 pricing assembly and registration steps do not change.
 Estimator metrics exclude team-owned records; Admin metrics include accessible
 team-owned records.
-Cards are labelled literally Draft, Pending and Submitted; these are not claims
-that quotes were sent or that an approval action is waiting.
+Cards show Total estimates, Draft, Submitted and Average actual CMII, in that order. Total
+estimates uses the server's full active-record count for the selected market and
+role scope, across all statuses (including any existing Pending records).
+Submitted does not imply that a quote was sent.
 The status donut and its legend show Draft and Submitted only. Pending is
 excluded from the donut total and percentage denominator, but remains in the
-Pending KPI, overall record total, job-type distribution and CMII eligibility.
+overall record total, job-type distribution and CMII eligibility.
 A Pending-only result shows a zero donut total and an explicit empty-chart message.
 
 Average actual CMII is a simple (not revenue-weighted) average of saved actual

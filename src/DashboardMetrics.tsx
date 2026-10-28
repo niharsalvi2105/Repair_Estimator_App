@@ -26,7 +26,7 @@ export function DashboardMetrics({ market, owner, language }: {
   const fr = language === 'fr'
   const t = fr ? {
     title: 'Indicateurs réels', scope: `${owner === null ? 'Devis actifs accessibles' : 'Mes devis actifs'} · marché sélectionné · toutes les dates de création`,
-    draft: 'Brouillons', pending: 'En attente', submitted: 'Soumis',
+    draft: 'Brouillons', totalEstimates: 'Total des devis', submitted: 'Soumis', allStatuses: 'Tous les statuts',
     avg: 'CMII réel moyen', status: 'Répartition par statut', types: 'Répartition par type de travail',
     refresh: 'Actualiser', loading: 'Chargement des indicateurs…', error: 'Impossible de charger les indicateurs.',
     empty: 'Aucun devis pour ce marché.', noMargin: 'Aucun calcul admissible',
@@ -35,7 +35,7 @@ export function DashboardMetrics({ market, owner, language }: {
     chartEmpty: 'Aucun brouillon ni devis soumis pour ce marché.',
   } : {
     title: 'Live metrics', scope: `${owner === null ? 'Accessible active estimates' : 'My active estimates'} · selected market · all creation dates`,
-    draft: 'Draft', pending: 'Pending', submitted: 'Submitted',
+    draft: 'Draft', totalEstimates: 'Total estimates', submitted: 'Submitted', allStatuses: 'All statuses',
     avg: 'Average actual CMII', status: 'Status distribution', types: 'Job type distribution',
     refresh: 'Refresh', loading: 'Loading dashboard metrics…', error: 'Dashboard metrics could not be loaded.',
     empty: 'No estimates for this market.', noMargin: 'No eligible calculations',
@@ -48,14 +48,14 @@ export function DashboardMetrics({ market, owner, language }: {
   const busy = loading || !current
   const locale = fr ? 'fr-CA' : 'en-US'
   const number = new Intl.NumberFormat(locale)
-  const statusLabels = [t.draft, t.pending, t.submitted]
+  const statusLabels = [t.draft, t.totalEstimates, t.submitted]
   const counts = [126110000, 126110001, 126110002].map((status) =>
     data?.statuses.find((s) => s.status === status)?.count ?? 0)
   const chartIndices = [0, 2]
   const chartTotal = counts[0] + counts[2]
   const icons = [
     'M5 17 17 5M5 5h12v12',
-    'M7 3h10M7 21h10M8 3v4l8 10v4M16 3v4L8 17v4',
+    'M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z',
     'm3 11 18-8-8 18-2-8-8-2Zm8 2 10-10',
     'M5 20V10M12 20V4M19 20v-7',
   ]
@@ -72,11 +72,11 @@ export function DashboardMetrics({ market, owner, language }: {
       : current.error ? <div className="error-box" role="alert"><strong>{t.error}</strong><p>{current.error}</p></div>
         : data && <>
           <div className="dashboard-stats">
-            {[...statusLabels, t.avg].map((label, index) => <article className={`dashboard-stat metric-tone-${index}`} key={label}>
-              <div className="dashboard-stat-copy"><span>{label}</span>
-                <strong>{index < 3 ? number.format(counts[index]) : data.averageCmii == null ? '—'
+            {[1, 0, 2, 3].map((index) => <article className={`dashboard-stat metric-tone-${index}`} key={index}>
+              <div className="dashboard-stat-copy"><span>{index === 3 ? t.avg : statusLabels[index]}</span>
+                <strong>{index < 3 ? number.format(index === 1 ? data.total : counts[index]) : data.averageCmii == null ? '—'
                   : new Intl.NumberFormat(locale, { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.averageCmii)}</strong>
-                <small>{index < 3 ? `${number.format(data.total)} ${fr ? 'devis' : 'estimates'}`
+                <small>{index === 1 ? t.allStatuses : index < 3 ? `${number.format(data.total)} ${fr ? 'devis' : 'estimates'}`
                   : data.marginCount ? `${number.format(data.marginCount)} ${t.eligible}` : t.noMargin}</small>
               </div>
               <span className={`dashboard-stat-icon tone-${index}`} aria-hidden="true">
