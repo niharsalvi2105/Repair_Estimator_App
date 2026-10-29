@@ -1,3 +1,16 @@
+import type { DraftLabor, DraftMaterial } from './draftContract'
+
+export function customCostsError(packageIds: string[], labor: DraftLabor[], materials: DraftMaterial[], language: 'en' | 'fr'): string | undefined {
+  const valid = packageIds.every((id) =>
+    labor.some((line) => line.packageId === id) && materials.some((line) => line.packageId === id))
+    && labor.every((line) => packageIds.includes(line.packageId ?? '') && Number.isFinite(line.hours) && line.hours > 0)
+    && materials.every((line) => packageIds.includes(line.packageId ?? '') && line.description.trim()
+      && Number.isFinite(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitCost) && line.unitCost > 0)
+  return valid ? undefined : language === 'fr'
+    ? 'Chaque forfait CSTM exige une main-d’œuvre avec des heures positives et un matériau avec description, quantité et coût unitaire positifs. Affectez chaque ligne à un forfait CSTM.'
+    : 'Each CSTM package requires labor with positive hours and material with a description, positive quantity and positive unit cost. Assign every custom line to a CSTM package.'
+}
+
 export function statedRateError(value: string | undefined, language: 'en' | 'fr'): string | undefined {
   if (!value?.trim()) return undefined
   if (!Number.isFinite(Number(value)) || Number(value) < 0)

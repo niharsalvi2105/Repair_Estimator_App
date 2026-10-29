@@ -185,6 +185,52 @@ The original equipment-first three-step skeleton has been replaced with:
    the required inputs are complete. The toolbar retains Save draft; the final
    Review action is Submit estimate, with an explicit confirmation.
 
+Customer name is an editable searchable combobox. After selecting a branch,
+opening the control loads distinct, nonblank `re_equipment.re_soldtoname` values
+from active equipment in that branch, following all result pages. Names are
+trimmed and deduplicated case-insensitively. Search filters the loaded names;
+up to 50 suggestions are displayed with guidance to refine larger matches.
+Users can also type an unlisted name. Changing branch clears the customer name.
+This remains text saved to `re_customername`, not an Account or equipment lookup;
+it does not filter the equipment search or populate customer email/phone.
+Loading failures are shown with Retry and do not prevent manual name entry.
+
+All request/cost/pricing choice dropdowns (work-centre request, has it been
+approved, national account, emergency, customer budgeted, KONE/customer paper,
+consultant involved, competing bids, proposal language, labor time category and
+billing plan) read their **published choice labels** from Dataverse metadata
+using read-only Web API GETs declared as the `re_choicemetadata` API definitions in
+`.power/schemas/appschemas/dataSourcesInfo.ts` (executed through the SDK
+`customapi` channel, the same channel as `re_DraftEstimate`, so no new table
+registration or `pac` data-source step is needed):
+1. `stringmaps` filtered to `objecttypecode = re_repairestimate` and those 11
+   columns (one request, ordered by display order);
+2. if that fails, `GlobalOptionSetDefinitions(Name='…')` for each mapped global
+   choice;
+3. if that fails, the `re_DraftEstimate` mode `choices` (needs the rebuilt Draft
+   assembly).
+Values are the real Dataverse choice values; English uses language 1033 and
+French 1036. Only a normal rebuild/republish of the code app is required.
+The columns map to these global choices (in `src/data/draftChoices.ts` and the Draft
+API): `re_workcenterrequestchoice`, `re_yesnounknowchoice`, `re_yesno`,
+`re_papertype`, `re_competingbidstatus`, `re_proposallanguagechoice`,
+`re_timecateogry` and `re_billingplan`.
+The form does not use generated option constants or hardcoded translations; the
+saved value is the Dataverse choice value. French falls back to English when a
+French label is absent (import French choice translations into the solution).
+Loading retries once automatically; only if every source fails is a short message
+with Retry shown (technical details go to the browser console). No static fallback
+list is
+substituted. Saved values missing from current published choices are retained
+visibly with a warning, not silently cleared. Blank remains optional.
+The rebuilt Draft API validates every nonblank choice against the same published
+metadata, not fixed numeric ranges; the currently deployed Draft API's range checks
+also accept these real values, so saving works before the plugin is upgraded.
+The existing API string parameters/registration are unchanged.
+This does not change pricing semantics: pricing still interprets configured English
+choice labels and situational rules. Adding/renaming a choice requires reviewing
+those rules; a newly available choice does not create new pricing behavior.
+
 Submission uses `mode: "submit"` on the existing transactional Draft API. It saves
 current inputs and child snapshots, recalculates pricing, then changes status to
 Submitted and records `re_submittedon` in the same synchronous transaction.
@@ -641,9 +687,27 @@ Business rules confirmed October 27, 2026:
 
 - Allow mixed PSR/CSTM/T&M packages; each predefined package's hours/materials
   apply to every selected equipment. There is no per-package equipment exclusion.
-- Custom labor/material lines and additional labor/material/miscellaneous inputs
-  are estimate-level additions, counted once, not multiplied by package or
-  equipment count. Avoid entering the same work in both places.
+- Each selected CSTM package requires its own labor and material lines. Hours,
+  material quantity and unit cost must be positive; material description is
+  required. Vendor and part number remain optional. Custom lines are counted
+  once, not multiplied by equipment count. Additional estimate-level costs
+  remain separate; avoid entering the same work twice.
+- Selecting CSTM opens Costs & scope. Enter its lines, tax and freight, then use
+  **Calculate and return to packages** to continue selecting packages. Every
+  selected package displays labor hours, branch mechanic cost rate, labor,
+  material and estimated cost. Desktop package cards place name and scope on
+  the left, with aligned cost details and a highlighted total on the right;
+  narrower screens stack the pricing below the description.
+  Pricing labels retain their own column width; missing tax/freight instructions
+  span a separate row so they cannot squeeze labels into vertical text.
+  Previews use labor = hours per unit x equipment
+  quantity x branch mechanic rate; material = material per unit x equipment
+  quantity; estimated cost = labor + material x (1 + tax fraction + freight
+  fraction). Custom previews use their assigned lines once. These are cost
+  previews, not suggested selling prices; saving still recalculates on the server.
+- Custom lines persist a lookup to their estimate-package row. Legacy unlinked
+  lines are assigned automatically only if exactly one CSTM package exists;
+  otherwise the user must select a package for each line before saving.
 - T&M is a zero-base-cost template in the supplied workbooks, using additional
   estimate-level costs and an entered selling price. It is not actual-time billing.
 - Labor role (Mechanic/Helper/Adjuster) and Straight/Double Time select one active,
@@ -674,11 +738,20 @@ existing matching column/relationship if it is now present; never create a dupli
 | Existing table | Required new column | Type / configuration |
 | --- | --- | --- |
 | `re_estimatematerialline` | `re_repairestimate` | Lookup to `re_repairestimate`; Business Required; creates the estimate-to-material 1:N relationship. Use referential Restrict Delete to avoid implicit material loss. Review existing orphan rows manually; never guess their parent. |
+| `re_estimatelaborline` | `re_estimatepackage` | Lookup to `re_estimatepackage`; optional for legacy rows, required by the draft API for new/updated custom lines. Referential Restrict Delete. |
+| `re_estimatematerialline` | `re_estimatepackage` | Lookup to `re_estimatepackage`; optional for legacy rows, required by the draft API for new/updated custom lines. Referential Restrict Delete. |
 | `re_estimatepackage` | `re_sequence` | Whole Number, minimum 1, maximum at least 1000; optional for legacy rows. |
 | `re_estimatepackage` | `re_iscustompackage` | Yes/No, default No; server-owned snapshot. |
 | `re_estimatepackage` | `re_istimematerial` | Yes/No, default No; server-owned snapshot. |
 
 No material-to-equipment lookup is required for this estimate-level release.
+Before deploying this package-specific workflow, create and publish both
+`re_estimatepackage` lookups above, grant app roles Read/Append on the line tables
+and Read/Append To on estimate packages as appropriate, then deploy the updated
+draft assembly and frontend. Do not deploy the backend against the old schema.
+Regenerate Dataverse services/models through the CLI after schema publication;
+generated files must not be edited manually. The draft API owns the new lookups
+and validates that each link belongs to a selected CSTM package in this estimate.
 No new package-role choice values are required: first/second/third remain
 compatible; later packages use the third role with the distinct sequence field
 as the authoritative order. Legacy rows fall back to their existing role order.
@@ -695,13 +768,16 @@ equipment requires explicitly removing those lines first.
 
 **Technical safeguards (not an unlimited-capacity promise):**
 
+- Equipment selection has no business count cap, for either catalog or unlisted
+  equipment. All selected units are saved and reopened; the technical budgets
+  below still apply and report explicit errors instead of truncating records.
 - Save input: maximum **200,000 UTF-8 bytes**, checked in browser and backend;
   errors never truncate records. Save/load response: maximum **1,000,000 bytes**,
   checked in the API inside the transaction.
 - Maximum **1,000 child mutations per save**, including retained-row writes and
   removed-row deletes across equipment/packages/labor/materials. Child reads and
   pricing selection reads also stop above 1,000 rows per collection. These are
-  technical processing budgets, not a package business limit. A large replacement
+  technical processing budgets, not equipment or package business limits. A large replacement
   may exceed the budget even when its final row count is smaller.
 - Draft API child reads page in blocks of 100, with deterministic ID ordering;
   pricing reads page in blocks of 500. No old 100-row truncation.

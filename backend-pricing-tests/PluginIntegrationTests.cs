@@ -17,6 +17,35 @@ namespace RepairEstimator.Tests
     public class PluginIntegrationTests
     {
         [Fact]
+        public void Choice_read_mode_returns_published_metadata_for_every_draft_choice_without_writing_estimates()
+        {
+            var db = new Pipeline();
+            var before = db.Rows.Count;
+            var response = db.Save("{\"mode\":\"choices\"}");
+            Assert.Contains("\"mode\":\"choices\"", response);
+            foreach (var key in new[] { "re_workcenterrequest", "re_hasbeenapproved", "re_nationalaccount", "re_emergency",
+                "re_customerbudgeted", "re_papertype", "re_consultantinvolved", "re_competingbids",
+                "re_proposallanguage", "re_timecategory", "re_billingplan" })
+                Assert.Contains("\"key\":\"" + key + "\"", response);
+            Assert.Contains("\"en\":\"Non KONE Paper\",\"fr\":\"FR Non KONE Paper\",\"value\":126110000", response);
+            Assert.Equal(before, db.Rows.Count);
+            Assert.Equal(0, db.Calculations);
+        }
+
+        [Fact]
+        public void Choice_selection_roundtrips_and_invalid_metadata_values_fail_before_writes()
+        {
+            var db = new Pipeline();
+            var invalid = db.DraftJson().Replace("\"fields\":[",
+                "\"fields\":[{\"key\":\"re_papertype\",\"value\":\"99\"},");
+            Assert.Contains("Invalid published choice for re_papertype",
+                Assert.Throws<InvalidPluginExecutionException>(() => db.Save(invalid)).Message);
+            Assert.False(db.Rows.ContainsKey(db.EstimateId));
+            var response = db.Save(invalid.Replace("\"value\":\"99\"", "\"value\":\"126110001\""));
+            Assert.Contains("\"key\":\"re_papertype\",\"value\":\"126110001\"", response);
+        }
+
+        [Fact]
         public void Submit_saves_current_inputs_validates_prices_and_locks_parent_and_children()
         {
             var db = new Pipeline();
@@ -356,6 +385,19 @@ namespace RepairEstimator.Tests
                     Invoke(new ChildChangeTriggerPlugin(), "Delete", row.ToEntityReference(), row);
                 });
                 caller.Setup(s => s.Execute(It.IsAny<OrganizationRequest>())).Returns((OrganizationRequest r) => {
+                    if (r is RetrieveOptionSetRequest choice) {
+                        Assert.False(choice.RetrieveAsIfPublished);
+                        var metadata = new OptionSetMetadata();
+                        var labels = DraftLabelsFor(choice.Name);
+                        for (var n = 0; n < labels.Length; n++) {
+                            var label = new Label(labels[n], 1033);
+                            label.LocalizedLabels.Add(new LocalizedLabel("FR " + labels[n], 1036));
+                            metadata.Options.Add(new OptionMetadata(label, 126110000 + n));
+                        }
+                        var response = new RetrieveOptionSetResponse();
+                        response.Results["OptionSetMetadata"] = metadata;
+                        return response;
+                    }
                     var previousTag = requestTag;
                     requestTag = r.Parameters.Contains("tag") ? (string)r["tag"] : null;
                     try
@@ -545,13 +587,25 @@ namespace RepairEstimator.Tests
             public string DraftJson(string rowVersion = null) {
                 return "{\"mode\":\"save\",\"id\":\"" + EstimateId + "\",\"version\":" +
                     (rowVersion == null ? "null" : "\"" + rowVersion + "\"") +
-                    ",\"title\":\"Draft\",\"building\":\"Building\",\"customer\":\"Customer\",\"branchId\":\"" +
+                    ",\"title\":\"Draft\",\"building\":\"Building\",\"customer\":\"Customer\",\"email\":\"customer@example.invalid\",\"branchId\":\"" +
                     BranchId + "\",\"stateId\":\"" + StateId + "\",\"equipmentTypeId\":\"" + TypeId +
                     "\",\"market\":126110000,\"fields\":[{\"key\":\"re_proposallanguage\",\"value\":\"126110000\"}," +
                     "{\"key\":\"re_timecategory\",\"value\":\"126110000\"},{\"key\":\"re_usetax\",\"value\":\"0\"}," +
                     "{\"key\":\"re_freight\",\"value\":\"0\"}],\"equipment\":[{\"number\":\"E1\",\"matched\":" +
                     (UseMatchedEquipment ? "true,\"id\":\"" + EquipmentId + "\"" : "false") +
                     "}],\"packages\":[{\"id\":\"" + PackageId + "\"}]}";
+            }
+            static string[] DraftLabelsFor(string set) {
+                switch (set) {
+                    case "re_yesno": case "re_papertype": return LabelsFor(set);
+                    case "re_yesnounknowchoice": return new[] { "Yes", "No", "Unknown" };
+                    case "re_competingbidstatus": return new[] { "None", "Known", "Suspected", "Unknown" };
+                    case "re_billingplan": return new[] { "50% / 50%", "60% / 40%", "Final 100%", "Other: See Notes" };
+                    case "re_workcenterrequestchoice": return new[] { "Route", "Repair" };
+                    case "re_proposallanguagechoice": return new[] { "English", "French" };
+                    case "re_timecateogry": return new[] { "Straight Time", "Double Time" };
+                    default: throw new Exception("Unexpected draft choice query " + set);
+                }
             }
             static string[] LabelsFor(string set) {
                 switch (set) {
@@ -561,6 +615,7 @@ namespace RepairEstimator.Tests
                     case "re_estimatepathchoice": return new[] { "Standard", "Custom" };
                     case "re_approvallevel": return new[] { "None", "District", "Regional" };
                     case "re_yesno": return new[] { "Yes", "No" };
+                    case "re_papertype": return new[] { "Non KONE Paper", "Kone Paper", "NA" };
                     case "re_bandmatrixtype": return new[] { "Equipment", "Job Type", "Customer Base", "Customer Final" };
                     case "re_estimatestatuschoice": return new[] { "Draft", "Pending", "Submitted" };
                     default: throw new Exception("Unexpected metadata query " + set);

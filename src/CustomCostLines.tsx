@@ -10,9 +10,12 @@ type Props = {
   canAdd: boolean
   enabled: boolean
   readOnly?: boolean
+  packages?: { id: string; name: string }[]
+  activePackageId?: string
 }
 
-export function CustomCostLines({ language, labor, materials, setLabor, setMaterials, canAdd, enabled, readOnly = false }: Props) {
+export function CustomCostLines({ language, labor, materials, setLabor, setMaterials, canAdd, enabled, readOnly = false,
+  packages = [], activePackageId }: Props) {
   const fr = language === 'fr'
   const [laborPage, setLaborPage] = useState(0)
   const [materialPage, setMaterialPage] = useState(0)
@@ -57,8 +60,15 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             </select>
           </label>
           <label className="field-label">{fr ? 'Heures' : 'Hours'}
-            <input className="text-input" type="number" min={0} max={100000} step="0.01" value={line.hours}
+            <input className="text-input" type="number" required min={0.01} max={100000} step="0.01" value={line.hours}
               onChange={(e) => setLabor((rows) => rows.map((r) => r.id === line.id ? { ...r, hours: Number(e.target.value) } : r))} />
+          </label>
+          <label className="field-label">{fr ? 'Forfait CSTM' : 'CSTM package'}
+            <select className="text-input" required value={line.packageId ?? ''} onChange={(e) =>
+              setLabor((rows) => rows.map((r) => r.id === line.id ? { ...r, packageId: e.target.value } : r))}>
+              <option value="">{fr ? 'Choisir un forfait' : 'Select a package'}</option>
+              {packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </label>
         </div>
         <p>{fr ? 'Taux enregistré' : 'Saved rate'}: {line.rate == null ? (fr ? 'Enregistrez pour calculer' : 'Save to calculate')
@@ -70,7 +80,8 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
     {pageControls(labor.length, laborPage, setLaborPage)}
     {!readOnly && <button type="button" className="button secondary" disabled={!enabled || !canAdd}
       onClick={() => { setLaborPage(Math.floor(labor.length / size)); setLabor((rows) => [...rows, {
-        id: crypto.randomUUID(), role: 126110000, time: 126110000, hours: 0,
+        id: crypto.randomUUID(), packageId: activePackageId ?? (packages.length === 1 ? packages[0].id : undefined),
+        role: 126110000, time: 126110000, hours: 0,
       }]) }}>{fr ? 'Ajouter main-d’œuvre' : 'Add labor'}</button>}
     <h3>{fr ? 'Matériaux' : 'Materials'} ({materials.length})</h3>
     {materials.slice(materialStart, materialStart + size).map((line, index) => {
@@ -81,6 +92,12 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       return <fieldset className="custom-cost-line" key={line.id} disabled={readOnly}>
         <legend>{fr ? 'Matériau' : 'Material'} {number}</legend>
         <div className="input-grid">
+          <label className="field-label">{fr ? 'Forfait CSTM' : 'CSTM package'}
+            <select className="text-input" required value={line.packageId ?? ''} onChange={(e) => update({ packageId: e.target.value })}>
+              <option value="">{fr ? 'Choisir un forfait' : 'Select a package'}</option>
+              {packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
           <label className="field-label">{fr ? 'Description' : 'Description'}
             <textarea className="text-input" required maxLength={2000} value={line.description}
               onChange={(e) => update({ description: e.target.value })} />
@@ -92,11 +109,11 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             <input className="text-input" maxLength={100} value={line.part} onChange={(e) => update({ part: e.target.value })} />
           </label>
           <label className="field-label">{fr ? 'Quantité' : 'Quantity'}
-            <input className="text-input" type="number" min={0} max={100000} step="0.01" value={line.quantity}
+            <input className="text-input" type="number" required min={0.01} max={100000} step="0.01" value={line.quantity}
               onChange={(e) => update({ quantity: Number(e.target.value) })} />
           </label>
           <label className="field-label">{fr ? 'Coût unitaire' : 'Unit cost'}
-            <input className="text-input" type="number" min={0} max={1000000000} step="0.01" value={line.unitCost}
+            <input className="text-input" type="number" required min={0.01} max={1000000000} step="0.01" value={line.unitCost}
               onChange={(e) => update({ unitCost: Number(e.target.value) })} />
           </label>
         </div>
@@ -107,7 +124,8 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
     {pageControls(materials.length, materialPage, setMaterialPage)}
     {!readOnly && <button type="button" className="button secondary" disabled={!enabled || !canAdd}
       onClick={() => { setMaterialPage(Math.floor(materials.length / size)); setMaterials((rows) => [...rows, {
-        id: crypto.randomUUID(), description: '', vendor: '', part: '', quantity: 1, unitCost: 0,
+        id: crypto.randomUUID(), packageId: activePackageId ?? (packages.length === 1 ? packages[0].id : undefined),
+        description: '', vendor: '', part: '', quantity: 1, unitCost: 0,
       }]) }}>{fr ? 'Ajouter un matériau' : 'Add material'}</button>}
     {!readOnly && !canAdd && <p role="alert">{fr ? 'Limite technique atteinte. Divisez la demande.' : 'Technical processing budget reached. Split this request.'}</p>}
   </section>

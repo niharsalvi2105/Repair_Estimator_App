@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { Equipment } from './data/repairEstimatorRepository'
 import type { AppCopy } from './App'
 
-const MAX_EQUIPMENT = 14
 const RESULT_LIMIT = 20
 
 type Option = { kind: 'equipment'; equipment: Equipment } | { kind: 'unlisted' }
@@ -26,9 +25,8 @@ export function EquipmentSelect({
   const list = useRef<HTMLUListElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const typed = query.trim()
-  const atLimit = selectedNumbers.size >= MAX_EQUIPMENT
   const options: Option[] = results.map((equipment) => ({ kind: 'equipment', equipment }))
-  if (typed.length >= 3 && !selectedNumbers.has(typed) && !atLimit) options.push({ kind: 'unlisted' })
+  if (typed.length >= 3 && !selectedNumbers.has(typed)) options.push({ kind: 'unlisted' })
   const activeOption = options[active]
 
   useEffect(() => {
@@ -87,7 +85,7 @@ export function EquipmentSelect({
           {loading ? t.searching
             : results.length === 0 ? t.noEquipment
               : results.length >= RESULT_LIMIT ? t.refineSearch : `${results.length}`}
-          {' · '}{selectedNumbers.size} / {MAX_EQUIPMENT} {t.equipmentCount}
+          {' · '}{selectedNumbers.size} {t.equipmentCount}
         </p>
         <ul id="equipment-options" ref={list} role="listbox" aria-multiselectable="true" aria-label={t.equipment}>
           {options.map((option, index) => {
@@ -107,7 +105,7 @@ export function EquipmentSelect({
             const selected = selectedNumbers.has(equipment.re_equipment)
             return (
               <li key={equipment.re_equipmentid} id={`equipment-option-${index}`} role="option"
-                aria-selected={selected} aria-disabled={!selected && atLimit} data-active={index === active}>
+                aria-selected={selected} data-active={index === active}>
                 <button type="button" tabIndex={-1} className="package-option"
                   onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}>
                   <span className="package-check" aria-hidden="true">{selected ? '✓' : ''}</span>

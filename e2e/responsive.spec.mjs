@@ -20,6 +20,26 @@ const modes = [
 ]
 
 async function mockData(page, language, theme, state = 'records') {
+  await page.route('**/src/data/draftChoiceRepository.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export async function getDraftChoices() {
+      window.__choiceCalls = (window.__choiceCalls || 0) + 1;
+      if (window.__choiceError) throw new Error(window.__choiceError);
+      const set = (...labels) => labels.map(([en, fr], i) => ({ value: 126110000 + i, en, fr }));
+      const yesNo = set(['Yes','Oui'], ['No','Non']);
+      const yesNoUnknown = set(['Yes','Oui'], ['No','Non'], ['Unknown','Inconnu']);
+      return {
+        re_workcenterrequest: set(['Route','Tournée'], ['Repair','Réparation']),
+        re_hasbeenapproved: yesNoUnknown, re_nationalaccount: yesNoUnknown,
+        re_emergency: yesNo, re_customerbudgeted: yesNo, re_consultantinvolved: yesNo,
+        re_papertype: window.__paperTypeOptions || set(['Non KONE Paper','Papier non KONE'], ['Kone Paper','Papier KONE'], ['NA','S.O.']),
+        re_competingbids: set(['None','Aucune'], ['Known','Connues'], ['Suspected','Soupçonnées'], ['Unknown','Inconnu']),
+        re_proposallanguage: set(['English','Anglais'], ['French','Français']),
+        re_timecategory: set(['Straight Time','Heures normales'], ['Double Time','Temps double']),
+        re_billingplan: set(['50% / 50%','50 % / 50 %'], ['60% / 40%','60 % / 40 %'], ['Final 100%','Solde 100 %'], ['Other: See Notes','Autre : voir les notes']),
+      };
+    }`,
+  }))
   await page.route('**/src/data/dashboardRepository.ts*', (route) => route.fulfill({
     contentType: 'application/javascript',
     body: `export async function getDashboard(market, owner) {
@@ -112,7 +132,13 @@ async function mockData(page, language, theme, state = 'records') {
     body: `
       const name = 'Long branch name / Succursale de démonstration';
       const referenceCall = (name) => { (window.__referenceCalls ??= []).push(name); };
-      export async function getBranches() { referenceCall('branches'); return [{
+      export async function getBranchCustomerNames(branchId) {
+        (window.__customerCalls ??= []).push(branchId);
+        if (window.__customerDelay) await new Promise((resolve) => setTimeout(resolve, window.__customerDelay));
+        if (window.__customerError) throw new Error(window.__customerError);
+        return window.__customerNames || ['Acme Customer', 'Beta Customer'];
+      }
+      export async function getBranches() { referenceCall('branches'); return window.__branches || [{
         re_branchid:'test-branch', re_branchname:name, re_branchnumber:'020',
         re_market:126110000, _re_country_value:'test-country',
         _re_currency_value:'test-currency', _re_stateprovince_value:'test-state'
@@ -125,7 +151,11 @@ async function mockData(page, language, theme, state = 'records') {
         equipmentTypes:[{id:'test-type',en:'Passenger elevator',fr:'Ascenseur pour passagers'}],
         jobTypes:[{id:'test-job',en:'Equipment repair',fr:'Réparation d’équipement'}]
       } }
-      export async function searchEquipment() { return [{
+      export async function getPackageCostRates() {
+        if (window.__rateError) throw new Error(window.__rateError);
+        return [0,1,2].flatMap(role => [0,1].map(time => ({role:126110000+role,time:126110000+time,rate:window.__largeRates ? 9999999999.99 : 100+role*50+time*75})));
+      }
+      export async function searchEquipment() { return window.__equipmentResults || [{
         re_equipmentid:'test-equipment', re_equipment:'TEST123',
         re_equipmentname:'Equipment with a long descriptive name / Équipement avec un nom long',
         re_functionallocation:'Test location', re_soldtoname:'Customer with a long descriptive name',
@@ -135,6 +165,7 @@ async function mockData(page, language, theme, state = 'records') {
         re_repairpackageid:'test-package',re_packagenumber:'PKG001',
         re_packagenameen:'Repair package with a long descriptive name',
         re_packagenamefr:'Forfait de réparation avec un long nom descriptif',
+        re_mechanichours:2,re_materialmisctaxcost:50,
         re_proposalscopeen:'Representative scope text for responsive layout testing.',
         re_effectivefrom:'2020-01-01'
       }, ...(window.__extraPackages || [])] }
@@ -937,14 +968,259 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await next(page)
 }
 
+for (const width of [320, 768, 1366]) {
+  for (const language of ['en', 'fr']) {
+    test(`selected package description and pricing align at ${width}px in ${language}`, async ({ page }, testInfo) => {
+      await completeDraft(page, { width, height: 900 }, language, language === 'fr' ? 'dark' : 'light')
+      for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+      const card = page.locator('.selected-package-card').first()
+      await expect(card.locator('.package-cost-details')).toBeVisible()
+      const description = await card.locator('.selected-package-description').boundingBox()
+      const pricing = await card.locator('.selected-package-pricing').boundingBox()
+      const remove = await card.locator('.selected-package-remove').boundingBox()
+      if (width > 1250) {
+        expect(pricing.x).toBeGreaterThanOrEqual(description.x + description.width)
+        expect(Math.abs(pricing.y - description.y)).toBeLessThan(2)
+        expect(remove.x).toBeGreaterThanOrEqual(pricing.x + pricing.width)
+      } else {
+        expect(pricing.y).toBeGreaterThanOrEqual(description.y + description.height)
+      }
+      const rows = await card.locator('.package-cost-details dd').evaluateAll((elements) =>
+        elements.map((el) => ({ right: el.getBoundingClientRect().right, scroll: el.scrollWidth, width: el.clientWidth })))
+      expect(rows.every((row) => Math.abs(row.right - rows[0].right) < 1 && row.scroll <= row.width + 1)).toBe(true)
+      await checkLayout(page, { width, height: 900 }, 'selected package details')
+      await card.screenshot({ path: testInfo.outputPath('selected-package.png') })
+    })
+  }
+}
+
+for (const language of ['en', 'fr']) {
+  test(`package pricing stays readable with missing tax and large amounts in ${language}`, async ({ page }, testInfo) => {
+    await page.addInitScript(() => { window.__largeRates = true })
+    await completeDraft(page, { width: 1366, height: 900 }, language)
+    for (let i = 0; i < 2; i++) await page.locator('.form-footer > button').click()
+    await page.locator('#request-re_usetax').click()
+    await page.locator('#request-re_usetax').press('ControlOrMeta+A')
+    await page.locator('#request-re_usetax').press('Backspace')
+    await expect(page.locator('#request-re_usetax')).toHaveValue('')
+    await page.locator('.form-footer > button').click()
+    const card = page.locator('.selected-package-card').first()
+    await expect(card.locator('.package-cost-pending')).toBeVisible()
+    const labels = await card.locator('.package-cost-details dt').evaluateAll((elements) =>
+      elements.map((el) => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height })))
+    expect(labels.every((label) => label.width >= 100 && label.height < 80)).toBe(true)
+    expect((await card.boundingBox()).height).toBeLessThan(400)
+    await card.screenshot({ path: testInfo.outputPath('package-missing-tax.png') })
+    await next(page)
+    await page.locator('#request-re_usetax').fill('5')
+    await page.locator('.form-footer > button').click()
+    await expect(card.locator('.package-cost-pending')).toHaveCount(0)
+    const widths = await card.locator('.package-cost-details dt').evaluateAll((elements) =>
+      elements.map((el) => el.getBoundingClientRect().width))
+    expect(widths.every((width) => width >= 100)).toBe(true)
+    await checkLayout(page, { width: 1366, height: 900 }, 'large package amounts')
+  })
+}
+
+test('package preview rates query current branch mechanic cost data from Dataverse', async ({ page }) => {
+  await page.route('**/src/generated/services/Re_laborratesService.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export class Re_laborratesService {
+      static async getAll(options) {
+        window.__rateQuery = options;
+        return { success: true, data: [{re_laborrole:126110000,re_timecategory:126110000,re_hourlycost:170.95}] };
+      }
+    }`,
+  }))
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const { getPackageCostRates } = await import('/src/data/repairEstimatorRepository.ts')
+    return { rates: await getPackageCostRates('11111111-1111-1111-1111-111111111111'), query: window.__rateQuery }
+  })
+  expect(result.rates).toEqual([{ role: 126110000, time: 126110000, rate: 170.95 }])
+  expect(result.query.select).toEqual(['re_laborrole', 're_timecategory', 're_hourlycost'])
+  expect(result.query.filter).toContain('_re_branch_value eq 11111111-1111-1111-1111-111111111111')
+  expect(result.query.filter).toContain('re_effectivefrom le')
+  expect(result.query.filter).toContain('re_effectiveto')
+})
+
+test('package costs show immediately and each CSTM requires separate positive entries before returning to packages', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__extraPackages = ['CSTM-A', 'CSTM-B'].map((number, i) => ({
+      re_repairpackageid: `custom-${i}`, re_packagenumber: number, re_packagenameen: number,
+      re_iscustompackage: true, re_mechanichours: 0, re_materialmisctaxcost: 0, re_effectivefrom: '2020-01-01',
+    }))
+  })
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await expect(page.locator('.package-cost-details')).toContainText('252.50 USD')
+  for (const [index, code] of ['CSTM-A', 'CSTM-B'].entries()) {
+    await page.locator('#package-search').fill(code)
+    await page.locator('#package-options button').first().click()
+    await expect(page.locator('.custom-cost-lines')).toBeVisible()
+    await expect(page.locator('.draft-save-action')).toBeDisabled()
+    const calculate = page.getByRole('button', { name: 'Calculate and return to packages', exact: true })
+    await calculate.click()
+    await expect(page.locator('.custom-cost-lines')).toBeVisible()
+    await page.getByRole('button', { name: 'Add labor', exact: true }).click()
+    const labor = page.locator('.custom-cost-line').filter({ has: page.locator('legend', { hasText: /^Labor/ }) }).last()
+    await labor.locator('input').fill(String(index + 2))
+    await page.getByRole('button', { name: 'Add material', exact: true }).click()
+    const material = page.locator('.custom-cost-line').filter({ has: page.locator('legend', { hasText: /^Material/ }) }).last()
+    await material.locator('textarea').fill(`Motor ${index}`)
+    await material.locator('input').nth(2).fill('2')
+    await calculate.click()
+    await expect(page.locator('.custom-cost-lines')).toBeVisible()
+    await expect(page.locator('.draft-save-action')).toBeDisabled()
+    await material.locator('input').nth(3).fill('25')
+    await calculate.click()
+    await expect(page.locator('#package-search')).toBeVisible()
+  }
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  expect(await page.evaluate(() => window.__draftSaved.laborLines.map((l) => l.packageId))).toEqual(['custom-0', 'custom-1'])
+  expect(await page.evaluate(() => window.__draftSaved.materialLines.map((m) => m.packageId))).toEqual(['custom-0', 'custom-1'])
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await next(page)
+  await expect(page.locator('.package-cost-details')).toHaveCount(3)
+})
+
+test('equipment selection exceeds fourteen for catalog and unlisted units and survives save and reload', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__equipmentResults = Array.from({ length: 20 }, (_, i) => ({
+      re_equipmentid: `equipment-${i}`, re_equipment: `UNIT-${i}`,
+      re_equipmentname: `Catalog unit ${i}`, re_functionallocation: 'Test location',
+    }))
+  })
+  await page.locator('#equipment-search').fill('UNIT')
+  const catalog = page.locator('#equipment-options button').filter({ hasText: 'Catalog unit' })
+  await expect(catalog).toHaveCount(20)
+  for (let i = 0; i < 20; i++) await catalog.nth(i).click()
+  await expect(page.locator('.selected-card').first().locator('.equipment-card')).toHaveCount(21)
+  await expect(page.locator('.aside-stat strong').first()).toHaveText('21')
+  await page.locator('#equipment-search').fill('UNLISTED-EXTRA')
+  await page.locator('#equipment-options button').filter({ hasText: 'UNLISTED-EXTRA' }).click()
+  await expect(page.locator('.selected-card').first().locator('.equipment-card')).toHaveCount(22)
+  await page.locator('#equipment-search').press('Escape')
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  const saved = await page.evaluate(() => window.__draftSaved.equipment)
+  expect(saved).toHaveLength(22)
+  expect(saved.filter((item) => item.matched)).toHaveLength(20)
+  expect(saved.find((item) => item.number === 'UNLISTED-EXTRA').matched).toBe(false)
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await next(page)
+  await expect(page.locator('.selected-card').first().locator('.equipment-card')).toHaveCount(22)
+})
+
+test('customer email is required before continuing or saving a draft', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.locator('#branch-select').fill('020')
+  await page.locator('#branch-select').press('ArrowDown')
+  await page.locator('#branch-select').press('Enter')
+  await page.locator('#equipment-type').selectOption('test-type')
+  await page.locator('#opportunity-building').fill('Building 42')
+  await page.locator('#customer-name').fill('Test customer')
+
+  const email = page.locator('#customer-email')
+  await expect(email).toHaveAttribute('required', '')
+  await expect(email).toHaveAttribute('aria-required', 'true')
+  await expect(page.locator('.footer-actions .button')).toBeDisabled()
+  await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
+
+  await email.fill('not-an-email')
+  await expect(page.locator('.footer-actions .button')).toBeEnabled()
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('#equipment-search')).toHaveCount(0)
+
+  await email.fill('test@example.invalid')
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('#equipment-search')).toBeVisible()
+})
+
+for (const language of ['en', 'fr']) {
+  test(`customer combobox uses branch names, supports keyboard and manual entry in ${language}`, async ({ page }) => {
+    await mockData(page, language, 'light')
+    await page.goto('/')
+    await expect(page.locator('.market-control select')).toBeEnabled()
+    await page.evaluate(() => {
+      window.__branches = [
+        { re_branchid: 'branch-a', re_branchname: 'Alpha branch', re_branchnumber: '020', re_market: 126110000 },
+        { re_branchid: 'branch-b', re_branchname: 'Beta branch', re_branchnumber: '030', re_market: 126110000 },
+      ]
+    })
+    await page.locator('.main-nav .nav-item').nth(1).click()
+    const customer = page.locator('#customer-name')
+    await expect(customer).toBeDisabled()
+    await page.locator('#branch-select').fill('020')
+    await page.locator('#branch-select').press('ArrowDown')
+    await page.locator('#branch-select').press('Enter')
+    await customer.click()
+    await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(2)
+    await expect.poll(() => page.evaluate(() => window.__customerCalls)).toEqual(['branch-a'])
+    await customer.fill('acme')
+    await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(1)
+    await customer.press('ArrowDown')
+    await customer.press('Enter')
+    await expect(customer).toHaveValue('Acme Customer')
+    await expect(customer).toHaveAttribute('aria-expanded', 'false')
+    await customer.fill('New unlisted customer')
+    await customer.press('Escape')
+    await expect(customer).toHaveValue('New unlisted customer')
+    await page.evaluate(() => { window.__customerNames = ['Other branch customer'] })
+    await page.locator('#branch-select').fill('030')
+    await page.locator('#branch-select').press('ArrowDown')
+    await page.locator('#branch-select').press('Enter')
+    await expect(customer).toHaveValue('')
+    await customer.click()
+    await expect(page.locator('#customer-name-options')).toContainText('Other branch customer')
+    await expect(page.locator('#customer-name-options')).not.toContainText('Acme Customer')
+    await expect.poll(() => page.evaluate(() => window.__customerCalls)).toEqual(['branch-a', 'branch-b'])
+  })
+}
+
+test('customer combobox exposes loading errors, retries and searches beyond the displayed suggestions', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await expect(page.locator('.market-control select')).toBeEnabled()
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.locator('#branch-select').fill('020')
+  await page.locator('#branch-select').press('ArrowDown')
+  await page.locator('#branch-select').press('Enter')
+  await page.evaluate(() => { window.__customerError = 'Equipment access denied' })
+  const customer = page.locator('#customer-name')
+  await customer.click()
+  await expect(page.locator('.branch-popup [role=alert]')).toContainText('Equipment access denied')
+  await customer.fill('Manual customer despite error')
+  await expect(customer).toHaveValue('Manual customer despite error')
+  await customer.fill('')
+  await page.evaluate(() => {
+    window.__customerError = ''
+    window.__customerDelay = 300
+    window.__customerNames = Array.from({ length: 60 }, (_, i) => `Customer ${String(i).padStart(2, '0')}`)
+  })
+  await page.locator('.branch-popup button', { hasText: 'Retry' }).click()
+  await expect(page.getByText('Loading customers…', { exact: true })).toBeVisible()
+  await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(50)
+  await expect(page.getByText('Showing 50 results.', { exact: false })).toBeVisible()
+  await customer.fill('Customer 59')
+  await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(1)
+  await page.locator('#customer-name-options button').click()
+  await expect(customer).toHaveValue('Customer 59')
+})
+
 for (const language of ['en', 'fr']) {
   test(`customer required marker stays inline and inputs align in ${language}`, async ({ page }) => {
     await completeDraft(page, { width: 1366, height: 768 }, language)
     for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
     const geometry = await page.locator('label[for=customer-name]').evaluate((label) => {
-      const caption = label.firstElementChild.getBoundingClientRect()
+      const caption = label.getBoundingClientRect()
       const marker = label.querySelector('.required').getBoundingClientRect()
-      const input = label.querySelector('input').getBoundingClientRect()
+      const input = document.querySelector('#customer-name').getBoundingClientRect()
       const email = document.querySelector('#customer-email').getBoundingClientRect()
       return { inline: marker.top >= caption.top && marker.bottom <= caption.bottom + 1,
         aligned: Math.abs(input.top - email.top) <= 1 }
@@ -952,6 +1228,160 @@ for (const language of ['en', 'fr']) {
     expect(geometry).toEqual({ inline: true, aligned: true })
   })
 }
+
+for (const language of ['en', 'fr']) {
+  test(`Choice fields use live Dataverse values and ${language} labels, preserving selection through save and reopen`, async ({ page }) => {
+    await completeDraft(page, { width: 1366, height: 768 }, language)
+    await page.evaluate(() => {
+      window.__paperTypeOptions = [
+        { value: 727000042, en: 'Published customer contract', fr: 'Contrat client publié' },
+        { value: 17, en: 'English-only contract' },
+      ]
+    })
+    for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+    const paper = page.locator('#request-re_papertype')
+    await expect(paper).toBeEnabled()
+    await expect(paper.locator('option[value="727000042"]')).toHaveText(language === 'fr'
+      ? 'Contrat client publié' : 'Published customer contract')
+    await expect(paper.locator('option[value="17"]')).toHaveText('English-only contract')
+    await expect(paper.locator('option[value="126110000"]')).toHaveCount(0)
+    await expect(page.locator('#request-re_nationalaccount option')).toHaveText(language === 'fr'
+      ? ['Choisir une option', 'Oui', 'Non', 'Inconnu'] : ['Select an option', 'Yes', 'No', 'Unknown'])
+    await expect(page.locator('#request-re_competingbids option[value="126110002"]'))
+      .toHaveText(language === 'fr' ? 'Soupçonnées' : 'Suspected')
+    await paper.selectOption('727000042')
+    await page.locator('#request-re_nationalaccount').selectOption('126110002')
+    await page.locator('.draft-save-action').click()
+    await expect.poll(() => page.evaluate(() => window.__draftSaved?.fields.find((field) => field.key === 're_papertype')?.value))
+      .toBe('727000042')
+    expect(await page.evaluate(() => window.__draftSaved.fields.find((field) => field.key === 're_nationalaccount')?.value))
+      .toBe('126110002')
+    await page.locator('.draft-secondary-actions button').nth(1).click()
+    await expect(page.locator('#request-re_papertype')).toHaveValue('727000042')
+    await expect(page.locator('#request-re_nationalaccount')).toHaveValue('126110002')
+  })
+}
+
+test('Choice metadata failures are retryable, and removed saved choices remain visible with a warning', async ({ page }) => {
+  await completeDraft(page)
+  await page.evaluate(() => { window.__choiceError = 'Metadata access denied' })
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  const paper = page.locator('#request-re_papertype')
+  await expect(paper).toBeDisabled()
+  await expect(page.locator('#request-re_workcenterrequest')).toBeDisabled()
+  await expect(page.getByRole('alert').filter({ hasText: 'Metadata access denied' })).toHaveCount(1)
+  await page.evaluate(() => { window.__choiceError = '' })
+  await page.getByRole('alert').filter({ hasText: 'Metadata access denied' }).getByRole('button', { name: 'Retry' }).click()
+  await expect(paper).toBeEnabled()
+  await expect(page.locator('#request-re_workcenterrequest')).toBeEnabled()
+  await expect(paper.locator('option')).toHaveText(['Select an option', 'Non KONE Paper', 'Kone Paper', 'NA'])
+  await paper.selectOption('126110001')
+  await page.locator('.draft-save-action').click()
+  await expect.poll(() => page.evaluate(() => window.__draftSaved?.version)).toBe('1')
+  await page.evaluate(() => { window.__paperTypeOptions = [{ value: 17, en: 'New published contract' }] })
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await next(page)
+  await page.locator('.form-footer > button').click()
+  await expect(paper).toHaveValue('126110001')
+  await expect(page.getByRole('alert').filter({ hasText: 'no longer in the published choices' })).toBeVisible()
+  await paper.selectOption('17')
+  await expect(page.getByRole('alert').filter({ hasText: 'no longer in the published choices' })).toHaveCount(0)
+})
+
+test('Choice adapter reads published stringmaps with English and French labels', async ({ page }) => {
+  await page.route('**/src/data/stringMapService.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export async function getStringMaps(filter) {
+      window.__stringMapRequest = filter;
+      return { success: true, data: { value: [
+        { attributename: 're_papertype', attributevalue: 126110001, value: 'Kone Paper', langid: 1033, displayorder: 2 },
+        { attributename: 're_papertype', attributevalue: 126110000, value: 'Papier non KONE', langid: 1036, displayorder: 1 },
+        { attributename: 're_papertype', attributevalue: 126110000, value: 'Non KONE Paper', langid: 1033, displayorder: 1 },
+      ] } };
+    }
+    export async function getGlobalOptionSet() { throw new Error('unexpected'); }`,
+  }))
+  await page.route('**/src/generated/services/Re_DraftEstimateService.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export class Re_DraftEstimateService { static async re_DraftEstimate() { window.__draftApiCalled = true; throw new Error('unexpected'); } }`,
+  }))
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const { getDraftChoices } = await import('/src/data/draftChoiceRepository.ts')
+    const choices = await getDraftChoices(['re_papertype'])
+    return { choices, request: window.__stringMapRequest, draftApiCalled: window.__draftApiCalled ?? false }
+  })
+  expect(result.request).toBe("objecttypecode eq 're_repairestimate' and (attributename eq 're_papertype')")
+  expect(result.draftApiCalled).toBe(false)
+  expect(result.choices).toEqual({ re_papertype: [
+    { value: 126110000, en: 'Non KONE Paper', fr: 'Papier non KONE' },
+    { value: 126110001, en: 'Kone Paper' },
+  ] })
+})
+
+test('Choice adapter falls back to Custom API read mode and validates its response', async ({ page }) => {
+  await page.route('**/src/data/stringMapService.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export async function getStringMaps() { return { success: false, error: { message: 'stringmaps unavailable', status: 404 } }; }
+    export async function getGlobalOptionSet() { return { success: false, error: { message: 'metadata unavailable', status: 403 } }; }`,
+  }))
+  await page.route('**/src/generated/services/Re_DraftEstimateService.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export class Re_DraftEstimateService {
+      static async re_DraftEstimate(input) {
+        window.__choiceRequest = JSON.parse(input);
+        return window.__choiceResponse;
+      }
+    }`,
+  }))
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const { getDraftChoices } = await import('/src/data/draftChoiceRepository.ts')
+    window.__choiceResponse = { success: true, data: { ResultJson: JSON.stringify({
+      mode: 'choices', fields: [{ key: 're_papertype', options: [{ value: 727000042, en: 'Live paper', fr: 'Papier' }] }],
+    }) } }
+    const choices = await getDraftChoices(['re_papertype'])
+    const errors = []
+    for (const response of [
+      { success: false, error: { message: 'Denied', status: 403 } },
+      { success: true, data: {} },
+      { success: true, data: { ResultJson: '{}' } },
+    ]) {
+      window.__choiceResponse = response
+      try { await getDraftChoices(['re_papertype']) } catch (reason) { errors.push(reason.message) }
+    }
+    window.__choiceResponse = { success: true, data: { ResultJson: JSON.stringify({ mode: 'choices', fields: [] }) } }
+    try { await getDraftChoices(['re_papertype']) } catch (reason) { errors.push(reason.message) }
+    return { choices, request: window.__choiceRequest, errors }
+  })
+  expect(result.request).toEqual({ mode: 'choices' })
+  expect(result.choices).toEqual({ re_papertype: [{ value: 727000042, en: 'Live paper', fr: 'Papier' }] })
+  expect(result.errors).toEqual(Array(4).fill('Dataverse choices are temporarily unavailable.'))
+})
+
+test('Choice adapter uses global choice metadata when stringmaps are unavailable', async ({ page }) => {
+  await page.route('**/src/data/stringMapService.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export async function getStringMaps() { return { success: false, error: { message: 'stringmaps unavailable', status: 404 } }; }
+    export async function getGlobalOptionSet(name) {
+      (window.__optionSets ??= []).push(name);
+      return { success: true, data: { Options: [
+        { Value: 126110000, Label: { LocalizedLabels: [{ Label: 'Non KONE Paper', LanguageCode: 1033 }, { Label: 'Papier non KONE', LanguageCode: 1036 }] } },
+        { Value: 126110001, Label: { LocalizedLabels: [{ Label: 'Kone Paper', LanguageCode: 1033 }] } },
+      ] } };
+    }`,
+  }))
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const { getDraftChoices } = await import('/src/data/draftChoiceRepository.ts')
+    return { choices: await getDraftChoices(['re_papertype']), names: window.__optionSets }
+  })
+  expect(result.names).toEqual(['re_papertype'])
+  expect(result.choices).toEqual({ re_papertype: [
+    { value: 126110000, en: 'Non KONE Paper', fr: 'Papier non KONE' },
+    { value: 126110001, en: 'Kone Paper' },
+  ] })
+})
 
 test('Review submission confirms, sends current edits and locks the submitted estimate', async ({ page }) => {
   await completeDraft(page)
@@ -1064,7 +1494,8 @@ for (const { language, theme } of modes) {
   test(`mixed CSTM, T&M and PSR custom lines save and reopen on mobile in ${language} ${theme}`, async ({ page }) => {
     await page.addInitScript(() => {
       window.__extraPackages = [
-        { re_repairpackageid: 'custom', re_packagenumber: 'CSTM: 0', re_packagenameen: 'Custom', re_iscustompackage: true, re_effectivefrom: '2020-01-01' },
+        { re_repairpackageid: 'custom', re_packagenumber: 'CSTM: 0', re_packagenameen: 'Custom', re_iscustompackage: true,
+          re_mechanichours: 0, re_materialmisctaxcost: 0, re_effectivefrom: '2020-01-01' },
         { re_repairpackageid: 'tm', re_packagenumber: 'T&M: 001', re_packagenameen: 'Time & Material', re_istimematerial: true, re_effectivefrom: '2020-01-01' },
         { re_repairpackageid: 'psr2', re_packagenumber: 'P2', re_packagenameen: 'Repair 2', re_effectivefrom: '2020-01-01' },
         { re_repairpackageid: 'psr3', re_packagenumber: 'P3', re_packagenameen: 'Repair 3', re_effectivefrom: '2020-01-01' },
@@ -1072,13 +1503,12 @@ for (const { language, theme } of modes) {
     })
     await completeDraft(page, { width: 320, height: 700 }, language, theme)
     for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
-    for (const code of ['CSTM: 0', 'T&M: 001', 'P2', 'P3']) {
+    for (const code of ['T&M: 001', 'P2', 'P3', 'CSTM: 0']) {
       await page.locator('#package-search').fill(code)
       await page.locator('#package-options button').first().click()
     }
-    await expect(page.locator('.selected-card').last().locator('.equipment-card')).toHaveCount(5)
-    await next(page)
     const custom = page.locator('.custom-cost-lines')
+    await expect(custom).toBeVisible()
     await custom.getByRole('button', { name: language === 'fr' ? 'Ajouter main-d’œuvre' : 'Add labor', exact: true }).click()
     const labor = custom.locator('fieldset').first()
     await labor.locator('select').nth(0).selectOption('126110001')
@@ -1093,6 +1523,9 @@ for (const { language, theme } of modes) {
     await material.locator('input').nth(3).fill('25.50')
     await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 320)
     await checkLayout(page, { width: 320, height: 700 }, 'custom cost entry')
+    await page.locator('.footer-actions .button').click()
+    await expect(page.locator('#package-search')).toBeVisible()
+    await next(page)
     await next(page)
     await page.locator('#request-re_konesparessalespricevk13').fill('150')
     await next(page)
@@ -1112,6 +1545,7 @@ for (const { language, theme } of modes) {
     await page.locator('#branch-select').press('ArrowDown'); await page.locator('#branch-select').press('Enter')
     await page.locator('#equipment-type').selectOption('test-type')
     await page.locator('#opportunity-building').fill('New building')
+    await page.locator('#customer-email').fill('new@example.invalid')
     await next(page)
     await expect(page.locator('.selected-card .equipment-card')).toHaveCount(0)
   })
@@ -1325,6 +1759,7 @@ for (const width of [320, 1366]) {
       await expect(page.locator('#customer-name')).toHaveValue('')
       await expect(page.locator('#customer-email')).toHaveValue('')
       await page.locator('#customer-name').fill('New customer')
+      await page.locator('#customer-email').fill('new@example.invalid')
       await next(page)
       await expect(page.locator('.selected-card')).toHaveCount(0)
       await pickEquipmentAndPackage(page)

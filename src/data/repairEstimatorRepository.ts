@@ -7,14 +7,30 @@ import {
   Re_jobtypesService,
   Re_stateprovincesService,
   TransactioncurrenciesService,
+  Re_laborratesService,
 } from '../generated'
 import { unwrap, withTimeout } from './dataverseOperation'
+import { createCustomerNameLoader } from './customerNames'
 import { buildBranchQuery, buildEstimateQuery, type EstimateQuery } from './estimateQuery'
 import type { Re_repairestimates } from '../generated/models/Re_repairestimatesModel'
 import type { Re_branchs } from '../generated/models/Re_branchsModel'
 import type { Re_equipments } from '../generated/models/Re_equipmentsModel'
 import type { Re_repairpackages } from '../generated/models/Re_repairpackagesModel'
 import type { IGetAllOptions } from '../generated/models/CommonModels'
+
+export const getBranchCustomerNames = createCustomerNameLoader(Re_equipmentsService)
+
+export async function getPackageCostRates(branchId: string) {
+  const today = new Date().toISOString().slice(0, 10)
+  const result = await withTimeout(Re_laborratesService.getAll({
+    select: ['re_laborrole', 're_timecategory', 're_hourlycost'],
+    filter: `statecode eq 0 and _re_branch_value eq ${branchId} and re_effectivefrom le ${today} and (re_effectiveto eq null or re_effectiveto ge ${today})`,
+    top: 7, maxPageSize: 7,
+  }))
+  const rows = unwrap(result)
+  if (result.skipToken || rows.length > 6) throw new Error('Branch labor cost rates are ambiguous.')
+  return rows.map((row) => ({ role: row.re_laborrole, time: row.re_timecategory, rate: row.re_hourlycost }))
+}
 
 export type Branch = Pick<
   Re_branchs,
@@ -49,6 +65,7 @@ export type RepairPackage = Pick<
   | 're_proposalscopeen'
   | 're_proposalscopefr'
   | 're_mechanichours'
+  | 're_materialmisctaxcost'
   | 're_effectivefrom'
   | 're_effectiveto'
   | 're_iscustompackage'
@@ -176,6 +193,7 @@ function buildPackageQuery(branchCountryId: string, skipToken?: string): IGetAll
       're_proposalscopeen',
       're_proposalscopefr',
       're_mechanichours',
+      're_materialmisctaxcost',
       're_effectivefrom',
       're_effectiveto',
       're_iscustompackage',

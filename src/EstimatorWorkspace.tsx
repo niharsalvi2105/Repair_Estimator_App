@@ -6,11 +6,16 @@ import type { AppCopy, SelectedEquipment } from './App'
 import { RequestFields, type RequestInputs } from './RequestFields'
 import { PricingSummary } from './PricingSummary'
 import { BranchSelect } from './BranchSelect'
+import { CustomerNameSelect } from './CustomerNameSelect'
 import { CustomCostLines } from './CustomCostLines'
 import { PackageSelect } from './PackageSelect'
 import { EquipmentSelect } from './EquipmentSelect'
 import { localizePackage, localizeScope } from './data/packageSearch'
 import { MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
+import { getPackageCostRates } from './data/repairEstimatorRepository'
+import { customCostsError } from './data/requestValidation'
+import { PackageCostDetails } from './PackageCostDetails'
+import { calculatePackageCost, type CostRate } from './data/packageCosts'
 
 type Language = 'en' | 'fr'
 type Props = {
@@ -109,6 +114,45 @@ export default function EstimatorWorkspace({
   onDashboard, laborLines, materialLines, setLaborLines, setMaterialLines,
 }: Props) {
   const [packagePage, setPackagePage] = useState(0)
+  const [activeCustom, setActiveCustom] = useState<string>()
+  const [customError, setCustomError] = useState('')
+  const [rateResult, setRateResult] = useState<{ branchId: string; rates?: CostRate[]; error?: string }>()
+  const [rateAttempt, setRateAttempt] = useState(0)
+  const needsRates = step >= 2 && selectedPackages.length > 0
+  useEffect(() => {
+    if (!branchId || !needsRates) return
+    let active = true
+    getPackageCostRates(branchId).then(
+      (rates) => { if (active) setRateResult({ branchId, rates }) },
+      (reason: unknown) => { if (active) setRateResult({ branchId, error: reason instanceof Error ? reason.message : String(reason) }) },
+    )
+    return () => { active = false }
+  }, [branchId, needsRates, rateAttempt])
+  const rates = rateResult?.branchId === branchId ? rateResult.rates ?? [] : []
+  const customPackages = selectedPackages.filter((p) => p.re_iscustompackage)
+  const customValidation = customCostsError(customPackages.map((p) => p.re_repairpackageid), laborLines, materialLines, language)
+  const currency = draftReferences?.currencies.find((c) => c.id === selectedBranch?._re_currency_value)?.code
+  const costInputs = {
+    quantity: selectedEquipment.length, rates, time: Number(requestInputs.re_timecategory || NaN),
+    tax: requestInputs.re_usetax?.trim() ? Number(requestInputs.re_usetax) : NaN,
+    freight: requestInputs.re_freight?.trim() ? Number(requestInputs.re_freight) : NaN,
+    labor: laborLines, materials: materialLines, language, currency,
+  }
+  function choosePackage(p: RepairPackage) {
+    const adding = !selectedPackageIds.has(p.re_repairpackageid)
+    togglePackage(p)
+    if (adding && p.re_iscustompackage) { setActiveCustom(p.re_repairpackageid); setCustomError(''); setStep(3) }
+  }
+  function finishCustomPackage() {
+    if (customValidation) { setCustomError(customValidation); return }
+    const controls = requestSection.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')
+    if (controls && !Array.from(controls).every((input) => input.reportValidity())) return
+    try {
+      for (const p of customPackages) calculatePackageCost(p, costInputs.quantity, rates, costInputs.time,
+        costInputs.tax, costInputs.freight, laborLines, materialLines)
+      setCustomError(''); setActiveCustom(undefined); setStep(2)
+    } catch (reason) { setCustomError(reason instanceof Error ? reason.message : String(reason)) }
+  }
   const pageSize = 20
   const currentPackagePage = Math.min(packagePage, Math.max(0, Math.ceil(selectedPackages.length / pageSize) - 1))
   const hasCustom = selectedPackages.some((p) => p.re_iscustompackage)
@@ -287,14 +331,15 @@ export default function EstimatorWorkspace({
               <fieldset className="opportunity-group">
               <legend>{language === 'fr' ? 'Coordonnées du client' : 'Customer details'}</legend>
               <div className="input-grid">
-                <label className="field-label" htmlFor="customer-name">
-                  <span>{t.customerName}<span className="required" aria-hidden="true">*</span></span>
-                  <input id="customer-name" className="text-input" aria-required="true" maxLength={300}
-                    value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
-                </label>
+                <div className="field-label">
+                  <label htmlFor="customer-name">{t.customerName}<span className="required" aria-hidden="true">*</span></label>
+                  <CustomerNameSelect key={`${draftId}:${branchId}`} branchId={branchId} value={customerName}
+                    onChange={setCustomerName} language={language} />
+                </div>
                 <label className="field-label" htmlFor="customer-email">
-                  {t.customerEmail}
+                  {t.customerEmail}<span className="required" aria-hidden="true">*</span>
                   <input id="customer-email" type="email" className="text-input" maxLength={100}
+                    required aria-required="true"
                     value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
                 </label>
                 <label className="field-label" htmlFor="customer-phone">
@@ -375,7 +420,7 @@ export default function EstimatorWorkspace({
               <div className="aside-divider" />
               <div className="aside-stat">
                 <span>{t.selectedEquipment}</span>
-                <strong>{selectedEquipment.length}<small> / 14</small></strong>
+                <strong>{selectedEquipment.length}</strong>
               </div>
             </div>
             <div className="aside-note">
@@ -398,9 +443,12 @@ export default function EstimatorWorkspace({
                 </div>
               </div>
               <label className="field-label" htmlFor="package-search">{t.packagesTitle}</label>
-              <PackageSelect packages={packageResults} selectedIds={selectedPackageIds} onToggle={togglePackage}
+              <PackageSelect packages={packageResults} selectedIds={selectedPackageIds} onToggle={choosePackage}
                 language={language} t={t} loading={packageLoading} disabled={!selectedBranch?._re_country_value} />
               <p className="field-help">{t.packageSearchHelp}</p>
+              {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
+                {rateResult.error}<button className="button secondary" onClick={() => setRateAttempt((n) => n + 1)}>{t.retry}</button>
+              </div>}
               {!selectedBranch?._re_country_value && <p className="error-box" role="alert">{t.missingCountry}</p>}
               {packageError && (
                 <div className="error-box compact" role="alert">
@@ -421,9 +469,9 @@ export default function EstimatorWorkspace({
                 </div>
                 <div className="selected-list">
                   {selectedPackages.slice(currentPackagePage * pageSize, (currentPackagePage + 1) * pageSize).map((repairPackage) => (
-                    <article className="equipment-card" key={repairPackage.re_repairpackageid}>
+                    <article className="equipment-card selected-package-card" key={repairPackage.re_repairpackageid}>
                       <div className="equipment-index">PK</div>
-                      <div className="equipment-info">
+                      <div className="equipment-info selected-package-description">
                         <div className="equipment-title">
                           <strong>{repairPackage.re_packagenumber}</strong>
                           <span>{repairPackage.re_iscustompackage ? 'CSTM' : repairPackage.re_istimematerial ? 'T&M' : 'PSR'}</span>
@@ -433,9 +481,15 @@ export default function EstimatorWorkspace({
                           <small className="package-scope-label">{t.scopeOfWork}</small>
                           <p>{localizeScope(repairPackage, language) || t.noScope}</p>
                         </div>
+                        {repairPackage.re_iscustompackage && <button className="button secondary small" onClick={() => {
+                          setActiveCustom(repairPackage.re_repairpackageid); setCustomError(''); setStep(3)
+                        }}>{language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs'}</button>}
+                      </div>
+                      <div className="selected-package-pricing">
+                        <PackageCostDetails repairPackage={repairPackage} {...costInputs} />
                       </div>
                       <button
-                        className="icon-button remove-button"
+                        className="icon-button remove-button selected-package-remove"
                         aria-label={`${t.remove} ${repairPackage.re_packagenumber}`}
                         onClick={() => setSelectedPackages((current) => current.filter((item) => item.re_repairpackageid !== repairPackage.re_repairpackageid))}
                       >
@@ -486,10 +540,20 @@ export default function EstimatorWorkspace({
               <RequestFields stage={step === 3 ? 'cost' : 'pricing'} language={language}
                 value={requestInputs} onChange={updateRequestInput} custom={hasCustom || Number(requestInputs.re_konesparessalespricevk13) > 0} />
               <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
+              {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
+                {rateResult.error}<button className="button secondary" onClick={() => setRateAttempt((n) => n + 1)}>{t.retry}</button>
+              </div>}
             </section>
             {step === 3 && (hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
               <CustomCostLines language={language} labor={laborLines} materials={materialLines}
-                setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd} readOnly={draftBusy} />}
+                setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd} readOnly={draftBusy}
+                packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber }))}
+                activePackageId={activeCustom} />}
+            {step === 3 && customValidation && <p role="alert" className="error-box">{customValidation}</p>}
+            {step === 3 && customPackages.map((p) => <section className="form-card" key={p.re_repairpackageid}>
+              <h3>{p.re_packagenumber}</h3><PackageCostDetails repairPackage={p} {...costInputs} />
+            </section>)}
+            {step === 3 && customError && <p role="alert" className="error-box">{customError}</p>}
             {step === 4 && (laborLines.length > 0 || materialLines.length > 0) &&
               <p>{language === 'fr' ? 'Lignes personnalisées' : 'Custom lines'}: {laborLines.length} / {materialLines.length}</p>}
             {step === 4 && <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
@@ -586,13 +650,17 @@ export default function EstimatorWorkspace({
             <button
               className="button primary"
               onClick={() => {
+                if (step === 3 && activeCustom) { finishCustomPackage(); return }
+                if (step === 3 && customValidation) { setCustomError(customValidation); return }
                 const inputs = requestSection.current?.querySelectorAll<HTMLInputElement>('input')
                 if (inputs && !Array.from(inputs).every((input) => input.reportValidity())) return
                 setStep((current) => current + 1)
               }}
-              disabled={step === 1 ? !branchId || !buildingName.trim() || !equipmentTypeId : step === 2 ? selectedEquipment.length === 0 || selectedPackages.length === 0 : false}
+              disabled={step === 1 ? !branchId || !buildingName.trim() || !equipmentTypeId || !customerEmail.trim() : step === 2 ? selectedEquipment.length === 0 || selectedPackages.length === 0 : false}
             >
-              {step === 1 ? t.nextEquipment : t.continue}
+              {step === 3 && activeCustom
+                ? language === 'fr' ? 'Calculer et retourner aux forfaits' : 'Calculate and return to packages'
+                : step === 1 ? t.nextEquipment : t.continue}
               <span aria-hidden="true">→</span>
             </button>
           ) : (

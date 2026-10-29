@@ -18,7 +18,7 @@ import { DashboardMetrics } from './DashboardMetrics'
 import { Settings } from './Settings'
 import { loadSession, type AppSession } from './data/sessionRepository'
 import type { RequestInputs } from './RequestFields'
-import { pricingUnavailableMessage, statedRateError, submissionErrorMessage } from './data/requestValidation'
+import { customCostsError, pricingUnavailableMessage, statedRateError, submissionErrorMessage } from './data/requestValidation'
 import type { Market } from './data/estimateQuery'
 import { useUserPreferences } from './useUserPreferences'
 import { UserAvatar } from './UserAvatar'
@@ -126,7 +126,7 @@ const copy = {
     equipmentHint:
       'Search by equipment number or name. Results are limited to the selected branch.',
     equipmentSearch: 'Browse or search equipment by number or name',
-    searchHelp: 'Open the list to browse equipment for this branch, or type to filter. Select up to 14 units.',
+    searchHelp: 'Open the list to browse equipment for this branch, or type to filter. Select as many units as needed.',
     searching: 'Searching Dataverse...',
     refineSearch: 'Showing the first 20 matches. Type to narrow the list.',
     noEquipment: 'No matching equipment found.',
@@ -273,7 +273,7 @@ const copy = {
     equipmentHint:
       'Recherchez par numéro ou nom d’équipement. Les résultats sont limités à la succursale choisie.',
     equipmentSearch: 'Parcourir ou rechercher par numéro ou nom',
-    searchHelp: 'Ouvrez la liste pour parcourir les équipements de cette succursale, ou saisissez pour filtrer. Sélectionnez jusqu’à 14 unités.',
+    searchHelp: 'Ouvrez la liste pour parcourir les équipements de cette succursale, ou saisissez pour filtrer. Sélectionnez autant d’unités que nécessaire.',
     searching: 'Recherche dans Dataverse…',
     refineSearch: 'Affichage des 20 premiers résultats. Saisissez pour affiner.',
     noEquipment: 'Aucun équipement correspondant.',
@@ -584,7 +584,6 @@ function App() {
       setSelectedEquipment((current) => current.filter((item) => item.number !== equipment.re_equipment))
       return
     }
-    if (selectedEquipment.length >= 14) return
     setSelectedEquipment((current) => [
       ...current,
       {
@@ -602,7 +601,7 @@ function App() {
 
   function addUnlistedEquipment() {
     const number = equipmentQuery.trim()
-    if (!number || selectedEquipment.length >= 14) return
+    if (!number) return
     if (selectedEquipment.some((item) => item.number === number)) return
     setSelectedEquipment((current) => [
       ...current,
@@ -622,6 +621,7 @@ function App() {
 
   function resetBranch(nextBranchId: string) {
     setBranchId(nextBranchId)
+    setCustomerName('')
     setEquipmentQuery('')
     setEquipmentResults([])
     setSelectedEquipment([])
@@ -695,7 +695,7 @@ function App() {
     save: 'Enregistrer le brouillon', saving: 'Enregistrement…', saved: 'Brouillon enregistré',
     open: 'Ouvrir le brouillon', working: 'Opération en cours…', new: 'Nouveau brouillon',
     warning: 'Des modifications ne sont pas enregistrées. Les abandonner ?',
-    required: 'Renseignez le nom du devis, le client, le bâtiment, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
+    required: 'Renseignez le nom du devis, le client, le courriel du client, le bâtiment, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
     note: 'Enregistrez un brouillon ou soumettez le devis depuis la vérification finale. La soumission valide les prix et verrouille les modifications, sans envoyer de courriel.',
     error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
     reload: 'Recharger le brouillon', locked: 'La succursale et le marché sont fixes pour un brouillon enregistré.',
@@ -704,16 +704,18 @@ function App() {
     save: 'Save draft', saving: 'Saving…', saved: 'Draft saved',
     open: 'Open draft', working: 'Operation in progress…', new: 'New draft',
     warning: 'There are unsaved changes. Discard them?',
-    required: 'Complete estimate title, customer, building, province, equipment, packages, proposal language, time category, use tax and freight.',
+    required: 'Complete estimate title, customer, customer email, building, province, equipment, packages, proposal language, time category, use tax and freight.',
     note: 'Save a draft or submit from Review. Submission validates pricing and locks editing; no email is sent.',
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
   }
-  const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && buildingName.trim() && stateId
+  const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && buildingName.trim() && stateId
     && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
     && requestInputs.re_proposallanguage && requestInputs.re_timecategory
     && requestInputs.re_usetax?.trim() && requestInputs.re_freight?.trim()
-    && selectedBranch?._re_currency_value && draftReferences)
+    && selectedBranch?._re_currency_value && draftReferences
+    && !customCostsError(selectedPackages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid),
+      laborLines, materialLines, language))
 
   function applyDraft(record: DraftRecord) {
     const inputs = draftInputs(record)
@@ -725,11 +727,14 @@ function App() {
     const packages = record.packages.map((item) => ({
       re_repairpackageid: item.id, re_packagenumber: item.number, re_packagenameen: item.nameEn,
       re_packagenamefr: item.nameFr ?? undefined, re_proposalscopeen: item.scopeEn,
-      re_proposalscopefr: item.scopeFr ?? undefined, re_mechanichours: item.hours,
+      re_proposalscopefr: item.scopeFr ?? undefined, re_mechanichours: item.hours, re_materialmisctaxcost: item.material,
       re_iscustompackage: item.isCustom ?? false, re_istimematerial: item.isTimeMaterial ?? false,
     }))
-    const labor = record.laborLines ?? []
-    const materials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '' }))
+    const customIds = packages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid)
+    const labor = (record.laborLines ?? []).map((line) => ({ ...line,
+      packageId: line.packageId || (customIds.length === 1 ? customIds[0] : undefined) }))
+    const materials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '',
+      packageId: line.packageId || (customIds.length === 1 ? customIds[0] : undefined) }))
     setLaborLines(labor); setMaterialLines(materials)
     setDraftId(record.id); setDraftVersion(record.version); setDraftNumber(record.number ?? '')
     setSavedSalesperson(record.salesperson ?? '')
@@ -764,6 +769,9 @@ function App() {
   async function saveDraft(submit = false) {
     if (draftInFlight.current || submitted) return
     setDraftError(''); setDraftNotice('')
+    const customError = customCostsError(selectedPackages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid),
+      laborLines, materialLines, language)
+    if (customError) { setDraftError(customError); setStep(3); return }
     if (!draftComplete) { setDraftError(dt.required); return }
     const rateError = statedRateError(requestInputs.re_statedlaborrate, language)
     if (rateError) { setDraftError(rateError); setStep(1); return }

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using RepairEstimator.Drafts;
 
@@ -55,7 +56,7 @@ static class DraftServiceTests
 
     static Draft Input() => new Draft {
         mode = "save", id = Guid.NewGuid().ToString(), title = "Draft", building = "Building",
-        customer = "Customer", branchId = Branch.ToString(), stateId = Province.ToString(),
+        customer = "Customer", email = "customer@example.invalid", branchId = Branch.ToString(), stateId = Province.ToString(),
         equipmentTypeId = Type.ToString(), market = 126110000,
         fields = new List<Field> {
             new Field {key="re_proposallanguage",value="126110000"},
@@ -72,8 +73,16 @@ static class DraftServiceTests
 
     public static void RunAll()
     {
-        var service = Setup(); var input = Input(); Run(service, input);
+        TestChoices();
+        var service = Setup(); var input = Input(); input.email = null;
+        Reject(() => Run(service, input), "Customer email is required");
+        Assert(!service.Rows.ContainsKey(Guid.Parse(input.id)), "Missing customer email must fail before creating the estimate");
+        service = Setup(); input = Input(); input.email = "   ";
+        Reject(() => Run(service, input), "Customer email is required");
+        Assert(!service.Rows.ContainsKey(Guid.Parse(input.id)), "Whitespace customer email must fail before creating the estimate");
+        service = Setup(); input = Input(); Run(service, input);
         var result = Load(service, input);
+        Assert(result.email == "customer@example.invalid", "Customer email must be persisted");
         Assert(result.equipment.Single().name == "Master equipment name", "Equipment must use server snapshot");
         Assert(result.packages.Single().hours == 2.5m && result.packages.Single().material == 125m,
             "Package values must come from master, not client");
@@ -129,9 +138,64 @@ static class DraftServiceTests
         service.Rows[Guid.Parse(input.id)]["re_estimatestatus"] = new OptionSetValue(126110002);
         Reject(() => Run(service, input), "Only Draft");
         TestFlexiblePackages();
+        TestFlexibleEquipment();
         TestCustomLines();
+        TestRequiredCustomPackages();
         TestAllLaborCombinations();
         Console.WriteLine("Draft service cases passed: snapshots, totals, roundtrip, updates, stale version, dependent lines, duplicate create, French, currency, number, dates, status, 125 packages, custom lines, all six labor combinations and rate-query caching.");
+    }
+
+    static void TestChoices()
+    {
+        var service = Setup();
+        var input = Input();
+        input.fields.Add(new Field { key = "re_papertype", value = "727000042" });
+        input.fields.Add(new Field { key = "re_nationalaccount", value = "126110002" });
+        Run(service, input);
+        var saved = Load(service, input).fields;
+        Assert(saved.Single(f => f.key == "re_papertype").value == "727000042" &&
+            saved.Single(f => f.key == "re_nationalaccount").value == "126110002",
+            "Published non-contiguous choices must roundtrip");
+        var readChoices = typeof(DraftPlugin).GetMethod("ReadChoices", BindingFlags.Static | BindingFlags.NonPublic);
+        service.ChoiceReads.Clear();
+        var choices = (DraftPlugin.Choices)readChoices.Invoke(null, new object[] { service });
+        Assert(choices.fields.Count == 11 && choices.fields.All(f => f.options.Count > 0), "All draft choice fields must load");
+        Assert(choices.fields.Single(f => f.key == "re_papertype").options.Single(o => o.value == 727000042).fr == "Choix re_papertype",
+            "Published labels must come from global choice metadata");
+        Assert(service.ChoiceReads.Count == 8 && service.ChoiceReads.Distinct().Count() == 8,
+            "Each global choice must be read once per request");
+        service.ChoiceValues["re_papertype"] = new[] { 126110000 };
+        input = Input();
+        input.fields.Add(new Field { key = "re_papertype", value = "126110001" });
+        Reject(() => Run(service, input), "Invalid published choice for re_papertype");
+        Assert(!service.Rows.ContainsKey(Guid.Parse(input.id)), "Invalid choice must fail before header writes");
+        input = Input();
+        input.fields[1].value = "126110009";
+        Reject(() => Run(service, input), "Invalid published choice for re_timecategory");
+        service.ChoiceValues["re_papertype"] = new int[0];
+        Reject(() => readChoices.Invoke(null, new object[] { service }), "unavailable");
+        Console.WriteLine("Live choice metadata and validation cases passed.");
+    }
+
+    static void TestFlexibleEquipment()
+    {
+        var service = Setup(); var input = Input();
+        for (int n = 1; n < 125; n++)
+            input.equipment.Add(new EquipmentInput { number = "UNLISTED-" + n, matched = false });
+        Run(service, input);
+        var loaded = Load(service, input);
+        Assert(loaded.equipment.Count == 125, "Paging must not truncate equipment above fourteen");
+        Assert(service.Rows.Values.Single(r => r.LogicalName == "re_estimatepackage")
+            .GetAttributeValue<int>("re_quantity") == 125, "Package quantity must include all equipment");
+        input.version = loaded.version;
+        Run(service, input);
+        Assert(Load(service, input).equipment.Count == 125, "Large equipment selection must resave intact");
+        input.version = Load(service, input).version;
+        input.equipment = new List<EquipmentInput>();
+        Reject(() => Run(service, input), "Select at least one equipment");
+        input.equipment = Enumerable.Range(0, 1000)
+            .Select(n => new EquipmentInput { number = "UNIT-" + n, matched = false }).ToList();
+        Reject(() => Run(service, input), "technical processing budget");
     }
 
     static void TestFlexiblePackages()
@@ -210,7 +274,9 @@ static class DraftServiceTests
         var service = Setup(); var input = Input();
         service.Rows[MasterPackage]["re_iscustompackage"] = true;
         input.laborLines = new List<LaborInput>();
-        input.materialLines = new List<MaterialInput>();
+        input.materialLines = new List<MaterialInput> {
+            new MaterialInput { description = "Material", quantity = 1, unitCost = 1 }
+        };
         for (int role = 0; role < 3; role++)
         for (int time = 0; time < 2; time++)
         {
@@ -223,6 +289,7 @@ static class DraftServiceTests
                 input.laborLines.Add(new LaborInput { id = Guid.NewGuid().ToString(),
                     role = 126110000 + role, time = 126110000 + time, hours = 2m, rate = 1m });
         }
+
         Run(service, input);
         var loaded = Load(service, input);
         Assert(loaded.laborLines.Count == 12 && loaded.laborLines.All(l =>
@@ -231,11 +298,81 @@ static class DraftServiceTests
         Assert(service.RateQueries == 6, "Rate lookups must be cached within the save");
     }
 
+    static void TestRequiredCustomPackages()
+        {
+            var service = Setup(); var input = Input();
+            service.Rows[MasterPackage]["re_iscustompackage"] = true;
+            Reject(() => Run(service, input), "at least one labor line and one material line");
+            service.Add(new Entity("re_laborrate", Guid.NewGuid()) {
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110000),
+                ["re_timecategory"] = new OptionSetValue(126110000), ["re_hourlycost"] = 100m,
+                ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
+            });
+            input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+            input.laborLines = new List<LaborInput> { new LaborInput { role = 126110000, time = 126110000, hours = 0 } };
+            input.materialLines = new List<MaterialInput> { new MaterialInput { description = "Material", quantity = 1, unitCost = 10 } };
+            Reject(() => Run(service, input), "Invalid labor");
+            input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+            input.laborLines[0].hours = 2;
+            input.materialLines[0].unitCost = 0;
+            Reject(() => Run(service, input), "Invalid material");
+            input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+            input.materialLines[0].unitCost = 10;
+            Run(service, input);
+            var loaded = Load(service, input);
+            Assert(loaded.laborLines[0].packageId == MasterPackage.ToString()
+                && loaded.materialLines[0].packageId == MasterPackage.ToString(), "Single custom package must be assigned");
+            var packageRow = service.Rows.Values.Single(r => r.LogicalName == "re_estimatepackage");
+            Assert(service.Rows.Values.Where(r => r.LogicalName == "re_estimatelaborline" || r.LogicalName == "re_estimatematerialline")
+                .All(r => r.GetAttributeValue<EntityReference>("re_estimatepackage")?.Id == packageRow.Id), "Store trusted package lookup");
+            service.Rows[Guid.Parse(loaded.laborLines[0].id)].Attributes.Remove("re_estimatepackage");
+            service.Rows[Guid.Parse(loaded.materialLines[0].id)].Attributes.Remove("re_estimatepackage");
+            loaded = Load(service, input);
+            Assert(loaded.laborLines[0].packageId == MasterPackage.ToString()
+                && loaded.materialLines[0].packageId == MasterPackage.ToString(), "Legacy single-package lines must be assigned on load");
+            var second = new Entity("re_repairpackage", Guid.NewGuid());
+            foreach (var a in service.Rows[MasterPackage].Attributes) second[a.Key] = a.Value;
+            second["re_packagenumber"] = "CSTM2"; service.Add(second);
+            input.version = loaded.version;
+            input.packages.Add(new PackageInput { id = second.Id.ToString() });
+            input.laborLines = loaded.laborLines; input.materialLines = loaded.materialLines;
+            input.laborLines[0].packageId = null;
+            Reject(() => Run(service, input), "Assign each custom line");
+            input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+            input.laborLines[0].packageId = MasterPackage.ToString();
+            Reject(() => Run(service, input), "at least one labor line and one material line");
+            input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+            input.laborLines.Add(new LaborInput { packageId = second.Id.ToString(), role = 126110000, time = 126110000, hours = 3 });
+            input.materialLines.Add(new MaterialInput { packageId = second.Id.ToString(), description = "Second", quantity = 2, unitCost = 20 });
+            Run(service, input);
+            loaded = Load(service, input);
+            Assert(loaded.laborLines.Select(l => l.packageId).Distinct().Count() == 2
+                && loaded.materialLines.Select(l => l.packageId).Distinct().Count() == 2, "Custom packages must retain separate costs");
+            input.version = loaded.version;
+            input.packages.RemoveAt(0);
+            input.laborLines = loaded.laborLines; input.materialLines = loaded.materialLines;
+            foreach (var line in input.laborLines) line.packageId = second.Id.ToString();
+            foreach (var line in input.materialLines) line.packageId = second.Id.ToString();
+            Run(service, input);
+            Assert(Load(service, input).laborLines.All(l => l.packageId == second.Id.ToString()),
+                "Reassign lines before deleting the old package with Restrict Delete");
+        }
     sealed class FakeService : IOrganizationService
     {
         public readonly Dictionary<Guid, Entity> Rows = new Dictionary<Guid, Entity>();
         public int Deletes;
         public int RateQueries;
+        public readonly Dictionary<string, int[]> ChoiceValues = new Dictionary<string, int[]> {
+            {"re_papertype", new[] { 126110000, 126110001, 126110002, 727000042 }},
+            {"re_yesnounknowchoice", new[] { 126110000, 126110001, 126110002 }},
+            {"re_competingbidstatus", new[] { 126110000, 126110001, 126110002, 126110003 }},
+            {"re_billingplan", new[] { 126110000, 126110001, 126110002, 126110003 }},
+            {"re_yesno", new[] { 126110000, 126110001 }},
+            {"re_workcenterrequestchoice", new[] { 126110000, 126110001 }},
+            {"re_proposallanguagechoice", new[] { 126110000, 126110001 }},
+            {"re_timecateogry", new[] { 126110000, 126110001 }},
+        };
+        public readonly List<string> ChoiceReads = new List<string>();
         public ConcurrencyBehavior LastConcurrency;
         long version;
         public void Add(Entity row) { row["statecode"] = new OptionSetValue(0); row.RowVersion = (++version).ToString(); Rows[row.Id] = row; }
@@ -278,8 +415,27 @@ static class DraftServiceTests
             foreach (var value in row.Attributes) Rows[row.Id][value.Key] = value.Value;
             Rows[row.Id].RowVersion = (++version).ToString();
         }
-        public void Delete(string name, Guid id) { Rows.Remove(id); Deletes++; }
+        public void Delete(string name, Guid id) {
+            if (name == "re_estimatepackage" && Rows.Values.Any(r =>
+                r.GetAttributeValue<EntityReference>("re_estimatepackage")?.Id == id))
+                throw new InvalidPluginExecutionException("Package deletion is restricted by linked custom lines.");
+            Rows.Remove(id); Deletes++;
+        }
         public OrganizationResponse Execute(OrganizationRequest request) {
+            if (request is RetrieveOptionSetRequest choice) {
+                Assert(ChoiceValues.ContainsKey(choice.Name) && !choice.RetrieveAsIfPublished,
+                    "Read only published global draft choices");
+                ChoiceReads.Add(choice.Name);
+                var metadata = new OptionSetMetadata();
+                foreach (var value in ChoiceValues[choice.Name]) {
+                    var label = new Label("Live " + choice.Name + " " + value, 1033);
+                    label.LocalizedLabels.Add(new LocalizedLabel("Choix " + choice.Name, 1036));
+                    metadata.Options.Add(new OptionMetadata(label, value));
+                }
+                var response = new RetrieveOptionSetResponse();
+                response.Results["OptionSetMetadata"] = metadata;
+                return response;
+            }
             if (request is CreateRequest create) {
                 var response = new CreateResponse();
                 response.Results["id"] = Create(create.Target);

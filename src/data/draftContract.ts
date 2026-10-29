@@ -10,8 +10,8 @@ export type DraftPackage = {
   scopeEn: string; scopeFr?: string | null; hours: number; material: number
   isCustom?: boolean; isTimeMaterial?: boolean
 }
-export type DraftLabor = { id: string; role: number; time: number; hours: number; rate?: number }
-export type DraftMaterial = { id: string; description: string; vendor: string; part: string; quantity: number; unitCost: number }
+export type DraftLabor = { id: string; packageId?: string | null; role: number; time: number; hours: number; rate?: number }
+export type DraftMaterial = { id: string; packageId?: string | null; description: string; vendor: string; part: string; quantity: number; unitCost: number }
 export const MAX_DRAFT_BYTES = 200000
 export const MAX_DRAFT_CHILD_OPERATIONS = 1000
 export function serializeDraft(input: unknown): string {
@@ -46,7 +46,7 @@ export function parseDraft(value: unknown): DraftRecord {
     || !Array.isArray(record.fields) || !Array.isArray(record.equipment) || !Array.isArray(record.packages)) {
     throw new Error('The draft service returned incomplete data. Reload before editing.')
   }
-  if (record.equipment.length < 1 || record.equipment.length > 14 || record.packages.length < 1 ||
+  if (record.equipment.length < 1 || record.packages.length < 1 ||
     record.packages.length + record.equipment.length + (record.laborLines?.length ?? 0) +
       (record.materialLines?.length ?? 0) > MAX_DRAFT_CHILD_OPERATIONS)
     throw new Error('Invalid draft selection counts.')
@@ -71,12 +71,12 @@ export function parseDraft(value: unknown): DraftRecord {
       || !Number.isFinite(item.material) || item.material < 0) throw new Error('Invalid draft package snapshot.')
   }
   if (record.laborLines != null && (!Array.isArray(record.laborLines) || record.laborLines.some((line) =>
-    !line || typeof line.id !== 'string' || ![126110000, 126110001, 126110002].includes(line.role) ||
+    !line || typeof line.id !== 'string' || !nullableString(line.packageId) || ![126110000, 126110001, 126110002].includes(line.role) ||
     ![126110000, 126110001].includes(line.time) || !Number.isFinite(line.hours) || line.hours < 0 ||
     line.hours > 100000 || !Number.isFinite(line.rate) || (line.rate ?? -1) < 0)))
     throw new Error('Invalid draft labor snapshot.')
   if (record.materialLines != null && (!Array.isArray(record.materialLines) || record.materialLines.some((line) =>
-    !line || typeof line.id !== 'string' || typeof line.description !== 'string' ||
+    !line || typeof line.id !== 'string' || !nullableString(line.packageId) || typeof line.description !== 'string' ||
     !nullableString(line.vendor) || !nullableString(line.part) ||
     !Number.isFinite(line.quantity) || line.quantity < 0 || !Number.isFinite(line.unitCost) || line.unitCost < 0)))
     throw new Error('Invalid draft material snapshot.')

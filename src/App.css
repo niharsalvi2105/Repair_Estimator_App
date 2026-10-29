@@ -2040,6 +2040,142 @@
   font-weight: 800;
 }
 
+.selected-package-card {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) minmax(250px, 0.9fr) 44px;
+  align-items: start;
+  gap: 16px;
+  padding: 18px;
+}
+
+.selected-package-description {
+  gap: 10px;
+}
+
+.selected-package-description > .button {
+  justify-self: start;
+}
+
+.selected-package-description .equipment-title > span {
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.selected-package-pricing {
+  min-width: 0;
+  width: 100%;
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+
+.package-cost-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px 16px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.package-cost-details dt {
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.package-cost-details dd {
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.package-cost-details .package-cost-total {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: #1450f5;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.package-cost-details .package-cost-pending-label {
+  grid-column: 1 / -1;
+}
+
+.package-cost-details .package-cost-pending {
+  grid-column: 1 / -1;
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+:root[data-theme='dark'] .package-cost-details .package-cost-total {
+  color: #91b6ff;
+}
+
+.package-cost-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1250px) {
+  .selected-package-card {
+    grid-template-columns: 36px minmax(0, 1fr) 44px;
+  }
+
+  .selected-package-description {
+    grid-column: 2;
+  }
+
+  .selected-package-remove {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .selected-package-pricing {
+    grid-column: 2 / -1;
+    padding: 14px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 640px) {
+  .selected-package-card {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .selected-package-card > .equipment-index {
+    display: none;
+  }
+
+  .selected-package-description {
+    grid-column: 1;
+  }
+
+  .selected-package-remove {
+    grid-column: 2;
+  }
+
+  .selected-package-pricing {
+    grid-column: 1 / -1;
+  }
+}
+
 .equipment-info {
   display: grid;
   flex: 1 1 auto;
@@ -2173,6 +2309,10 @@
 .input-grid .field-label {
   display: grid;
   gap: 8px;
+}
+
+.input-grid .choice-state {
+  grid-column: 1 / -1;
 }
 
 .summary-card {

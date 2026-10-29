@@ -8,6 +8,7 @@ using System.Runtime.Serialization.Json;
 using System.Text;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 
 namespace RepairEstimator.Drafts
@@ -51,6 +52,7 @@ namespace RepairEstimator.Drafts
     public sealed class LaborInput
     {
         [DataMember] public string id;
+        [DataMember] public string packageId;
         [DataMember] public int role;
         [DataMember] public int time;
         [DataMember] public decimal hours;
@@ -61,6 +63,7 @@ namespace RepairEstimator.Drafts
     public sealed class MaterialInput
     {
         [DataMember] public string id;
+        [DataMember] public string packageId;
         [DataMember] public string description;
         [DataMember] public string vendor;
         [DataMember] public string part;
@@ -116,11 +119,14 @@ namespace RepairEstimator.Drafts
             "re_subcontractorcost", "re_statedlaborrate", "re_additionalmaterial",
             "re_additionalmiscellaneous", "re_sellprice", "re_konesparessalespricevk13"
         };
-        static readonly Dictionary<string, int> ChoiceFields = new Dictionary<string, int> {
-            {"re_workcenterrequest", 2}, {"re_hasbeenapproved", 3}, {"re_nationalaccount", 2},
-            {"re_emergency", 2}, {"re_customerbudgeted", 2}, {"re_papertype", 3},
-            {"re_consultantinvolved", 2}, {"re_competingbids", 4},
-            {"re_proposallanguage", 2}, {"re_timecategory", 2}, {"re_billingplan", 4}
+        // Draft choice columns and the global Dataverse choice that supplies their values and labels.
+        static readonly Dictionary<string, string> ChoiceFields = new Dictionary<string, string> {
+            {"re_workcenterrequest", "re_workcenterrequestchoice"}, {"re_hasbeenapproved", "re_yesnounknowchoice"},
+            {"re_nationalaccount", "re_yesnounknowchoice"}, {"re_emergency", "re_yesno"},
+            {"re_customerbudgeted", "re_yesno"}, {"re_papertype", "re_papertype"},
+            {"re_consultantinvolved", "re_yesno"}, {"re_competingbids", "re_competingbidstatus"},
+            {"re_proposallanguage", "re_proposallanguagechoice"}, {"re_timecategory", "re_timecateogry"},
+            {"re_billingplan", "re_billingplan"}
         };
 
         public void Execute(IServiceProvider provider)
@@ -132,9 +138,16 @@ namespace RepairEstimator.Drafts
             var factory = (IOrganizationServiceFactory)provider.GetService(typeof(IOrganizationServiceFactory));
             var service = factory.CreateOrganizationService(context.UserId);
             bool dashboardOperation = false;
+            bool choiceOperation = false;
             try
             {
                 var input = Deserialize<Draft>((string)context.InputParameters["InputJson"]);
+                choiceOperation = input.mode == "choices";
+                if (choiceOperation)
+                {
+                    context.OutputParameters["ResultJson"] = Serialize(ReadChoices(service));
+                    return;
+                }
                 dashboardOperation = input.mode == "dashboard";
                 if (input.mode == "dashboard")
                 {
@@ -161,14 +174,15 @@ namespace RepairEstimator.Drafts
             {
                 trace.Trace("{0} operation failed: {1}", dashboardOperation ? "Dashboard" : "Draft", ex);
                 throw new InvalidPluginExecutionException(
-                    (dashboardOperation ? "Dashboard could not be loaded. " : "The draft was not saved. ") + ex.Message, ex);
+                    (dashboardOperation ? "Dashboard could not be loaded. " :
+                        choiceOperation ? "Choices could not be loaded. " : "The draft was not saved. ") + ex.Message, ex);
             }
         }
 
         static void Save(IOrganizationService service, Guid user, Draft input, Guid id)
         {
             if (input.fields == null || input.equipment == null || input.packages == null) Fail("Incomplete draft payload.");
-            if (input.equipment.Count < 1 || input.equipment.Count > 14) Fail("Select between 1 and 14 equipment units.");
+            if (input.equipment.Count < 1) Fail("Select at least one equipment unit.");
             if (input.packages.Count < 1) Fail("Select at least one package.");
             if (input.equipment.Any(x => x == null) || input.packages.Any(x => x == null) || input.fields.Any(x => x == null))
                 Fail("Invalid draft row.");
@@ -209,7 +223,7 @@ namespace RepairEstimator.Drafts
             header["re_estimatename"] = Required(input.title, 100, "Estimate title");
             header["re_buildingname"] = Required(input.building, 300, "Building name");
             header["re_customername"] = Required(input.customer, 300, "Customer name");
-            header["re_customeremail"] = Optional(input.email, 100);
+            header["re_customeremail"] = Required(input.email, 100, "Customer email");
             header["re_customerphone"] = Optional(input.phone, 100);
             header["re_branch"] = branch.ToEntityReference();
             header["re_country"] = country;
@@ -222,6 +236,7 @@ namespace RepairEstimator.Drafts
             header["re_estimatepath"] = new OptionSetValue(126110000);
             header["re_estimatetype"] = new OptionSetValue(126110000);
             ApplyFields(header, input.fields);
+            ValidateChoices(service, header);
             if (province.GetAttributeValue<bool>("re_frenchrequired") &&
                 header.GetAttributeValue<OptionSetValue>("re_proposallanguage")?.Value != 126110001)
                 Fail("The selected province requires French proposal language.");
@@ -281,7 +296,7 @@ namespace RepairEstimator.Drafts
             for (int i = 0; i < input.packages.Count; i++)
             {
                 var packageId = Guid.Parse(input.packages[i].id);
-                var row = new Entity(Package);
+                var row = new Entity(Package, Guid.NewGuid());
                 var previous = priorPackages.FirstOrDefault(p => p.GetAttributeValue<EntityReference>("re_repairpackage")?.Id == packageId);
                 if (previous != null)
                 {
@@ -331,19 +346,31 @@ namespace RepairEstimator.Drafts
                 Fail("Custom labor/material lines require a CSTM package. Remove the lines explicitly before removing CSTM.");
             if (!custom && header.GetAttributeValue<Money>("re_konesparessalespricevk13")?.Value > 0)
                 Fail("KONE spares sales price requires a CSTM package.");
+            var customPackages = packageRows.Where(p => p.GetAttributeValue<bool>("re_iscustompackage")).ToList();
+            foreach (var line in input.laborLines)
+                line.packageId = CustomPackageId(line.packageId, customPackages);
+            foreach (var line in input.materialLines)
+                line.packageId = CustomPackageId(line.packageId, customPackages);
+            foreach (var package in customPackages)
+            {
+                var key = Id(package, "re_repairpackage");
+                if (!input.laborLines.Any(l => l.packageId == key) || !input.materialLines.Any(l => l.packageId == key))
+                    Fail("Each CSTM package requires at least one labor line and one material line.");
+            }
             var lineRows = BuildLines(service, input, priorLabor, priorMaterial, header, branch, currency,
-                old?.GetAttributeValue<EntityReference>("ownerid") ?? new EntityReference("systemuser", user));
+                old?.GetAttributeValue<EntityReference>("ownerid") ?? new EntityReference("systemuser", user), customPackages);
             var prior = priorEquipment.Concat(priorPackages).Concat(priorLabor).Concat(priorMaterial).ToList();
             var desired = equipmentRows.Concat(packageRows).Concat(lineRows).ToList();
             var retained = new HashSet<Guid>(desired.Where(r => r.Id != Guid.Empty).Select(r => r.Id));
-            var removed = prior.Where(r => !retained.Contains(r.Id)).OrderBy(r => r.LogicalName == Equipment ? 1 : 0).ToList();
+            var removed = prior.Where(r => !retained.Contains(r.Id))
+                .OrderBy(r => r.LogicalName == Equipment ? 2 : r.LogicalName == Package ? 1 : 0).ToList();
             if (priorLabor.Concat(priorMaterial).Any(r => retained.Contains(r.Id) &&
                 r.GetAttributeValue<EntityReference>("re_estimateequipment") is EntityReference linked &&
                 removed.Any(e => e.LogicalName == Equipment && e.Id == linked.Id)))
                 Fail("Remove custom lines linked to removed equipment before saving.");
             if (desired.Count + removed.Count > MaxChildOperations)
                 Fail("Draft exceeds the technical processing budget. Split this request into smaller estimates.");
-            foreach (var row in removed)
+            foreach (var row in removed.Where(r => r.LogicalName != Package))
             {
                 var delete = new DeleteRequest { Target = row.ToEntityReference() };
                 delete["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
@@ -356,6 +383,12 @@ namespace RepairEstimator.Drafts
                     ? (OrganizationRequest)new UpdateRequest { Target = row } : new CreateRequest { Target = row };
                 write["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
                 service.Execute(write);
+            }
+            foreach (var row in removed.Where(r => r.LogicalName == Package))
+            {
+                var delete = new DeleteRequest { Target = row.ToEntityReference() };
+                delete["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
+                service.Execute(delete);
             }
             var path = new UpdateRequest { Target = new Entity(Estimate, id) {
                 ["re_estimatepath"] = new OptionSetValue(custom ? 126110001 : 126110000)
@@ -394,8 +427,17 @@ namespace RepairEstimator.Drafts
             });
         }
 
+        static string CustomPackageId(string id, List<Entity> packages)
+        {
+            if (string.IsNullOrEmpty(id) && packages.Count == 1) return Id(packages[0], "re_repairpackage");
+            if (!packages.Any(p => Id(p, "re_repairpackage") == id))
+                Fail("Assign each custom line to a selected CSTM package.");
+            return id;
+        }
+
         static List<Entity> BuildLines(IOrganizationService service, Draft input, List<Entity> priorLabor,
-            List<Entity> priorMaterial, Entity header, Entity branch, EntityReference currency, EntityReference owner)
+            List<Entity> priorMaterial, Entity header, Entity branch, EntityReference currency, EntityReference owner,
+            List<Entity> packages)
         {
             var rows = new List<Entity>();
             var seen = new HashSet<string>();
@@ -404,10 +446,11 @@ namespace RepairEstimator.Drafts
             {
                 if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
                 if (line.role < 126110000 || line.role > 126110002 || line.time < 126110000 || line.time > 126110001 ||
-                    line.hours < 0 || line.hours > 100000 || decimal.Round(line.hours, 2) != line.hours)
+                    line.hours <= 0 || line.hours > 100000 || decimal.Round(line.hours, 2) != line.hours)
                     Fail("Invalid labor role, time category or hours (maximum 100000, two decimals).");
                 var previous = priorLabor.FirstOrDefault(r => r.Id.ToString() == line.id);
                 var row = new Entity(Labor, previous?.Id ?? Guid.NewGuid());
+                row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
                 if (previous != null && previous.GetAttributeValue<OptionSetValue>("re_laborrole")?.Value == line.role &&
                     previous.GetAttributeValue<OptionSetValue>("re_timecategory")?.Value == line.time &&
                     previous.Contains("re_hourlycost") && previous.Contains("re_laborrate"))
@@ -447,11 +490,12 @@ namespace RepairEstimator.Drafts
             foreach (var line in input.materialLines)
             {
                 if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
-                if (line.quantity < 0 || line.quantity > 100000 || line.unitCost < 0 || line.unitCost > 1000000000 ||
+                if (line.quantity <= 0 || line.quantity > 100000 || line.unitCost <= 0 || line.unitCost > 1000000000 ||
                     decimal.Round(line.quantity, 2) != line.quantity || decimal.Round(line.unitCost, 2) != line.unitCost)
                     Fail("Invalid material quantity or unit cost (two decimals required).");
                 var previous = priorMaterial.FirstOrDefault(r => r.Id.ToString() == line.id);
                 var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
+                row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
                 row["re_name"] = "Custom material";
                 row["re_estimatematerialline"] = "Custom material";
                 row["re_entereddescription"] = Required(line.description, 2000, "Material description");
@@ -495,7 +539,7 @@ namespace RepairEstimator.Drafts
                 {
                     if (string.IsNullOrEmpty(value)) { header[key] = null; continue; }
                     int choice;
-                    if (!int.TryParse(value, out choice) || choice < 126110000 || choice >= 126110000 + ChoiceFields[key])
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out choice))
                         Fail("Invalid choice: " + key);
                     header[key] = new OptionSetValue(choice);
                 }
@@ -560,21 +604,33 @@ namespace RepairEstimator.Drafts
                 });
             var laborRows = Children(service, Labor, id);
             var materialRows = Children(service, Material, id);
+            var packageRows = Children(service, Package, id);
+            Func<Entity, string> linkedPackage = line => {
+                var link = line.GetAttributeValue<EntityReference>("re_estimatepackage");
+                if (link != null)
+                {
+                    var package = packageRows.FirstOrDefault(p => p.Id == link.Id);
+                    if (package == null) Fail("Custom line points to a package outside this estimate.");
+                    return Id(package, "re_repairpackage");
+                }
+                var custom = packageRows.Where(p => p.GetAttributeValue<bool>("re_iscustompackage")).ToList();
+                return custom.Count == 1 ? Id(custom[0], "re_repairpackage") : null;
+            };
             if (laborRows.Any(e => new[] { "re_laborrole", "re_timecategory", "re_hours", "re_hourlycost" }.Any(k => !e.Contains(k))))
                 Fail("Saved labor snapshot is incomplete. Ask an administrator to correct it before editing.");
             if (materialRows.Any(e => new[] { "re_entereddescription", "re_quantity", "re_unitcost" }.Any(k => !e.Contains(k))))
                 Fail("Saved material snapshot is incomplete. Ask an administrator to correct it before editing.");
             result.laborLines = laborRows.OrderBy(e => e.Id).Select(e => new LaborInput {
-                id = e.Id.ToString(), role = e.GetAttributeValue<OptionSetValue>("re_laborrole")?.Value ?? 0,
+                id = e.Id.ToString(), packageId = linkedPackage(e), role = e.GetAttributeValue<OptionSetValue>("re_laborrole")?.Value ?? 0,
                 time = e.GetAttributeValue<OptionSetValue>("re_timecategory")?.Value ?? 0,
                 hours = e.GetAttributeValue<decimal>("re_hours"), rate = e.GetAttributeValue<Money>("re_hourlycost").Value
             }).ToList();
             result.materialLines = materialRows.OrderBy(e => e.Id).Select(e => new MaterialInput {
-                id = e.Id.ToString(), description = e.GetAttributeValue<string>("re_entereddescription"),
+                id = e.Id.ToString(), packageId = linkedPackage(e), description = e.GetAttributeValue<string>("re_entereddescription"),
                 vendor = e.GetAttributeValue<string>("re_vendor"), part = e.GetAttributeValue<string>("re_partnumber"),
                 quantity = e.GetAttributeValue<decimal>("re_quantity"), unitCost = e.GetAttributeValue<Money>("re_unitcost").Value
             }).ToList();
-            foreach (var p in Children(service, Package, id).OrderBy(p => p.GetAttributeValue<int?>("re_sequence") ??
+            foreach (var p in packageRows.OrderBy(p => p.GetAttributeValue<int?>("re_sequence") ??
                 p.GetAttributeValue<OptionSetValue>("re_packagerole").Value - 126110000))
                 result.packages.Add(new PackageInput {
                     id = Id(p, "re_repairpackage"), number = p.GetAttributeValue<string>("re_packagenumber"),
@@ -587,6 +643,75 @@ namespace RepairEstimator.Drafts
             if (Encoding.UTF8.GetByteCount(Serialize(result)) > 1000000)
                 Fail("Draft response exceeds the technical size budget. Split this request into smaller estimates.");
             return result;
+        }
+
+        [DataContract]
+        public sealed class ChoiceOption
+        {
+            [DataMember] public int value;
+            [DataMember] public string en;
+            [DataMember] public string fr;
+        }
+        [DataContract]
+        public sealed class ChoiceField
+        {
+            [DataMember] public string key;
+            [DataMember] public List<ChoiceOption> options = new List<ChoiceOption>();
+        }
+        [DataContract]
+        public sealed class Choices
+        {
+            [DataMember] public string mode = "choices";
+            [DataMember] public List<ChoiceField> fields = new List<ChoiceField>();
+        }
+        static List<ChoiceOption> ChoiceOptions(IOrganizationService service, string name)
+        {
+            var response = (RetrieveOptionSetResponse)service.Execute(new RetrieveOptionSetRequest {
+                Name = name, RetrieveAsIfPublished = false
+            });
+            var metadata = response.OptionSetMetadata as OptionSetMetadata;
+            if (metadata == null || metadata.Options.Count == 0)
+                Fail("Published choice " + name + " is unavailable.");
+            var options = new List<ChoiceOption>();
+            foreach (var option in metadata.Options)
+            {
+                var english = option.Label?.LocalizedLabels?.FirstOrDefault(label => label.LanguageCode == 1033)?.Label
+                    ?? option.Label?.UserLocalizedLabel?.Label;
+                if (!option.Value.HasValue || string.IsNullOrWhiteSpace(english))
+                    Fail("Published choice " + name + " has an option without a value or label.");
+                options.Add(new ChoiceOption {
+                    value = option.Value.Value, en = english,
+                    fr = option.Label?.LocalizedLabels?.FirstOrDefault(label => label.LanguageCode == 1036)?.Label
+                });
+            }
+            return options;
+        }
+        static Choices ReadChoices(IOrganizationService service)
+        {
+            var sets = new Dictionary<string, List<ChoiceOption>>();
+            var result = new Choices();
+            foreach (var field in ChoiceFields)
+            {
+                List<ChoiceOption> options;
+                if (!sets.TryGetValue(field.Value, out options))
+                    sets[field.Value] = options = ChoiceOptions(service, field.Value);
+                result.fields.Add(new ChoiceField { key = field.Key, options = options });
+            }
+            return result;
+        }
+        static void ValidateChoices(IOrganizationService service, Entity header)
+        {
+            var sets = new Dictionary<string, List<ChoiceOption>>();
+            foreach (var field in ChoiceFields)
+            {
+                var selected = header.GetAttributeValue<OptionSetValue>(field.Key);
+                if (selected == null) continue;
+                List<ChoiceOption> options;
+                if (!sets.TryGetValue(field.Value, out options))
+                    sets[field.Value] = options = ChoiceOptions(service, field.Value);
+                if (!options.Any(option => option.value == selected.Value))
+                    Fail("Invalid published choice for " + field.Key + ". Reload the form and select a valid value.");
+            }
         }
 
         static List<Entity> Children(IOrganizationService service, string table, Guid id)

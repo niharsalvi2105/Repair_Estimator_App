@@ -72,6 +72,18 @@ test('more than three packages and custom snapshots roundtrip without trusting m
   assert.throws(() => parseDraft({ ...record, materialLines: [{ ...record.materialLines[0], quantity: NaN }] }), /material/i)
 })
 
+test('equipment selections above fourteen roundtrip without truncation within technical budgets', () => {
+  const record = fixture()
+  record.equipment = Array.from({ length: 125 }, (_, i) => ({
+    ...record.equipment[0], number: `UNIT-${i}`,
+  }))
+  assert.equal(parseDraft(JSON.parse(serializeDraft(record))).equipment.length, 125)
+  record.equipment = Array.from({ length: 1000 }, (_, i) => ({
+    ...record.equipment[0], number: `UNIT-${i}`,
+  }))
+  assert.throws(() => parseDraft(record), /selection counts/i)
+})
+
 test('request budget measures UTF-8 bytes and never truncates input', () => {
   assert.equal(serializeDraft({ text: 'a'.repeat(199989) }).length, 200000)
   assert.throws(() => serializeDraft({ text: 'a'.repeat(199990) }), /budget/i)
