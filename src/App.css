@@ -1813,6 +1813,12 @@
   background: #f3f6fa;
 }
 
+.text-input.system-field:disabled {
+  cursor: not-allowed;
+  -webkit-text-fill-color: currentColor;
+  opacity: 1;
+}
+
 .search-label {
   margin-top: 23px;
 }

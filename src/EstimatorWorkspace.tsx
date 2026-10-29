@@ -57,7 +57,6 @@ type Props = {
   buildingName: string
   setBuildingName: Dispatch<SetStateAction<string>>
   stateId: string
-  setStateId: Dispatch<SetStateAction<string>>
   updateRequestInput: (key: keyof RequestInputs, value: string) => void
   requestInputs: RequestInputs
   equipmentQuery: string
@@ -101,7 +100,7 @@ export default function EstimatorWorkspace({
   marketBranches, branchId, changeBranch, language, referenceError,
   setReferenceError, references, equipmentTypeId, setEquipmentTypeId, jobTypeId,
   setJobTypeId, savedSalesperson, session, buildingName, setBuildingName,
-  stateId, setStateId, updateRequestInput, requestInputs, equipmentQuery,
+  stateId, updateRequestInput, requestInputs, equipmentQuery,
   changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, toggleEquipment,
   selectedEquipment, addUnlistedEquipment, setSelectedEquipment,
   selectedPackages, packageLoading, packageError, packageResults, togglePackage, retryPackages,
@@ -272,17 +271,17 @@ export default function EstimatorWorkspace({
               </div>
               <div className="field-label">
                 <label htmlFor="draft-province">{dt.province}<span className="required">*</span></label>
-                <select id="draft-province" className="text-input" value={stateId} aria-required="true"
-                  disabled={!branchId || !draftReferences} onChange={(event) => {
-                    setStateId(event.target.value)
-                    if (draftReferences?.states.find((s) => s.id === event.target.value)?.frenchRequired)
-                      updateRequestInput('re_proposallanguage', '126110001')
-                  }}>
-                  <option value="">{t.chooseReference}</option>
-                  {draftReferences?.states.filter((s) => s.countryId === selectedBranch?._re_country_value).map((s) => (
-                    <option key={s.id} value={s.id}>{language === 'fr' ? s.fr || s.en : s.en}</option>
-                  ))}
-                </select>
+                <input id="draft-province" className="text-input system-field" disabled aria-required="true"
+                  aria-describedby="draft-province-help" data-state-id={stateId}
+                  value={(() => {
+                    const state = draftReferences?.states.find((s) => s.id === stateId)
+                    return state ? (language === 'fr' ? state.fr || state.en : state.en) : ''
+                  })()}
+                  placeholder={branchId && !draftReferences ? t.loadingReferences : ''} />
+                <p id="draft-province-help" className={branchId && !stateId ? 'error-box compact' : 'field-help'}
+                  role={branchId && !stateId ? 'alert' : undefined}>
+                  {!branchId || stateId ? t.provinceFromBranch : t.missingProvince}
+                </p>
               </div>
               </fieldset>
               <fieldset className="opportunity-group">
