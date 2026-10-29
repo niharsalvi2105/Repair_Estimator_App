@@ -131,6 +131,12 @@ async function mockData(page, language, theme, state = 'records') {
         re_functionallocation:'Test location', re_soldtoname:'Customer with a long descriptive name',
         re_oem:'Test OEM', re_equipmentage:20
       }] }
+      export async function findEquipmentByNumbers(branchId, numbers) {
+        return numbers.filter((n) => n === 'TEST123').map(() => ({
+          re_equipmentid:'test-equipment', re_equipment:'TEST123', re_equipmentname:'Equipment with a long descriptive name / Équipement avec un nom long',
+          re_functionallocation:'Test location', re_soldtoname:'Customer with a long descriptive name', re_oem:'Test OEM', re_equipmentage:20
+        }))
+      }
       export async function listPackages() { return [{
         re_repairpackageid:'test-package',re_packagenumber:'PKG001',
         re_packagenameen:'Repair package with a long descriptive name',
@@ -936,6 +942,41 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await page.locator('#request-re_sellprice').fill('1500')
   await next(page)
 }
+
+test('bulk equipment paste warns about missing numbers and typed search still works afterwards', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await expect(page.locator('.market-control select')).toBeEnabled()
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.locator('#estimate-title').fill('Paste test')
+  await page.locator('#branch-select').fill('020')
+  await page.locator('#branch-select').press('ArrowDown')
+  await page.locator('#branch-select').press('Enter')
+  await page.locator('#equipment-type').selectOption('test-type')
+  await page.locator('#opportunity-building').fill('Building 42')
+  await page.locator('#customer-name').fill('Paste customer')
+  await next(page)
+  await page.locator('#equipment-search').focus()
+  await page.evaluate(() => {
+    const data = new DataTransfer()
+    data.setData('text', 'TEST123\nMISSING1; TEST123')
+    document.querySelector('#equipment-search').dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  })
+  await expect(page.locator('.warning-box')).toContainText('MISSING1')
+  await expect(page.locator('#equipment-search')).toHaveValue('')
+  const selected = page.locator('.selected-card').first().locator('.equipment-card')
+  await expect(selected).toHaveCount(1)
+  await expect(selected.locator('.unbound-tag')).toHaveCount(0)
+  await selected.locator('.remove-button').click()
+
+  await page.locator('#equipment-search').fill('TEST')
+  await expect(page.locator('#equipment-options [role=option]').first()).toContainText('TEST123')
+  await expect(page.locator('.warning-box')).toHaveCount(0)
+  await page.locator('#equipment-options button').first().click()
+  await expect(selected).toHaveCount(1)
+  await expect(selected.locator('.unbound-tag')).toHaveCount(0)
+})
 
 for (const language of ['en', 'fr']) {
   test(`customer required marker stays inline and inputs align in ${language}`, async ({ page }) => {
