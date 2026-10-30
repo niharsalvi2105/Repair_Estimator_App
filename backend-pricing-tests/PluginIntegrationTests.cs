@@ -329,6 +329,40 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
+        public void Package_kone_save_load_and_recalculate_use_trusted_immutable_package_amounts()
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            db.Rows[db.PackageId]["re_materialbeforemarkup"] = new Money(617.45m);
+            db.Rows[db.PackageId]["re_materialmisctaxcost"] = new Money(849.77m);
+            var json = db.DraftJson()
+                .Replace("\"key\":\"re_usetax\",\"value\":\"0\"", "\"key\":\"re_usetax\",\"value\":\"5\"")
+                .Replace("\"key\":\"re_freight\",\"value\":\"0\"", "\"key\":\"re_freight\",\"value\":\"14\"");
+            json = json.Substring(0, json.Length - 1) +
+                ",\"laborLines\":[{\"role\":126110000,\"time\":126110000,\"hours\":1}]," +
+                "\"materialLines\":[{\"packageId\":\"" + db.PackageId +
+                "\",\"description\":\"Motor\",\"part\":\"KM1\",\"quantity\":50,\"unitCost\":0,\"partType\":\"kone\",\"pricingSource\":\"package\"}," +
+                "{\"packageId\":\"" + db.PackageId +
+                "\",\"description\":\"Bracket\",\"quantity\":2,\"unitCost\":10,\"partType\":\"non-kone\",\"pricingSource\":\"manual\"}]}";
+            var response = db.Save(json);
+            Assert.Contains("\"materialBeforeMarkup\":617.45", response);
+            Assert.Contains("\"pricingSource\":\"package\"", response);
+            Assert.Contains("\"pricingState\":\"2026.5\"", response);
+            var header = db.Rows[db.EstimateId];
+            Assert.Equal(941.25m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.Equal(1497.37m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value);
+            db.Rows[db.PackageId]["re_materialbeforemarkup"] = new Money(999m);
+            db.Rows[db.PackageId]["re_materialmisctaxcost"] = new Money(1999m);
+            response = db.Save(response);
+            Assert.Contains("\"materialBeforeMarkup\":617.45", response);
+            Assert.Equal(941.25m, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            var package = db.Rows.Values.Single(r => r.LogicalName == Names.EstimatePackage.Entity);
+            package.Attributes.Remove("re_materialbeforemarkup");
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            Assert.Equal("unavailable", db.Rows[db.EstimateId].GetAttributeValue<string>(Names.Estimate.CalculationVersion));
+        }
+
+        [Fact]
         public void Custom_draft_api_uses_trusted_rates_and_calculates_once_with_package_costs()
         {
             var db = new Pipeline();
@@ -413,6 +447,21 @@ namespace RepairEstimator.Tests
                     Invoke(new ChildChangeTriggerPlugin(), "Delete", row.ToEntityReference(), row);
                 });
                 caller.Setup(s => s.Execute(It.IsAny<OrganizationRequest>())).Returns((OrganizationRequest r) => {
+                    if (r is RetrieveEntityRequest entity) {
+                        var metadata = new EntityMetadata { LogicalName = entity.LogicalName };
+                        typeof(EntityMetadata).GetProperty("Attributes").SetValue(metadata,
+                            entity.LogicalName == Names.EstimatePackage.Entity
+                            ? new AttributeMetadata[] {
+                                new MoneyAttributeMetadata { LogicalName = "re_materialbeforemarkup" },
+                                new BooleanAttributeMetadata { LogicalName = "re_packagepricedkone" }
+                            }
+                            : new AttributeMetadata[] { new PicklistAttributeMetadata { LogicalName = "re_materialpricingmode",
+                                OptionSet = new OptionSetMetadata(new OptionMetadataCollection(new[] { 126110000, 126110001 }
+                                    .Select(v => new OptionMetadata(new Label("", 1033), v)).ToList())) } });
+                        var response = new RetrieveEntityResponse();
+                        response.Results["EntityMetadata"] = metadata;
+                        return response;
+                    }
                     if (r is RetrieveOptionSetRequest choice) {
                         Assert.False(choice.RetrieveAsIfPublished);
                         var metadata = new OptionSetMetadata();

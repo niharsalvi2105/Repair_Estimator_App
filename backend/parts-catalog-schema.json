@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "status": "design-only-not-deployed",
+  "productionImportEnabled": false,
+  "ownership": {
+    "kone": "Revised Material tab is authoritative for USD cost and VK13 price; all Material-tab records are KONE.",
+    "nonKone": "Separate approved catalog or explicit manual entry.",
+    "precedence": "Do not override the revised Material tab with the small sample spares workbook."
+  },
+  "tables": [
+    {
+      "logicalName": "re_sparepart",
+      "ownership": "OrganizationOwned",
+      "alternateKey": ["re_sourcekey"],
+      "columns": {
+        "re_sourcekey": { "type": "String", "maxLength": 200, "required": true },
+        "re_partnumber": { "type": "String", "maxLength": 100, "required": true },
+        "re_name": { "type": "String", "maxLength": 200, "required": true },
+        "re_descriptionen": { "type": "Memo", "maxLength": 2000 },
+        "re_descriptionfr": { "type": "Memo", "maxLength": 2000 },
+        "re_parttype": { "type": "Choice", "values": { "126110000": "KONE", "126110001": "Non-KONE" }, "required": true },
+        "re_usdcost": { "type": "Decimal", "precision": 6, "min": 0, "max": 1000000000, "required": true },
+        "re_usdprice": { "type": "Decimal", "precision": 6, "min": 0, "max": 1000000000 },
+        "re_sourcecurrency": { "type": "String", "maxLength": 3, "required": true, "allowed": ["USD"] },
+        "re_pricingunit": { "type": "Decimal", "precision": 6, "min": 0.000001, "required": true },
+        "re_uom": { "type": "String", "maxLength": 20, "required": true },
+        "re_salesorganization": { "type": "String", "maxLength": 50 },
+        "re_distributionchannel": { "type": "String", "maxLength": 50 },
+        "re_conditionrecord": { "type": "String", "maxLength": 100 },
+        "re_sourceversion": { "type": "String", "maxLength": 100, "required": true },
+        "re_effectivefrom": { "type": "DateOnly", "required": true },
+        "re_effectiveto": { "type": "DateOnly" },
+        "re_refreshedon": { "type": "DateTime", "required": true }
+      }
+    },
+    {
+      "logicalName": "re_partpricingconfiguration",
+      "ownership": "OrganizationOwned",
+      "alternateKey": ["re_version", "re_market"],
+      "columns": {
+        "re_name": { "type": "String", "maxLength": 200, "required": true },
+        "re_version": { "type": "String", "maxLength": 100, "required": true },
+        "re_isenabled": { "type": "Boolean", "default": false, "required": true },
+        "re_market": { "type": "Choice", "values": { "126110000": "MKO", "126110001": "CKE", "126110002": "CKQ" }, "required": true },
+        "re_currency": { "type": "Lookup", "target": "transactioncurrency", "required": true },
+        "re_usdtocadfactor": { "type": "Decimal", "precision": 2, "min": 0.01, "required": true },
+        "re_costonlyfactor": { "type": "Decimal", "precision": 2, "min": 0.01, "required": true },
+        "re_defaultmarkuppct": { "type": "Decimal", "precision": 2, "min": 0, "max": 100, "required": true },
+        "re_effectivefrom": { "type": "DateOnly", "required": true },
+        "re_effectiveto": { "type": "DateOnly" }
+      }
+    }
+  ],
+  "extendTables": [
+    {
+      "logicalName": "re_estimatematerialline",
+      "columns": {
+        "re_estimatepackage": { "type": "Lookup", "target": "re_estimatepackage" },
+        "re_sparepart": { "type": "Lookup", "target": "re_sparepart" },
+        "re_materialscope": { "type": "Choice", "values": { "126110000": "CSTM package", "126110001": "Additional material" } },
+        "re_parttype": { "type": "Choice", "values": { "126110000": "KONE", "126110001": "Non-KONE" } },
+        "re_materialsource": { "type": "Choice", "values": { "126110000": "Catalog", "126110001": "Manual" } },
+        "re_sourcekey": { "type": "String", "maxLength": 200 },
+        "re_sourceversion": { "type": "String", "maxLength": 100 },
+        "re_conversionversion": { "type": "String", "maxLength": 100 },
+        "re_sourceusdcost": { "type": "Decimal", "precision": 6 },
+        "re_sourceusdprice": { "type": "Decimal", "precision": 6 },
+        "re_unitcostprecise": { "type": "Decimal", "precision": 10 },
+        "re_unitpriceprecise": { "type": "Decimal", "precision": 10 },
+        "re_pricingunit": { "type": "Decimal", "precision": 6 },
+        "re_uom": { "type": "String", "maxLength": 20 },
+        "re_usdtocadfactor": { "type": "Decimal", "precision": 2 },
+        "re_costonlyfactor": { "type": "Decimal", "precision": 2 },
+        "re_markuppct": { "type": "Decimal", "precision": 2, "min": 0, "max": 100 },
+        "re_sourcecurrency": { "type": "String", "maxLength": 3 },
+        "re_amountcurrency": { "type": "String", "maxLength": 3 },
+        "re_refreshedon": { "type": "DateTime" }
+      }
+    }
+  ],
+  "validation": [
+    "Catalog readers cannot update source costs, prices, classification or factors.",
+    "Source key includes approved source context; part number alone is not assumed globally unique.",
+    "Only one currently effective record per approved context is selectable.",
+    "Missing values, Excel errors, invalid currency/UOM/pricing units and overlapping records block import.",
+    "Zero cost and zero VK13 need an approved exception policy before activation.",
+    "KONE requires catalog lookup; Non-KONE may use manual amounts entered in estimate currency.",
+    "Pricing unit describes the VK13 price basis only after business confirmation; cost basis is separately confirmed before import.",
+    "CSTM scope requires package lookup; additional scope must not have a package lookup and still requires CSTM in the estimate.",
+    "Server owns catalog and conversion snapshots; preserve old snapshots on unrelated edits.",
+    "Do not round source costs before CAD conversion; source values above supported precision must be rejected, not truncated.",
+    "Non-terminating per-unit divisions require an approved rounding policy; retain source amount and pricing unit for recomputation.",
+    "Legacy rows remain readable; activate new calculation path only after backend migration is deployed.",
+    "Estimate child lookup delete behavior must preserve historical snapshots; do not cascade master deletion into estimate lines."
+  ],
+  "rolloutGates": [
+    "Revised effective extract and pricing-unit/UOM/cost-basis contract approved.",
+    "Meaning of 1.23 and potential overlap with KONE charges reviewed.",
+    "Zero-amount, refresh and stale-data policies approved.",
+    "Idempotent schema deployment and rollback reviewed separately.",
+    "Deploy draft catalog API and pricing engine 2026.4 and pass non-admin integration tests before setting re_isenabled true.",
+    "No production import or write operation is provided by this schema definition."
+  ]
+}

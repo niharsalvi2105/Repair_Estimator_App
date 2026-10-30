@@ -47,3 +47,23 @@ test('custom previews isolate packages, use branch role/time rates and count ent
   assert.throws(() => calculatePackageCost(p, 3, rates, 126110000, 5, 10, [], materials), /Complete the CSTM/)
   assert.throws(() => calculatePackageCost(p, 3, [...rates, rates[0]], 126110000, 5, 10, labor, materials), /ambiguous/)
 })
+
+test('package KONE amounts scale once per equipment, not per descriptive part or quantity', () => {
+  const p = { re_repairpackageid: 'a', re_iscustompackage: true, re_mechanichours: 1,
+    re_materialbeforemarkup: 617.45, re_materialmisctaxcost: 849.77 }
+  const rates = [{ role: 126110000, time: 126110000, rate: 100 }]
+  const labor = [{ id: 'l', packageId: 'a', role: 126110000, time: 126110000, hours: 0.5 }]
+  const reference = { id: 'm', packageId: 'a', description: 'Motor', vendor: 'KONE', part: 'KM1',
+    quantity: 99, unitCost: 0, partType: 'kone', pricingSource: 'package' }
+  const manual = { ...reference, id: 'n', quantity: 1, unitCost: 10, partType: 'non-kone', pricingSource: 'manual' }
+  const materials = [reference, { ...reference, id: 'm2' }, manual]
+  assert.equal(customCostsError(['a'], labor, materials, 'en'), undefined)
+  const cost = calculatePackageCost(p, 2, rates, 126110000, 5, 10, labor, materials)
+  assert.equal(cost.material, 1244.9)
+  assert.equal(cost.total, 1496.4)
+  assert.equal(cost.koneFinal, 1699.54)
+  assert.ok(customCostsError(['a'], labor, [{ ...reference, unitCost: 1 }], 'en'))
+  assert.ok(customCostsError(['a'], labor, [{ ...reference, markupPercent: 10 }], 'en'))
+  assert.throws(() => calculatePackageCost({ ...p, re_materialbeforemarkup: undefined },
+    2, rates, 126110000, 5, 10, labor, materials), /Before Markup/)
+})

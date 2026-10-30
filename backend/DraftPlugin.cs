@@ -44,6 +44,7 @@ namespace RepairEstimator.Drafts
         [DataMember] public string scopeFr;
         [DataMember] public decimal hours;
         [DataMember] public decimal material;
+        [DataMember(EmitDefaultValue = false)] public decimal? materialBeforeMarkup;
         [DataMember] public bool isCustom;
         [DataMember] public bool isTimeMaterial;
     }
@@ -69,12 +70,39 @@ namespace RepairEstimator.Drafts
         [DataMember] public string part;
         [DataMember] public decimal quantity;
         [DataMember] public decimal unitCost;
+        [DataMember(EmitDefaultValue = false)] public string partType;
+        [DataMember(EmitDefaultValue = false)] public string catalogPartId;
+        [DataMember(EmitDefaultValue = false)] public decimal? markupPercent;
+        [DataMember(EmitDefaultValue = false)] public decimal? unitPrice;
+        [DataMember(EmitDefaultValue = false)] public string uom;
+        [DataMember(EmitDefaultValue = false)] public bool refreshPart;
+        [DataMember(EmitDefaultValue = false)] public string pricingSource;
+    }
+
+    [DataContract]
+    public sealed class OpportunityValues
+    {
+        [DataMember] public string branchId;
+        [DataMember] public string stateId;
+        [DataMember] public string equipmentTypeId;
+        [DataMember] public string jobTypeId;
+        [DataMember] public string building;
+        [DataMember] public string customer;
+        [DataMember] public string email;
+        [DataMember] public string phone;
+        [DataMember] public int market;
+        [DataMember] public List<Field> fields;
     }
 
     [DataContract]
     public sealed class Draft
     {
         [DataMember] public string mode;
+        [DataMember(EmitDefaultValue = false)] public string search;
+        [DataMember(EmitDefaultValue = false)] public string partType;
+        [DataMember(EmitDefaultValue = false)] public string presetName;
+        [DataMember(EmitDefaultValue = false)] public string nextToken;
+        [DataMember(EmitDefaultValue = false)] public OpportunityValues opportunity;
         [DataMember] public int status;
         [DataMember] public string id;
         [DataMember] public string version;
@@ -139,9 +167,24 @@ namespace RepairEstimator.Drafts
             var service = factory.CreateOrganizationService(context.UserId);
             bool dashboardOperation = false;
             bool choiceOperation = false;
+            bool catalogOperation = false;
+            bool presetOperation = false;
             try
             {
                 var input = Deserialize<Draft>((string)context.InputParameters["InputJson"]);
+                presetOperation = input.mode == "presetlist" || input.mode == "presetsave" || input.mode == "presetdelete";
+                if (presetOperation)
+                {
+                    context.OutputParameters["ResultJson"] = Serialize(OpportunityPresets.Execute(
+                        factory.CreateOrganizationService(context.InitiatingUserId), context.InitiatingUserId, input));
+                    return;
+                }
+                catalogOperation = input.mode == "partcapabilities" || input.mode == "partcatalog";
+                if (catalogOperation)
+                {
+                    context.OutputParameters["ResultJson"] = Serialize(PartCatalog.Search(service, input));
+                    return;
+                }
                 choiceOperation = input.mode == "choices";
                 if (choiceOperation)
                 {
@@ -157,9 +200,10 @@ namespace RepairEstimator.Drafts
                     return;
                 }
                 var id = Guid.Parse(input.id);
-                if (input.mode == "load")
+                if (input.mode == "load" || input.mode == "clonesource")
                 {
-                    context.OutputParameters["ResultJson"] = Serialize(Read(service, id));
+                    context.OutputParameters["ResultJson"] = Serialize(Read(input.mode == "clonesource"
+                        ? factory.CreateOrganizationService(context.InitiatingUserId) : service, id, input.mode == "clonesource"));
                     return;
                 }
                 if (input.mode != "save" && input.mode != "submit") Fail("Unsupported draft operation.");
@@ -172,10 +216,12 @@ namespace RepairEstimator.Drafts
             catch (InvalidPluginExecutionException) { throw; }
             catch (Exception ex)
             {
-                trace.Trace("{0} operation failed: {1}", dashboardOperation ? "Dashboard" : "Draft", ex);
+                trace.Trace("{0} operation failed: {1}", dashboardOperation ? "Dashboard" : presetOperation ? "Opportunity presets" : catalogOperation ? "Parts catalog" : "Draft", ex);
                 throw new InvalidPluginExecutionException(
                     (dashboardOperation ? "Dashboard could not be loaded. " :
-                        choiceOperation ? "Choices could not be loaded. " : "The draft was not saved. ") + ex.Message, ex);
+                        choiceOperation ? "Choices could not be loaded. " :
+                        catalogOperation ? "Parts catalog could not be loaded. " :
+                        presetOperation ? "Opportunity preset operation failed. " : "The draft was not saved. ") + ex.Message, ex);
             }
         }
 
@@ -198,6 +244,8 @@ namespace RepairEstimator.Drafts
             if (input.equipment.Select(x => x.number?.Trim().ToUpperInvariant()).Distinct().Count() != input.equipment.Count)
                 Fail("Equipment numbers must be unique.");
             if (input.packages.Select(x => x.id).Distinct().Count() != input.packages.Count) Fail("Packages must be unique.");
+            if (input.materialLines.Any(m => m.pricingSource != null))
+                PackageMaterialPricing.RequireSchema(service);
             var branch = service.Retrieve("re_branch", Guid.Parse(input.branchId),
                 new ColumnSet("re_country", "re_currency", "re_market", "statecode"));
             Active(branch);
@@ -290,6 +338,19 @@ namespace RepairEstimator.Drafts
                     row["re_equipmentnamesnapshot"] = master.GetAttributeValue<string>("re_equipmentname");
                     Copy(master, row, "re_functionallocation", "re_soldtoname", "re_soldtonumber", "re_verticalcode", "re_oem", "re_equipmentage");
                 }
+                if (!item.matched)
+                {
+                    if (item.age.HasValue && (item.age < 0 || item.age > 200)) Fail("Equipment age must be between 0 and 200.");
+                    if (string.IsNullOrEmpty(row.GetAttributeValue<string>("re_equipmentnamesnapshot")))
+                        row["re_equipmentnamesnapshot"] = Optional(item.name, 100);
+                    if (string.IsNullOrEmpty(row.GetAttributeValue<string>("re_functionallocation")))
+                        row["re_functionallocation"] = Optional(item.location, 100);
+                    if (string.IsNullOrEmpty(row.GetAttributeValue<string>("re_oem")))
+                        row["re_oem"] = Optional(item.oem, 100);
+                    if (string.IsNullOrEmpty(row.GetAttributeValue<string>("re_soldtoname")))
+                        row["re_soldtoname"] = header.GetAttributeValue<string>("re_customername");
+                    if (!row.Contains("re_equipmentage") && item.age.HasValue) row["re_equipmentage"] = item.age.Value;
+                }
                 equipmentRows.Add(row);
             }
             var packageRows = new List<Entity>();
@@ -298,11 +359,14 @@ namespace RepairEstimator.Drafts
                 var packageId = Guid.Parse(input.packages[i].id);
                 var row = new Entity(Package, Guid.NewGuid());
                 var previous = priorPackages.FirstOrDefault(p => p.GetAttributeValue<EntityReference>("re_repairpackage")?.Id == packageId);
+                var packagePriced = input.materialLines.Any(m => m.pricingSource == "package" &&
+                    Guid.TryParse(m.packageId, out var linkedId) && linkedId == packageId);
                 if (previous != null)
                 {
                     row.Id = previous.Id;
                     Copy(previous, row, "re_packagenumber", "re_packagenameen", "re_packagenamefr", "re_proposalscopeen",
                         "re_proposalscopefr", "re_mechanichoursperunit", "re_materialcostperunit", "re_iscustompackage", "re_istimematerial");
+                    Copy(previous, row, PackageMaterialPricing.Cost, PackageMaterialPricing.Enabled);
                 }
                 else
                 {
@@ -326,6 +390,35 @@ namespace RepairEstimator.Drafts
                     row["re_iscustompackage"] = master.GetAttributeValue<bool>("re_iscustompackage");
                     row["re_istimematerial"] = master.GetAttributeValue<bool>("re_istimematerial");
                 }
+                if (packagePriced)
+                {
+                    if (previous?.GetAttributeValue<bool>(PackageMaterialPricing.Enabled) != true)
+                    {
+                        var master = service.Retrieve("re_repairpackage", packageId,
+                            new ColumnSet("re_materialbeforemarkup", "re_materialmisctaxcost", "re_currency",
+                                "transactioncurrencyid", "re_country", "re_effectivefrom", "re_effectiveto", "statecode"));
+                        Active(master);
+                        var sourceCurrency = master.GetAttributeValue<EntityReference>("re_currency") ??
+                            master.GetAttributeValue<EntityReference>("transactioncurrencyid");
+                        if (sourceCurrency?.Id != currency.Id ||
+                            (master.GetAttributeValue<EntityReference>("re_country") is EntityReference sourceCountry && sourceCountry.Id != country.Id))
+                            Fail("Package country or currency does not match the branch.");
+                        if (!master.Contains("re_effectivefrom") ||
+                            master.GetAttributeValue<DateTime>("re_effectivefrom").Date > DateTime.UtcNow.Date ||
+                            (master.Contains("re_effectiveto") && master.GetAttributeValue<DateTime>("re_effectiveto").Date < DateTime.UtcNow.Date))
+                            Fail("Package is outside its effective dates.");
+                        if (master.GetAttributeValue<Money>("re_materialbeforemarkup") == null ||
+                            master.GetAttributeValue<Money>("re_materialmisctaxcost") == null)
+                            Fail("Package Material Before Markup and Material/Misc/Tax Cost are required for KONE pricing.");
+                        row[PackageMaterialPricing.Cost] = master.GetAttributeValue<Money>("re_materialbeforemarkup");
+                        row["re_materialcostperunit"] = master.GetAttributeValue<Money>("re_materialmisctaxcost");
+                    }
+                    if (!(row.GetAttributeValue<Money>(PackageMaterialPricing.Cost)?.Value >= 0))
+                        Fail("Package Material Before Markup is missing or invalid.");
+                    row[PackageMaterialPricing.Enabled] = true;
+                }
+                else if (row.Contains(PackageMaterialPricing.Enabled))
+                    row[PackageMaterialPricing.Enabled] = false;
                 row["re_name"] = row.GetAttributeValue<string>("re_packagenumber");
                 if (row.GetAttributeValue<decimal>("re_mechanichoursperunit") < 0 ||
                     row.GetAttributeValue<Money>("re_materialcostperunit").Value < 0)
@@ -338,7 +431,8 @@ namespace RepairEstimator.Drafts
                 row["re_sequence"] = i + 1;
                 row["re_quantity"] = input.equipment.Count;
                 row["re_totalhours"] = row.GetAttributeValue<decimal>("re_mechanichoursperunit") * input.equipment.Count;
-                row["re_totalmaterial"] = new Money(row.GetAttributeValue<Money>("re_materialcostperunit").Value * input.equipment.Count);
+                row["re_totalmaterial"] = new Money(row.GetAttributeValue<Money>(packagePriced
+                    ? PackageMaterialPricing.Cost : "re_materialcostperunit").Value * input.equipment.Count);
                 packageRows.Add(row);
             }
             bool custom = packageRows.Any(p => p.GetAttributeValue<bool>("re_iscustompackage"));
@@ -350,7 +444,11 @@ namespace RepairEstimator.Drafts
             foreach (var line in input.laborLines)
                 line.packageId = CustomPackageId(line.packageId, customPackages);
             foreach (var line in input.materialLines)
+            {
+                if (line.pricingSource == "package" && !Guid.TryParse(line.packageId, out _))
+                    Fail("Select a CSTM package for package-priced KONE material.");
                 line.packageId = CustomPackageId(line.packageId, customPackages);
+            }
             foreach (var package in customPackages)
             {
                 var key = Id(package, "re_repairpackage");
@@ -447,6 +545,7 @@ namespace RepairEstimator.Drafts
             var rows = new List<Entity>();
             var seen = new HashSet<string>();
             var rates = new Dictionary<string, Entity>();
+            Entity partConfiguration = null;
             foreach (var line in input.laborLines)
             {
                 if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
@@ -495,10 +594,14 @@ namespace RepairEstimator.Drafts
             foreach (var line in input.materialLines)
             {
                 if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
-                if (line.quantity <= 0 || line.quantity > 100000 || line.unitCost <= 0 || line.unitCost > 1000000000 ||
-                    decimal.Round(line.quantity, 2) != line.quantity || decimal.Round(line.unitCost, 2) != line.unitCost)
-                    Fail("Invalid material quantity or unit cost (two decimals required).");
                 var previous = priorMaterial.FirstOrDefault(r => r.Id.ToString() == line.id);
+                if (line.pricingSource == null && PackageMaterialPricing.Source(previous ?? new Entity(Material)) != null)
+                    Fail("Reload the current app before editing package/manual material.");
+                if (line.quantity <= 0 || line.quantity > 100000 ||
+                    decimal.Round(line.quantity, 2) != line.quantity ||
+                    (line.pricingSource != "package" && string.IsNullOrEmpty(line.catalogPartId) &&
+                        (line.unitCost <= 0 || line.unitCost > 1000000000 || decimal.Round(line.unitCost, 2) != line.unitCost)))
+                    Fail("Invalid material quantity or unit cost (two decimals required).");
                 var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
                 row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
                 row["re_name"] = "Custom material";
@@ -507,17 +610,34 @@ namespace RepairEstimator.Drafts
                 row["re_vendor"] = Optional(line.vendor, 100);
                 row["re_partnumber"] = Optional(line.part, 100);
                 row["re_quantity"] = line.quantity;
-                row["re_unitcost"] = new Money(line.unitCost);
-                row["re_taxapplicable"] = true;
-                row["re_freightapplicable"] = true;
-                row["re_extendedcost"] = new Money(decimal.Round(line.quantity * line.unitCost, 2, MidpointRounding.AwayFromZero));
-                var extended = line.quantity * line.unitCost;
+                var unitCost = line.pricingSource != null
+                    ? PackageMaterialPricing.Apply(line, previous, row)
+                    : PartCatalog.Apply(service, line, previous, row, input, currency, ref partConfiguration);
+                row["re_unitcost"] = new Money(decimal.Round(unitCost, 2, MidpointRounding.AwayFromZero));
+                row["re_taxapplicable"] = line.pricingSource != "package";
+                row["re_freightapplicable"] = line.pricingSource != "package";
+                row["re_extendedcost"] = new Money(decimal.Round(line.quantity * unitCost, 2, MidpointRounding.AwayFromZero));
+                var extended = line.quantity * unitCost;
                 var tax = header.GetAttributeValue<decimal>("re_usetax");
                 var freight = header.GetAttributeValue<decimal>("re_freight");
                 row["re_taxamount"] = new Money(decimal.Round(extended * tax, 2, MidpointRounding.AwayFromZero));
                 row["re_freightamount"] = new Money(decimal.Round(extended * freight, 2, MidpointRounding.AwayFromZero));
                 row["re_totalcost"] = new Money(decimal.Round(extended * (1m + tax + freight), 2, MidpointRounding.AwayFromZero));
                 rows.Add(row);
+            }
+            if (input.materialLines.Any(m => m.pricingSource == "package") &&
+                ((header.GetAttributeValue<Money>("re_konesparessalespricevk13")?.Value ?? 0m) > 0m ||
+                 rows.Any(r => r.GetAttributeValue<OptionSetValue>("re_parttype")?.Value == 126110000 ||
+                    (r.LogicalName == Material && PackageMaterialPricing.Source(r) == null &&
+                     !r.Contains("re_parttype") && LegacyKone(r.GetAttributeValue<string>("re_vendor"), r.GetAttributeValue<string>("re_partnumber"))))))
+                Fail("Do not mix package KONE pricing with catalog or legacy KONE pricing. Remove the other KONE prices first.");
+            if (rows.Any(r => r.GetAttributeValue<OptionSetValue>("re_parttype")?.Value == 126110000))
+            {
+                if ((header.GetAttributeValue<Money>("re_konesparessalespricevk13")?.Value ?? 0m) > 0m)
+                    Fail("Clear the legacy aggregate VK13 price before saving itemized KONE parts.");
+                if (rows.Any(r => r.LogicalName == Material && !r.Contains("re_parttype") && PackageMaterialPricing.Source(r) == null &&
+                    LegacyKone(r.GetAttributeValue<string>("re_vendor"), r.GetAttributeValue<string>("re_partnumber"))))
+                    Fail("Classify legacy KONE material before mixing it with itemized KONE parts.");
             }
             foreach (var row in rows)
             {
@@ -528,7 +648,7 @@ namespace RepairEstimator.Drafts
             return rows;
         }
 
-        static void ApplyFields(Entity header, List<Field> fields)
+        internal static void ApplyFields(Entity header, List<Field> fields, bool requirePricing = true)
         {
             if (fields.GroupBy(f => f.key).Any(g => g.Count() != 1)) Fail("Duplicate input field.");
             foreach (var field in fields)
@@ -570,16 +690,17 @@ namespace RepairEstimator.Drafts
                 }
                 else Fail("Unsupported draft field: " + key);
             }
-            foreach (var key in new[] { "re_proposallanguage", "re_timecategory", "re_usetax", "re_freight" })
+            foreach (var key in requirePricing ? new[] { "re_proposallanguage", "re_timecategory", "re_usetax", "re_freight" } : new[] { "re_proposallanguage" })
                 if (!header.Contains(key) || header[key] == null) Fail("Required input is missing: " + key);
         }
 
-        static Draft Read(IOrganizationService service, Guid id)
+        static Draft Read(IOrganizationService service, Guid id, bool forClone = false)
         {
             var row = service.Retrieve(Estimate, id, new ColumnSet(true));
             Active(row);
             var status = row.GetAttributeValue<OptionSetValue>("re_estimatestatus")?.Value;
-            if (status != DraftStatus && status != 126110002) Fail("This estimate status cannot be opened here.");
+            if (status != DraftStatus && status != 126110002 && !(forClone && status == 126110001))
+                Fail("This estimate status cannot be opened here.");
             var result = new Draft {
                 mode = "save", status = status.Value, id = id.ToString(), version = row.RowVersion,
                 number = row.GetAttributeValue<string>("re_name"), title = row.GetAttributeValue<string>("re_estimatename"),
@@ -633,7 +754,15 @@ namespace RepairEstimator.Drafts
             result.materialLines = materialRows.OrderBy(e => e.Id).Select(e => new MaterialInput {
                 id = e.Id.ToString(), packageId = linkedPackage(e), description = e.GetAttributeValue<string>("re_entereddescription"),
                 vendor = e.GetAttributeValue<string>("re_vendor"), part = e.GetAttributeValue<string>("re_partnumber"),
-                quantity = e.GetAttributeValue<decimal>("re_quantity"), unitCost = e.GetAttributeValue<Money>("re_unitcost").Value
+                quantity = e.GetAttributeValue<decimal>("re_quantity"),
+                unitCost = e.GetAttributeValue<decimal?>("re_unitcostprecise") ?? e.GetAttributeValue<Money>("re_unitcost").Value,
+                pricingSource = PackageMaterialPricing.Source(e),
+                partType = PackageMaterialPricing.Source(e) == "package" ? "kone" :
+                    PackageMaterialPricing.Source(e) == "manual" ? "non-kone" : PartCatalog.TypeName(e.GetAttributeValue<OptionSetValue>("re_parttype")),
+                catalogPartId = e.GetAttributeValue<EntityReference>("re_sparepart")?.Id.ToString(),
+                markupPercent = e.GetAttributeValue<decimal?>("re_markuppct"),
+                unitPrice = e.GetAttributeValue<decimal?>("re_unitpriceprecise"),
+                uom = e.GetAttributeValue<string>("re_uom")
             }).ToList();
             foreach (var p in packageRows.OrderBy(p => p.GetAttributeValue<int?>("re_sequence") ??
                 p.GetAttributeValue<OptionSetValue>("re_packagerole").Value - 126110000))
@@ -643,11 +772,18 @@ namespace RepairEstimator.Drafts
                     scopeEn = p.GetAttributeValue<string>("re_proposalscopeen"), scopeFr = p.GetAttributeValue<string>("re_proposalscopefr"),
                     hours = p.GetAttributeValue<decimal>("re_mechanichoursperunit"),
                     material = p.GetAttributeValue<Money>("re_materialcostperunit").Value,
+                    materialBeforeMarkup = p.GetAttributeValue<Money>(PackageMaterialPricing.Cost)?.Value,
                     isCustom = p.GetAttributeValue<bool>("re_iscustompackage"), isTimeMaterial = p.GetAttributeValue<bool>("re_istimematerial")
                 });
             if (Encoding.UTF8.GetByteCount(Serialize(result)) > 1000000)
                 Fail("Draft response exceeds the technical size budget. Split this request into smaller estimates.");
             return result;
+        }
+
+        static bool LegacyKone(string vendor, string part)
+        {
+            return new[] { "KONE", "Spares" }.Any(s => (vendor ?? "").IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0)
+                || new[] { "KM", "US" }.Any(s => (part ?? "").IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         [DataContract]
@@ -704,7 +840,7 @@ namespace RepairEstimator.Drafts
             }
             return result;
         }
-        static void ValidateChoices(IOrganizationService service, Entity header)
+        internal static void ValidateChoices(IOrganizationService service, Entity header)
         {
             var sets = new Dictionary<string, List<ChoiceOption>>();
             foreach (var field in ChoiceFields)
@@ -752,14 +888,14 @@ namespace RepairEstimator.Drafts
         static string Optional(string value, int max)
         { if (value != null && value.Length > max) Fail("Text exceeds " + max + " characters."); return string.IsNullOrEmpty(value) ? null : value; }
         static void Fail(string message) { throw new InvalidPluginExecutionException(message); }
-        static T Deserialize<T>(string json)
+        internal static T Deserialize<T>(string json)
         {
             if (json == null || json.Length > MaxPayloadBytes || Encoding.UTF8.GetByteCount(json) > MaxPayloadBytes)
                 throw new InvalidPluginExecutionException("Draft exceeds the 200000-byte request budget. Split this request into smaller estimates.");
             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
                 return (T)new DataContractJsonSerializer(typeof(T)).ReadObject(stream);
         }
-        static string Serialize<T>(T value)
+        internal static string Serialize<T>(T value)
         {
             using (var stream = new MemoryStream())
             { new DataContractJsonSerializer(typeof(T)).WriteObject(stream, value); return Encoding.UTF8.GetString(stream.ToArray()); }

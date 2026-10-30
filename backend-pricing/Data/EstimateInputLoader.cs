@@ -201,6 +201,7 @@ namespace RepairEstimator.Plugins.Data
                 Names.EstimatePackage.Hours, Names.EstimatePackage.Material, "re_iscustompackage");
             query.Criteria.AddCondition(Names.ChildParentLookup, ConditionOperator.Equal, est.Id);
 
+            query.ColumnSet = new ColumnSet(true);
             foreach (var line in Query.All(s, query, 1000))
             {
                 loaded.HasPackages = true;
@@ -209,6 +210,9 @@ namespace RepairEstimator.Plugins.Data
                     throw new PricingException("RE-114", "PACKAGE_SNAPSHOT_MISSING");
                 input.Packages.Add(new PackageInput
                 {
+                    Id = line.Id,
+                    PackagePricedKone = line.GetAttributeValue<bool>("re_packagepricedkone"),
+                    MaterialBeforeMarkup = Query.Money(line, "re_materialbeforemarkup"),
                     IsCustom = line.GetAttributeValue<bool>("re_iscustompackage"),
                     MechanicHoursPerUnit = Query.Dec(line, Names.EstimatePackage.Hours).Value,
                     MaterialCostPerUnit = Query.Money(line, Names.EstimatePackage.Material).Value
@@ -242,19 +246,46 @@ namespace RepairEstimator.Plugins.Data
                 Names.EstimateMaterialLine.UnitCost, Names.EstimateMaterialLine.TaxApplicable,
                 Names.EstimateMaterialLine.FreightApplicable, Names.EstimateMaterialLine.Vendor, Names.EstimateMaterialLine.PartNumber);
             materials.Criteria.AddCondition(Names.ChildParentLookup, ConditionOperator.Equal, est.Id);
+            materials.ColumnSet = new ColumnSet(true);
+            var referencedPackages = new System.Collections.Generic.HashSet<Guid>();
             foreach (var row in Query.All(s, materials, 1000))
             {
                 if (!row.Contains(Names.EstimateMaterialLine.Quantity) || !row.Contains(Names.EstimateMaterialLine.UnitCost))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_MISSING");
+                var partType = row.GetAttributeValue<OptionSetValue>("re_parttype")?.Value;
+                var mode = row.GetAttributeValue<OptionSetValue>("re_materialpricingmode")?.Value;
+                if (mode.HasValue && mode != 126110000 && mode != 126110001)
+                    throw new PricingException("RE-114", "MATERIAL_CLASSIFICATION_INVALID");
+                var packageReference = mode == 126110001;
+                if (mode.HasValue && (partType.HasValue || row.GetAttributeValue<EntityReference>("re_sparepart") != null ||
+                    Query.Dec(row, "re_markuppct").HasValue || Query.Dec(row, "re_unitpriceprecise").HasValue ||
+                    Query.Dec(row, "re_unitcostprecise").HasValue))
+                    throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
+                if (packageReference)
+                {
+                    var parent = row.GetAttributeValue<EntityReference>("re_estimatepackage");
+                    if (parent == null || !loaded.Input.Packages.Any(p => p.Id == parent.Id && p.PackagePricedKone) ||
+                        Query.Money(row, Names.EstimateMaterialLine.UnitCost) != 0)
+                        throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
+                    referencedPackages.Add(parent.Id);
+                }
+                if (partType.HasValue && partType != 126110000 && partType != 126110001)
+                    throw new PricingException("RE-114", "MATERIAL_CLASSIFICATION_INVALID");
                 loaded.Input.MaterialLines.Add(new MaterialLineInput {
+                    IsPackageReference = packageReference,
                     Quantity = Query.Dec(row, Names.EstimateMaterialLine.Quantity).Value,
-                    UnitCost = Query.Money(row, Names.EstimateMaterialLine.UnitCost).Value,
+                    UnitCost = Query.Dec(row, "re_unitcostprecise") ?? Query.Money(row, Names.EstimateMaterialLine.UnitCost).Value,
                     TaxApplicable = row.GetAttributeValue<bool>(Names.EstimateMaterialLine.TaxApplicable),
                     FreightApplicable = row.GetAttributeValue<bool>(Names.EstimateMaterialLine.FreightApplicable),
                     Vendor = row.GetAttributeValue<string>(Names.EstimateMaterialLine.Vendor),
-                    PartNumber = row.GetAttributeValue<string>(Names.EstimateMaterialLine.PartNumber)
+                    PartNumber = row.GetAttributeValue<string>(Names.EstimateMaterialLine.PartNumber),
+                    IsKone = mode.HasValue ? (bool?)packageReference : partType.HasValue ? (bool?)(partType == 126110000) : null,
+                    UnitSellingPrice = Query.Dec(row, "re_unitpriceprecise"),
+                    MarkupPercent = Query.Dec(row, "re_markuppct")
                 });
             }
+            if (loaded.Input.Packages.Any(p => p.PackagePricedKone && !referencedPackages.Contains(p.Id)))
+                throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_MISSING");
         }
 
         private static Entity Retrieve(IOrganizationService s, EntityReference reference, params string[] columns)

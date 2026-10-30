@@ -1,0 +1,23 @@
+{
+  "status": "design-only-not-deployed",
+  "table": "re_opportunitypreset",
+  "ownership": "UserOwned",
+  "columns": {
+    "re_name": { "type": "String", "maxLength": 100, "required": true, "primaryName": true },
+    "re_market": { "type": "Choice", "required": true, "values": { "126110000": "MKO", "126110001": "CKE", "126110002": "CKQ" } },
+    "re_payload": { "type": "Memo", "maxLength": 20000, "required": true }
+  },
+  "permissions": [
+    "Estimator roles: user-depth Create, Read, Delete, Append and AppendTo only; do not grant organization-depth access.",
+    "Do not grant Assign or Share for presets. No team ownership or team sharing.",
+    "API executes with initiating-user privileges and always filters/asserts exact user ownership, including for admins.",
+    "Only preset records are written. No draft or equipment/package master is created by saving/using a preset."
+  ],
+  "activation": [
+    "Review and deploy schema and private role privileges, then publish.",
+    "Deploy updated draft API assembly for presetlist/presetsave/presetdelete/clonesource.",
+    "Verify two different non-admin users cannot list or delete each other's presets.",
+    "Use the same user across devices to verify persistence; no browser-storage fallback exists.",
+    "Test existing-request cloning against current equipment, packages, branch, province, types and choices before saving."
+  ]
+}

@@ -10,10 +10,26 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.3";
+        public const string Version = "2026.5";
 
         public static PricingResult Calculate(EstimateInput i)
         {
+            var itemizedKone = i.MaterialLines.Where(m => m.IsKone == true && !m.IsPackageReference).ToList();
+            var packageKone = i.Packages.Where(x => x.PackagePricedKone).ToList();
+            if (packageKone.Any(x => !x.IsCustom || !x.MaterialBeforeMarkup.HasValue || x.MaterialBeforeMarkup < 0) ||
+                (packageKone.Count == 0 && i.MaterialLines.Any(m => m.IsPackageReference)) ||
+                (packageKone.Count > 0 && (!i.IsCustomPath || i.KoneSparesSalesPrice > 0 || itemizedKone.Count > 0 ||
+                    i.MaterialLines.Any(m => !m.IsKone.HasValue && IsKoneMaterial(m)))) ||
+                i.MaterialLines.Any(m => m.IsPackageReference && (m.IsKone != true || m.UnitCost != 0 ||
+                    m.UnitSellingPrice.HasValue || m.MarkupPercent.HasValue || m.TaxApplicable || m.FreightApplicable)))
+                throw new PricingException("RE-111", "PRICING_INPUT_INVALID");
+            if (itemizedKone.Any(m => !m.UnitSellingPrice.HasValue || m.UnitSellingPrice <= 0 ||
+                !m.MarkupPercent.HasValue || m.MarkupPercent < 0 || m.MarkupPercent > 100 ||
+                decimal.Round(m.MarkupPercent.Value, 2) != m.MarkupPercent.Value) ||
+                i.MaterialLines.Any(m => m.IsKone == false && m.MarkupPercent.HasValue) ||
+                (itemizedKone.Count > 0 && (i.KoneSparesSalesPrice > 0 ||
+                    i.MaterialLines.Any(m => !m.IsKone.HasValue && IsKoneMaterial(m)))))
+                throw new PricingException("RE-111", "PRICING_INPUT_INVALID");
             var r = new PricingResult();
             var p = i.Parameters;
             if (i.MechanicLaborRate < 0 || i.UseTaxPct < 0 || i.UseTaxPct > 1 || i.FreightPct < 0 || i.FreightPct > 1 ||
@@ -88,10 +104,16 @@ namespace RepairEstimator.Plugins.Pricing
             {
                 decimal rec = r.RecommendedCmii.Value;
                 r.SuggestedPrice = R2(r.TotalTrueCost / (1m - rec));
-                if (i.IsCustomPath && i.KoneSparesSalesPrice > 0m)
+                if (i.IsCustomPath && (i.KoneSparesSalesPrice > 0m || itemizedKone.Count > 0 || packageKone.Count > 0))
                 {
-                    decimal koneMarkup = 1m + p.Get(ParamCode.KoneSparesTax) + p.Get(ParamCode.KoneSparesFreight) + p.Get(ParamCode.KoneSparesMarkup);
-                    r.SuggestedPriceWithKoneMaterial = R2((r.TotalTrueCost - r.KoneMaterialCost) / (1m - rec) + i.KoneSparesSalesPrice * koneMarkup);
+                    var selling = packageKone.Count > 0
+                        ? packageKone.Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment
+                        : itemizedKone.Count > 0
+                        ? itemizedKone.Sum(m => m.Quantity * m.UnitSellingPrice.Value *
+                            (1m + p.Get(ParamCode.KoneSparesTax) + p.Get(ParamCode.KoneSparesFreight) + m.MarkupPercent.Value / 100m))
+                        : i.KoneSparesSalesPrice * (1m + p.Get(ParamCode.KoneSparesTax) +
+                            p.Get(ParamCode.KoneSparesFreight) + p.Get(ParamCode.KoneSparesMarkup));
+                    r.SuggestedPriceWithKoneMaterial = R2((r.TotalTrueCost - r.KoneMaterialCost) / (1m - rec) + selling);
                 }
             }
 
@@ -151,9 +173,10 @@ namespace RepairEstimator.Plugins.Pricing
 
             // Package costs scale by equipment; custom lines and additions are estimate-level.
             decimal hours = i.Packages.Sum(x => x.MechanicHoursPerUnit) * r.NumberOfEquipment;
-            decimal packageMaterial = i.Packages.Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment;
-            decimal customPackageMaterial = i.Packages.Where(x => x.IsCustom).Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment;
-            decimal standardPackageMaterial = packageMaterial - customPackageMaterial;
+            decimal packageKone = i.Packages.Where(x => x.PackagePricedKone).Sum(x => x.MaterialBeforeMarkup.Value) * r.NumberOfEquipment;
+            decimal customPackageMaterial = i.Packages.Where(x => x.IsCustom && !x.PackagePricedKone).Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment;
+            decimal standardPackageMaterial = i.Packages.Where(x => !x.IsCustom).Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment;
+            decimal packageMaterial = standardPackageMaterial + customPackageMaterial + packageKone;
             decimal packageTax = standardPackageMaterial * EstimateInput.StandardUseTax + customPackageMaterial * tax;
             decimal packageFreight = standardPackageMaterial * EstimateInput.StandardFreight + customPackageMaterial * freight;
             decimal packageLabor = hours * rate;
@@ -180,7 +203,7 @@ namespace RepairEstimator.Plugins.Pricing
             r.AdditionalLaborCost = R2(additionalLabor);
             r.CustomLaborCost = R2(labor);
             r.CustomMaterialCost = R2(materialBase);
-            r.KoneMaterialCost = R2(koneMarked);
+            r.KoneMaterialCost = R2(koneMarked + packageKone);
             r.LaborCost = R2(packageLabor + additionalLabor + labor);
             r.MaterialCost = R2(packageMaterial + i.AdditionalMaterial + materialBase);
             r.MiscellaneousCost = R2(misc);
@@ -270,7 +293,7 @@ namespace RepairEstimator.Plugins.Pricing
         private static decimal? StatedRateMargin(EstimateInput i, PricingResult r)
         {
             if (!r.TargetCm2.HasValue) return null;
-            decimal packageMaterial = i.Packages.Sum(x => x.MaterialCostPerUnit *
+            decimal packageMaterial = i.Packages.Sum(x => x.PackagePricedKone ? x.MaterialBeforeMarkup.Value : x.MaterialCostPerUnit *
                 (1m + (x.IsCustom ? i.UseTaxPct : EstimateInput.StandardUseTax)
                     + (x.IsCustom ? i.FreightPct : EstimateInput.StandardFreight))) * r.NumberOfEquipment;
             decimal hours, material;
@@ -299,6 +322,7 @@ namespace RepairEstimator.Plugins.Pricing
 
         private static bool IsKoneMaterial(MaterialLineInput m)
         {
+            if (m.IsKone.HasValue) return m.IsKone.Value;
             string vendor = m.Vendor ?? string.Empty;
             string part = m.PartNumber ?? string.Empty;
             return Has(vendor, "KONE") || Has(vendor, "Spares") || Has(part, "KM") || Has(part, "US");

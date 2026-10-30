@@ -4,7 +4,7 @@ import { parseDraft, serializeDraft, type DraftRecord } from './draftContract'
 
 export { draftInputs, type DraftRecord } from './draftContract'
 
-export async function draftOperation(input: DraftRecord | { mode: 'load'; id: string }): Promise<DraftRecord> {
+export async function draftOperation(input: DraftRecord | { mode: 'load' | 'clonesource'; id: string }): Promise<DraftRecord> {
   const result = unwrap(await withTimeout(
     Re_DraftEstimateService.re_DraftEstimate(serializeDraft(input)), 120000,
   ))

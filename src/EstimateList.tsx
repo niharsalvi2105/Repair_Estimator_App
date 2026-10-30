@@ -34,6 +34,7 @@ const text = {
 
 export function EstimateList(props: {
   language: 'en' | 'fr'; market: Market; onOpen?: (id: string) => void; busy?: boolean; search?: string; recent?: boolean
+  onClone?: (id: string, name: string) => void
   ownerId: string | null
 }) {
   const [status, setStatus] = useState('')
@@ -41,11 +42,12 @@ export function EstimateList(props: {
     status={status} onStatusChange={setStatus} />
 }
 
-function PagedEstimateList({ language, market, ownerId, onOpen, busy = false, search = '', status, onStatusChange, recent = false }: {
+function PagedEstimateList({ language, market, ownerId, onOpen, onClone, busy = false, search = '', status, onStatusChange, recent = false }: {
   language: 'en' | 'fr'; market: Market; onOpen?: (id: string) => void; busy?: boolean; search?: string
   status: string; onStatusChange: (value: string) => void
   recent?: boolean
   ownerId: string | null
+  onClone?: (id: string, name: string) => void
 }) {
   const t = text[language]
   const [tokens, setTokens] = useState<(string | undefined)[]>([undefined])
@@ -124,6 +126,9 @@ function PagedEstimateList({ language, market, ownerId, onOpen, busy = false, se
                         <button className="button secondary" disabled={busy}
                           onClick={() => onOpen(record.re_repairestimateid)}>{record.re_estimatestatus === 126110000 ? t.open : t.view}</button>
                       )}
+                      {!recent && onClone && <button className="button secondary" disabled={busy}
+                        onClick={() => onClone(record.re_repairestimateid, record.re_estimatename || '—')}>
+                        {language === 'fr' ? 'Cloner' : 'Clone'}</button>}
                     </div>
                   </div>
                   <dl className="request-record-details">

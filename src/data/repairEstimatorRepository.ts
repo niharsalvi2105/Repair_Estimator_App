@@ -66,6 +66,7 @@ export type RepairPackage = Pick<
   | 're_proposalscopefr'
   | 're_mechanichours'
   | 're_materialmisctaxcost'
+  | 're_materialbeforemarkup'
   | 're_effectivefrom'
   | 're_effectiveto'
   | 're_iscustompackage'
@@ -214,6 +215,7 @@ function buildPackageQuery(branchCountryId: string, skipToken?: string): IGetAll
       're_proposalscopefr',
       're_mechanichours',
       're_materialmisctaxcost',
+      're_materialbeforemarkup',
       're_effectivefrom',
       're_effectiveto',
       're_iscustompackage',

@@ -164,16 +164,23 @@ namespace RepairEstimator.Plugins.Pricing
 
     public sealed class MaterialLineInput
     {
+        public bool IsPackageReference { get; set; }
         public decimal Quantity { get; set; }
         public decimal UnitCost { get; set; }
         public bool TaxApplicable { get; set; }
         public bool FreightApplicable { get; set; }
         public string Vendor { get; set; }
         public string PartNumber { get; set; }
+        public bool? IsKone { get; set; }
+        public decimal? UnitSellingPrice { get; set; }
+        public decimal? MarkupPercent { get; set; }
     }
 
     public sealed class PackageInput
     {
+        public Guid Id { get; set; }
+        public bool PackagePricedKone { get; set; }
+        public decimal? MaterialBeforeMarkup { get; set; }
         public bool IsCustom { get; set; }
         public decimal MechanicHoursPerUnit { get; set; }
         /// <summary>Total material, misc and tax cost per unit (Quote sheet column G).</summary>

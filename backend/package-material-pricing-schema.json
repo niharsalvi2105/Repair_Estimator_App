@@ -1,0 +1,37 @@
+{
+  "status": "design-only-not-deployed",
+  "description": "Publish these additive columns before deploying Drafts and pricing 2026.5 together. This package-level route does not require the separate spare-parts catalog or its configuration.",
+  "tables": {
+    "re_estimatepackage": {
+      "re_packagepricedkone": {
+        "type": "Boolean",
+        "default": false,
+        "description": "Explicit opt-in. Absent/false preserves historical package pricing."
+      },
+      "re_materialbeforemarkup": {
+        "type": "Money",
+        "precision": 2,
+        "minimum": 0,
+        "description": "Server snapshot of Repair Package re_materialbeforemarkup; never use its _base companion. re_materialcostperunit retains the final re_materialmisctaxcost amount."
+      }
+    },
+    "re_estimatematerialline": {
+      "re_materialpricingmode": {
+        "type": "Picklist",
+        "required": false,
+        "default": null,
+        "options": {
+          "126110000": "Manual non-KONE",
+          "126110001": "Package-priced KONE reference"
+        },
+        "description": "Leave null on existing records: their legacy/catalog semantics must not change. Package references have zero unit cost, descriptive quantities and manual part numbers."
+      }
+    }
+  },
+  "deployment": [
+    "Validate and publish the three columns; do not bulk-default the material choice on existing rows.",
+    "Confirm source Repair Package monetary columns and CSTM flags, currency, country and effective dates.",
+    "Deploy both backend assemblies in a controlled maintenance window before publishing the frontend. The old pricing assembly must not calculate package-priced snapshots.",
+    "Test as an estimator: save/reopen, equipment scaling, duplicate KONE references, mixed non-KONE materials, clone, historical drafts, and missing source amounts."
+  ]
+}

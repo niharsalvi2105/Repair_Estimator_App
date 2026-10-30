@@ -23,8 +23,8 @@ export function planEquipmentAdd<T extends { re_equipment: string }>(
   const plan = { add: [] as T[], notFound: [] as string[], alreadySelected: [] as string[], overLimit: [] as string[] }
   for (const number of numbers) {
     const match = byNumber.get(number.toLocaleLowerCase())
-    if (!match) plan.notFound.push(number)
-    else if (selected.has(match.re_equipment.toLocaleLowerCase())) plan.alreadySelected.push(number)
+    if (selected.has(number.toLocaleLowerCase())) plan.alreadySelected.push(number)
+    else if (!match) plan.notFound.push(number)
     else if (selected.size >= limit) plan.overLimit.push(number)
     else {
       plan.add.push(match)

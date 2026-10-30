@@ -30,7 +30,8 @@ test('pricing state accepts old responses and nullable strings but rejects malfo
 test('submitted snapshots carry explicit status and reject unsupported statuses', () => {
   assert.equal(parseDraft({ ...fixture(), status: 126110002 }).status, 126110002)
   assert.equal(parseDraft({ ...fixture(), status: 126110000 }).status, 126110000)
-  for (const status of ['126110002', false, 126110001, -1])
+  assert.equal(parseDraft({ ...fixture(), status: 126110001 }).status, 126110001)
+  for (const status of ['126110002', false, 126110003, -1])
     assert.throws(() => parseDraft({ ...fixture(), status }), /draft/i)
 })
 
@@ -84,8 +85,39 @@ test('equipment selections above fourteen roundtrip without truncation within te
   assert.throws(() => parseDraft(record), /selection counts/i)
 })
 
+test('catalog material snapshots preserve CAD precision, source selection and per-line markup', () => {
+  const line = { id: 'm', packageId: 'package-id', description: 'Catalog part', vendor: 'KONE', part: '0001',
+    quantity: 3, unitCost: 7.73178, partType: 'kone', catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    markupPercent: 10, unitPrice: 40.376, uom: 'PC' }
+  const record = { ...fixture(), materialLines: [line] }
+  assert.deepEqual(parseDraft(JSON.parse(serializeDraft(record))).materialLines, [line])
+  for (const change of [
+    { partType: 'invalid' }, { partType: null }, { catalogPartId: null },
+    { catalogPartId: '------------------------------------' }, { uom: '' }, { unitCost: 0 },
+    { markupPercent: null }, { markupPercent: -1 }, { markupPercent: 101 }, { markupPercent: 10.123 },
+    { unitPrice: null }, { unitPrice: -1 }, { unitPrice: NaN }, { refreshPart: 'yes' },
+    { partType: 'non-kone' },
+  ]) assert.throws(() => parseDraft({ ...record, materialLines: [{ ...line, ...change }] }), /material/i)
+  assert.equal(parseDraft({ ...record, materialLines: [{
+    ...line, partType: 'non-kone', catalogPartId: null, markupPercent: null, unitPrice: null, uom: null,
+  }] }).materialLines[0].partType, 'non-kone')
+})
+
 test('request budget measures UTF-8 bytes and never truncates input', () => {
   assert.equal(serializeDraft({ text: 'a'.repeat(199989) }).length, 200000)
   assert.throws(() => serializeDraft({ text: 'a'.repeat(199990) }), /budget/i)
   assert.throws(() => serializeDraft({ text: 'é'.repeat(100000) }), /budget/i)
+})
+
+test('package material references preserve manual part details but cannot carry additional charges', () => {
+  const line = { id: 'm', packageId: 'package-id', description: 'Motor', vendor: 'KONE', part: 'KM1',
+    quantity: 50, unitCost: 0, pricingSource: 'package', partType: 'kone' }
+  const record = { ...fixture(), materialLines: [line] }
+  record.packages[0].materialBeforeMarkup = 617.45
+  assert.deepEqual(parseDraft(record).materialLines, [line])
+  for (const change of [{ unitCost: 1 }, { markupPercent: 0 }, { unitPrice: 1 },
+    { partType: 'non-kone' }, { pricingSource: 'unknown' }, { refreshPart: true },
+    { catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }])
+    assert.throws(() => parseDraft({ ...record, materialLines: [{ ...line, ...change }] }), /material/i)
+  assert.throws(() => parseDraft({ ...record, packages: [{ ...record.packages[0], materialBeforeMarkup: -1 }] }), /package/i)
 })

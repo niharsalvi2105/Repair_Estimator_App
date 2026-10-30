@@ -262,6 +262,219 @@ Typing after a paste refreshes branch-scoped results, and stale search results
 cannot be selected while the current query is loading.
 Typed lists display an explicit Add equipment list action and can also be added
 with Enter. A multi-number list is never offered as one unlisted equipment number.
+
+An alternative **Import equipment from Excel** action appears on Equipment &
+packages without replacing search or paste. Use the two-step import panel:
+**Download Excel template**, then **Upload
+Excel file**. The chosen filename stays visible and detailed format guidance is
+expandable. Actions sit side by side on desktop and stack on mobile; import
+results separate the added count from unlisted, duplicate and skipped numbers.
+Fill the template's single worksheet, then upload it (5 MB maximum). Keep these column headers:
+`Equipment Number`, `Equipment Name`, `Age`, `Location`, `Manufacturer`.
+Equipment Number is required, at most 20 characters, one identifier per row.
+Other details are optional; name/location/manufacturer allow 100 characters,
+and age is a whole number from 0 to 200 (blank means unknown, not zero).
+Store identifiers as text to preserve leading zeros and long/alphanumeric values.
+Numeric cells with a simple all-zero number format retain their padded zeros.
+
+The complete workbook is validated before selection changes. Blank rows are
+ignored. Duplicate numbers are case-insensitively skipped; conflicting details
+for a duplicate reject the workbook rather than choosing an arbitrary row.
+Already selected numbers are not added again. Corrupt/protected files, formulas,
+errors, unsupported cell types, missing headers and multiple populated sheets
+produce explicit errors. Uploads share the existing estimate child-operation
+budget and byte-budget checks; they never silently truncate the list.
+
+All numbers are looked up against active equipment in the selected branch in
+batches of 50. Matched equipment uses Dataverse details, never Excel overrides.
+Unmatched rows become unlisted equipment **in this estimate only**, using Excel
+name/age/location/manufacturer and the Opportunity customer. No equipment master
+records are created. File order is preserved and the result reports added,
+unlisted, duplicate and already-selected numbers. If lookup fails, nothing is
+added; retry the same file. Selection/save is locked during import, and changing
+to a new draft/branch invalidates late results. Excel processing runs locally;
+the workbook itself is not uploaded to Dataverse.
+
+Persisting unlisted details requires the updated draft plugin: it stores the
+existing equipment snapshot columns and does not require the parts catalog.
+Existing nonempty snapshots remain unchanged on later saves; missing legacy
+unlisted details can be populated. An older backend that discards these details
+causes an explicit saved-but-incomplete warning and leaves local details on
+screen. Keep the workbook and deploy the updated plugin before saving again.
+This code change does not deploy the plugin or alter live Dataverse data.
+ExcelJS is loaded on demand, not in the initial application bundle. Its UUID
+dependency is overridden to the compatible patched v11 API (ExcelJS uses v4 only).
+
+Billing plan selection shows a payment preview based on the entered selling price:
+50/50 or 60/40 down payment/final payment, or zero down payment for Final 100%.
+Amounts update immediately and also appear in read-only review. The final payment
+absorbs cent-rounding differences so payments sum to the displayed selling price.
+Other plans refer to notes instead of assuming percentages. This preview does not
+change server pricing or persist separate payment amounts.
+
+### Clone requests and private Opportunity presets
+
+If the UI reports **Unsupported draft operation**, the deployed
+`re_DraftEstimate` plugin does not recognize the new operation. Refreshing the
+browser alone cannot fix this version mismatch. Build/test Release using the
+administrator rollout instructions below, then manually update the **existing**
+`RepairEstimator.Drafts` assembly from
+`backend/bin/Release/net462/RepairEstimator.Drafts.dll`, preserving the Custom
+API association. For presets, also deploy/publish the private table and roles
+below; cloning an existing request does not require that table. The UI provides
+these instructions for unsupported operations and keeps the original workspace
+unchanged. No automatic fallback or production deployment is performed.
+
+**Draft** resumes the same estimate; **Clone** opens a new, unsaved request and
+never changes the original. The **Clone request** sidebar page sits between
+Repair Requests and Package Details. Fill the Opportunity page and select
+**Save as Opportunity preset**, then name the preset. Presets are saved in
+Dataverse for the current user/market, available across devices, and can be
+used or deleted from this page. There is no browser-storage fallback.
+
+Presets contain branch, province/state, equipment/job type, building,
+customer/email/phone, supervisor, work centre, technician count, national
+account/emergency/customer-budget flags, paper/consultant/competing-bid choices
+and proposal language. They exclude stated billing rate and approval state.
+The Repair Requests **Clone** action also offers equipment, packages, custom
+labor/material inputs/scope, and billing plan/CTT notes as independent sections.
+Opportunity is selected by default; custom costs require packages. The source
+branch/market remain as validation context even without Opportunity details.
+
+Copies get a fresh ID and no title, request number, version, status/history,
+salesperson, entered selling price, margin override or approval. Current
+reference choices, branch/currency, matched equipment and packages must validate
+before the workspace is replaced. Missing or ambiguous masters fail explicitly;
+equipment is not silently downgraded to unlisted. Unlisted estimate-only details
+are retained. Labor rates are discarded and catalog material snapshots flagged
+for fresh resolution on save. No estimate/master record is written until Save;
+the server revalidates references and recalculates using current pricing.
+
+Activation is **not performed by this change**:
+1. Review [the private preset schema](backend/opportunity-presets-schema.json),
+   create/publish the user-owned table and columns, and grant only user-depth
+   Create/Read/Delete/Append/AppendTo. Do not grant Share/Assign or broader
+   preset access to estimator/team roles.
+2. Deploy the updated draft API assembly (`presetlist`, `presetsave`,
+   `presetdelete`, `clonesource`). Existing-request cloning is independent of
+   the preset table. Draft/Submitted/Pending may be clone sources; Pending
+   remains unavailable to ordinary editor loading.
+3. Verify with two non-admin users that presets cannot be listed/deleted across
+   accounts; verify same-user persistence across devices. API operations run
+   with initiating-user privileges and assert exact ownership, including admins.
+   Platform administrators still retain administrative Dataverse access.
+4. Verify source permissions, unsaved copies and recalculation against live
+   masters before rollout. After a timeout, refresh presets before repeating
+   a mutation; a lost response does not prove that the operation was rolled back.
+
+### CSTM spare-parts catalog (deployment-gated)
+
+New **Custom costs (CSTM) > Materials** entries use manual part numbers:
+- **KONE - package amounts**: the server snapshots the selected Repair Package's
+  `re_materialbeforemarkup` as internal cost and `re_materialmisctaxcost` as its
+  already-marked-up final selling contribution. Both scale once per equipment,
+  regardless of how many descriptive KONE rows or quantities are entered.
+  No additional markup, tax or freight is applied to these package amounts.
+- **Non-KONE - manual entry**: positive unit cost and quantity are additional
+  estimate-level costs, with the existing tax/freight treatment. These may coexist
+  with package-priced KONE references.
+
+The KONE final amount appears separately in package details and the server's
+KONE-specific suggested price; the entered proposal selling price is not changed.
+Standard packages and historical legacy/catalog drafts keep their existing
+formulas unless explicitly opted into the new CSTM route. Saved package prices
+remain immutable across ordinary edits; clones resolve current source values.
+Missing or negative package amounts fail explicitly (zero is allowed).
+The `_base` field is never used as a markup or selling amount.
+
+Deploy [package material snapshot columns](backend/package-material-pricing-schema.json),
+then **both** backend assemblies (pricing `2026.5`), then the frontend.
+This is a separate route, not activation of the spare-parts catalog; it needs no
+spare-part import or catalog configuration. Do not mix package KONE pricing with
+catalog KONE lines, heuristic legacy KONE lines or the legacy aggregate VK13 price.
+For older drafts without a before-markup snapshot, reselect the CSTM package to
+preview its current amounts before opting in.
+
+Existing catalog-backed rows retain catalog search/selection and per-line KONE
+markup controls. They use the draft
+API's read-only `partcapabilities`/`partcatalog` modes, not synthetic fixtures.
+Missing schema, disabled configuration and service/permission errors leave the
+new controls unavailable with diagnostics; existing manual material entry remains
+available. Search uses at least two characters and returns up to 20 effective,
+active matches; refine the search when more matches exist.
+
+For this separate catalog route, KONE requires catalog selection. Non-KONE supports an approved catalog or manual
+entry in estimate currency. Catalog description, vendor, number and cost are
+read-only. Saving resolves trusted source values on the server and ignores
+browser cost/price overrides. New typed non-KONE manual entries cannot reuse a
+currently active KONE catalog number. Unclassified legacy rows retain their old
+behavior; saved typed rows cannot be silently downgraded by an older client.
+
+MKO retains USD; CKE/CKQ use versioned configuration matching the workbook:
+CAD cost = USD cost * 1.23 * 1.4; CAD VK13 = USD VK13 * 1.4. Source decimals
+retain six places and converted snapshots ten; unit amounts are not rounded to
+cents before quantity extension. Manual costs retain their two-decimal contract.
+Only approved pricing-unit-1 records are supported until the unit/cost-basis
+contract is confirmed. Invalid, expired or ambiguous source data fails explicitly.
+
+KONE markup defaults to the enabled market configuration and accepts 0–100%
+(at most two decimals). Pricing `2026.5` retains the `2026.4` aggregate-markup replacement for typed
+KONE lines with:
+`sum(quantity * convertedVK13 * (1 + configuredKoneTax + configuredKoneFreight + markupPercent/100))`.
+It does not change internal material cost. The legacy header VK13 must be blank
+or zero when using itemized KONE; mixing heuristic legacy KONE lines with typed
+KONE also requires explicit classification first. Ordinary suggested price and
+the KONE-specific suggested price remain separate; entered proposal price is
+not overwritten. Unrelated edits and quantity changes preserve saved catalog
+snapshots, even when the catalog is disabled. Reselecting a part explicitly
+refreshes it; new selections and markup changes require enabled configuration.
+
+Activation is **not performed by this change**:
+1. Review/deploy the schema below, including package lookups and decimal precision,
+   choice values, currencies and reader permissions.
+2. Deploy both updated draft API and pricing `2026.5` assemblies.
+3. Approve/load the effective source extract, per-unit contract, conversion
+   configuration, zero-amount policy and refresh policy.
+4. Test with non-admin users, then explicitly set configuration `re_isenabled`
+   to true (default false). Never enable against sample/unapproved data.
+
+This integration covers CSTM package materials. Additional-material itemization
+and master-data refresh/import are not production-wired; the existing scalar
+additional-material field is unchanged.
+
+### Spare-parts schema and isolated UI preview
+
+The proposed catalog/material snapshot schema is defined in
+[`backend/parts-catalog-schema.json`](backend/parts-catalog-schema.json). It is a
+design contract, **not a deployed schema or an import/deployment script**.
+The revised Material tab owns KONE USD cost and VK13 price. All of its parts are
+KONE; non-KONE parts come from a separate approved catalog or manual entry.
+Production import remains blocked pending the revised currently effective extract,
+pricing-unit/cost-basis confirmation, zero-amount policy and refresh policy.
+
+For frontend review, run the existing development server and open
+`http://localhost:5173/?materialPreview=1` (use the actual server port if different).
+This development-only page uses explicitly synthetic fixtures, does not call
+Dataverse, has no save action, and loses its state on refresh. Its module/fixtures
+are excluded from the production build. The preview itself does not activate the
+gated estimator catalog or write through its backend.
+
+The preview supports KONE/non-KONE selection, catalog search, non-KONE manual
+entry, CSTM versus additional-material scopes, and 0–100% KONE markup. Preview
+defaults are visibly fixed fixture configuration, not live settings. CAD price
+uses USD price × 1.4; CAD cost uses USD cost × 1.23 × 1.4, without intermediate
+unit-cost rounding. Manual costs are already in estimate currency and clear on
+market change. KONE markup changes the VK13 selling contribution, not cost;
+KONE tax/freight and markup are additive, not compounded. Selling contribution
+is displayed separately from internal cost and is not a full estimate quote.
+
+The preview assumes the source cost is per unit and VK13 price is per pricing
+unit. **Do not activate this assumption against production data until approved.**
+Production still requires the coordinated deployment and permissions testing
+listed above; trusted server snapshots and precise pricing are implemented locally. Current
+material Money fields cannot by themselves preserve all derived unit precision.
+The existing requirement that additions need CSTM remains unchanged.
+
 Inputs survive in-app navigation; leaving/reloading warns about unsaved changes.
 Non-integer request inputs display two decimal places when unfocused; focusing
 reveals the original editable value. Formatting does not round persisted values,
@@ -701,12 +914,13 @@ Business rules confirmed October 27, 2026:
   apply to every selected equipment. There is no per-package equipment exclusion.
 - Each selected CSTM package requires its own labor and material lines. Hours,
   material quantity and unit cost must be positive; material description is
-  required. Vendor and part number remain optional. Custom lines are counted
+  required. Vendor and part number remain optional for legacy manual entry;
+  gated catalog selections resolve these values from the master. Custom lines are counted
   once, not multiplied by equipment count. Additional estimate-level costs
   remain separate; avoid entering the same work twice.
 - Selecting CSTM opens Costs & scope. Enter its lines, tax and freight, then use
   **Calculate and return to packages** to continue selecting packages. Every
-  selected package displays labor hours, branch mechanic cost rate, labor,
+  selected package displays the selected equipment count, labor hours, branch mechanic cost rate, labor,
   material, applied tax/freight percentages and estimated cost. Desktop package cards place name and scope on
   the left, with aligned cost details and a highlighted total on the right;
   narrower screens stack the pricing below the description.
@@ -743,9 +957,11 @@ Business rules confirmed October 27, 2026:
 - Custom material tax/freight flags are server-set true for Excel parity; no
   per-line exemption controls are exposed. Tax/freight applies to material and
   miscellaneous amounts, not labor. Standard-only estimates also use the fixed
-  rates for additional material/miscellaneous costs. KONE classification uses the
-  existing vendor/part rules; VK13 sales price is available for CSTM. The special
-  suggested price uses configured KONE tax/freight/markup parameters.
+  rates for additional material/miscellaneous costs. Legacy KONE classification
+  uses existing vendor/part rules; explicit catalog classification overrides them.
+  The legacy special price uses header VK13 and configured markup. Gated itemized
+  KONE pricing instead uses saved per-line VK13/markup, with no duplicate header
+  contribution (see CSTM spare-parts catalog above).
 - Equipment workflow/limits are unchanged; new free-form equipment requirements,
   submission/email, Salesforce and master-data refresh are outside this change.
 
@@ -812,7 +1028,7 @@ equipment requires explicitly removing those lines first.
 - Equipment/package/custom-line saves are transactional, preserve unchanged child
   identities and snapshots, and trigger one final calculation. Timeout recovery
   still requires reload before retry; there is no automatic retry of uncertain writes.
-- Pricing version `2026.3` combines package and custom costs in a linear pass,
+- Pricing version `2026.4` retains the combined package/custom cost path from `2026.3`,
   applying fixed standard rates separately from editable CSTM rates, including
   stated-labor-rate pricing. Deploy both updated draft and pricing plug-in
   assemblies before relying on live saved totals; no new tax/freight columns

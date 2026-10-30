@@ -12,7 +12,7 @@ export function packageCost(hours: number, material: number, quantity: number, r
   return { hours: hours * quantity, labor, material: materialTotal, total: labor + materialTotal * (1 + tax / 100 + freight / 100) }
 }
 
-export function calculatePackageCost(p: Pick<RepairPackage, 're_mechanichours' | 're_materialmisctaxcost' | 're_iscustompackage' | 're_repairpackageid'>,
+export function calculatePackageCost(p: Pick<RepairPackage, 're_mechanichours' | 're_materialmisctaxcost' | 're_materialbeforemarkup' | 're_iscustompackage' | 're_repairpackageid'>,
   quantity: number, rates: CostRate[], time: number, tax: number, freight: number, labor: DraftLabor[], materials: DraftMaterial[]) {
   const rateFor = (role: number, category: number) => {
     const matches = rates.filter((r) => r.role === role && r.time === category)
@@ -25,15 +25,23 @@ export function calculatePackageCost(p: Pick<RepairPackage, 're_mechanichours' |
     return { ...packageCost(p.re_mechanichours ?? NaN, p.re_materialmisctaxcost ?? NaN, quantity, rate, 5, 14), rate }
   const lines = labor.filter((l) => l.packageId === p.re_repairpackageid)
   const parts = materials.filter((m) => m.packageId === p.re_repairpackageid)
+  const packagePriced = parts.some((m) => m.pricingSource === 'package')
   if (!lines.length || !parts.length || lines.some((l) => !(l.hours > 0) || !Number.isFinite(l.hours))
-    || parts.some((m) => !m.description.trim() || !(m.quantity > 0) || !(m.unitCost > 0)
+    || parts.some((m) => !m.description.trim() || !(m.quantity > 0) ||
+      (m.pricingSource === 'package' ? m.unitCost !== 0 || m.partType !== 'kone' : !(m.unitCost > 0))
       || !Number.isFinite(m.quantity) || !Number.isFinite(m.unitCost)))
     throw new Error('Complete the CSTM labor and material entries.')
   const laborCost = lines.reduce((sum, l) => sum + l.hours * (l.rate ?? rateFor(l.role, l.time)), 0)
   if (!Number.isFinite(laborCost) || laborCost < 0) throw new Error('Custom labor cost rate is invalid.')
   const material = parts.reduce((sum, m) => sum + m.quantity * m.unitCost, 0)
-  const predefined = packageCost(p.re_mechanichours ?? NaN, p.re_materialmisctaxcost ?? NaN, quantity, rate, tax, freight)
+  const beforeMarkup = p.re_materialbeforemarkup
+  if (packagePriced && (beforeMarkup == null || !Number.isFinite(beforeMarkup) || beforeMarkup < 0))
+    throw new Error('Package Material Before Markup is missing or invalid.')
+  const predefined = packageCost(p.re_mechanichours ?? NaN,
+    packagePriced ? beforeMarkup ?? NaN : p.re_materialmisctaxcost ?? NaN, quantity, rate,
+    packagePriced ? 0 : tax, packagePriced ? 0 : freight)
   const adjusted = packageCost(0, material, 1, 0, tax, freight)
   return { hours: predefined.hours + lines.reduce((sum, l) => sum + l.hours, 0), rate,
-    labor: predefined.labor + laborCost, material: predefined.material + material, total: predefined.total + laborCost + adjusted.total }
+    labor: predefined.labor + laborCost, material: predefined.material + material, total: predefined.total + laborCost + adjusted.total,
+    ...(packagePriced ? { koneFinal: packageCost(0, p.re_materialmisctaxcost ?? NaN, quantity, 0, 0, 0).total } : {}) }
 }

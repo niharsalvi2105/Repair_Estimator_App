@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { decimalInputDisplay } from './data/numberDisplay'
+import { calculateBillingPayments } from './data/billingPayments'
 import { statedRateError } from './data/requestValidation'
 import { getDraftChoices } from './data/draftChoiceRepository'
 import type { DraftChoices } from './data/draftChoices'
@@ -66,6 +67,12 @@ export type RequestInputs = Partial<Record<InputKey, string>>
 const choiceKeys = [...requestFields, ...costFields, ...pricingFields]
   .filter((field) => 'choice' in field).map((field) => field.key)
 
+const billingDownPaymentPercent: Readonly<Record<string, 0 | 50 | 60 | undefined>> = {
+  '126110000': 50,
+  '126110001': 60,
+  '126110002': 0,
+}
+
 function useDraftChoices(enabled: boolean) {
   const [result, setResult] = useState<{ choices?: DraftChoices; error?: string }>()
   const [attempt, setAttempt] = useState(0)
@@ -84,13 +91,14 @@ function useDraftChoices(enabled: boolean) {
   return { ...result, retry: () => { setResult(undefined); setAttempt((n) => n + 1) } }
 }
 
-export function RequestFields({ stage, language, value, onChange, readOnly = false, custom = false }: {
+export function RequestFields({ stage, language, value, onChange, readOnly = false, custom = false, currency }: {
   stage: 'request' | 'cost' | 'pricing' | 'partner'
   language: 'en' | 'fr'
   value: RequestInputs
   onChange: (key: InputKey, value: string) => void
   readOnly?: boolean
   custom?: boolean
+  currency?: string
 }) {
   const [focusedKey, setFocusedKey] = useState<InputKey>()
   const fields: readonly (Omit<Field, 'key'> & { key: InputKey })[] = {
@@ -99,6 +107,42 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
   const hasChoices = fields.some((field) => field.choice)
   const choices = useDraftChoices(hasChoices)
   const fr = language === 'fr'
+  const downPaymentPercent = billingDownPaymentPercent[value.re_billingplan ?? '']
+  let paymentDetails: ReactNode
+  if (stage === 'pricing' && value.re_billingplan) {
+    if (value.re_billingplan === '126110003') {
+      paymentDetails = <p className="field-help">{fr
+        ? 'Plan personnalisé : consultez les notes pour les montants et les échéances.'
+        : 'Custom billing plan: see notes for payment amounts and timing.'}</p>
+    } else if (downPaymentPercent === undefined) {
+      paymentDetails = <p role="alert">{fr ? 'Ce plan de facturation ne possède pas de répartition définie.' : 'This billing plan has no defined payment split.'}</p>
+    } else if (!value.re_sellprice?.trim()) {
+      paymentDetails = <p className="field-help">{fr ? 'Saisissez le prix de vente pour voir les paiements.' : 'Enter a selling price to see payment amounts.'}</p>
+    } else {
+      let payments: ReturnType<typeof calculateBillingPayments> | undefined
+      let paymentError = ''
+      try {
+        payments = calculateBillingPayments(Number(value.re_sellprice), downPaymentPercent)
+      } catch (reason) {
+        paymentError = fr
+          ? 'Saisissez un prix de vente valide et non négatif dans la plage de montants prise en charge.'
+          : reason instanceof Error ? reason.message : String(reason)
+      }
+      if (payments) {
+        const amount = (number: number) => `${number.toLocaleString(fr ? 'fr-CA' : 'en-US',
+          { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${currency ? ` ${currency}` : ''}`
+        paymentDetails = <>
+          <dl className="package-cost-details billing-payment-details" aria-live="polite">
+            <dt>{fr ? 'Acompte' : 'Down payment'} ({downPaymentPercent}%)</dt><dd>{amount(payments.downPayment)}</dd>
+            <dt>{fr ? 'Paiement final' : 'Final payment'} ({100 - downPaymentPercent}%)</dt><dd>{amount(payments.finalPayment)}</dd>
+          </dl>
+          <p className="field-help">{fr
+            ? 'Aperçu basé sur le prix de vente saisi, et non le prix suggéré. Le solde tient compte de l’arrondi au centime.'
+            : 'Preview based on the entered selling price, not the suggested price. The final payment includes any cent-rounding remainder.'}</p>
+        </>
+      } else paymentDetails = <p role="alert">{paymentError}</p>
+    }
+  }
   return (
     <div className="input-grid">
       {hasChoices && !choices.choices && <div className="field-label choice-state">
@@ -139,6 +183,7 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
                 onFocus={() => setFocusedKey(key)} onBlur={() => setFocusedKey(undefined)}
                 onChange={(event) => onChange(key, event.target.value)} />
             )}
+            {key === 're_billingplan' && paymentDetails}
             {customAddition && !custom && <p className="field-help">
               {fr ? 'Sélectionnez un forfait CSTM pour modifier les coûts supplémentaires.' : 'Select a CSTM package to edit additional costs.'}
             </p>}

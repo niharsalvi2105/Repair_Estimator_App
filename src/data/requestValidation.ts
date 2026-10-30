@@ -1,14 +1,25 @@
 import type { DraftLabor, DraftMaterial } from './draftContract'
 
 export function customCostsError(packageIds: string[], labor: DraftLabor[], materials: DraftMaterial[], language: 'en' | 'fr'): string | undefined {
+  if (materials.some((line) => (line.pricingSource != null && (
+    !['package', 'manual'].includes(line.pricingSource) || line.catalogPartId || line.markupPercent != null ||
+    line.unitPrice != null || line.refreshPart ||
+    (line.pricingSource === 'package' ? line.partType !== 'kone' || line.unitCost !== 0 : line.partType !== 'non-kone'))) ||
+    (line.partType === 'kone' && line.pricingSource !== 'package' && (!line.catalogPartId ||
+    line.markupPercent == null || !Number.isFinite(line.markupPercent) || line.markupPercent < 0 ||
+    line.markupPercent > 100 || Math.round(line.markupPercent * 100) / 100 !== line.markupPercent)) ||
+    (line.partType === 'non-kone' && line.markupPercent != null)))
+    return language === 'fr' ? 'Vérifiez la source des prix. Les montants KONE du forfait ne permettent aucun coût par pièce ni majoration supplémentaire. Les pièces KONE du catalogue exigent une majoration de 0 à 100 %.'
+      : 'Check the pricing source. Package KONE amounts cannot carry per-part charges or extra markup. Catalog KONE parts require a markup from 0 to 100%.'
   const valid = packageIds.every((id) =>
     labor.some((line) => line.packageId === id) && materials.some((line) => line.packageId === id))
     && labor.every((line) => packageIds.includes(line.packageId ?? '') && Number.isFinite(line.hours) && line.hours > 0)
     && materials.every((line) => packageIds.includes(line.packageId ?? '') && line.description.trim()
-      && Number.isFinite(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitCost) && line.unitCost > 0)
+      && Number.isFinite(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitCost)
+      && (line.pricingSource === 'package' ? line.unitCost === 0 : line.unitCost > 0))
   return valid ? undefined : language === 'fr'
-    ? 'Chaque forfait CSTM exige une main-d’œuvre avec des heures positives et un matériau avec description, quantité et coût unitaire positifs. Affectez chaque ligne à un forfait CSTM.'
-    : 'Each CSTM package requires labor with positive hours and material with a description, positive quantity and positive unit cost. Assign every custom line to a CSTM package.'
+    ? 'Chaque forfait CSTM exige une main-d’œuvre avec des heures positives et un matériau avec description et quantité positive. Le coût unitaire doit être positif, sauf pour les références KONE utilisant les montants du forfait. Affectez chaque ligne à un forfait CSTM.'
+    : 'Each CSTM package requires labor with positive hours and material with a description and positive quantity. Unit cost must be positive except for KONE references using package amounts. Assign every custom line to a CSTM package.'
 }
 
 export function statedRateError(value: string | undefined, language: 'en' | 'fr'): string | undefined {

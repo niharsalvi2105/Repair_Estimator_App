@@ -78,6 +78,106 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
+        public void Package_kone_is_counted_once_per_equipment_without_additional_markup_tax_or_freight()
+        {
+            var input = Baseline();
+            input.Packages.Clear();
+            input.Packages.Add(new PackageInput { IsCustom = true, PackagePricedKone = true,
+                MaterialBeforeMarkup = 617.45m, MaterialCostPerUnit = 849.77m, MechanicHoursPerUnit = 1m });
+            input.IsCustomPath = true;
+            input.EquipmentLineCount = 2;
+            input.MechanicLaborRate = 100m;
+            input.FixedTargetCmii = 0.5m;
+            input.FreightPct = 0.10m;
+            input.LaborLines.Add(new LaborLineInput { Hours = 1, Rate = 50 });
+            foreach (var quantity in new[] { 1m, 99m })
+                input.MaterialLines.Add(new MaterialLineInput { IsPackageReference = true, IsKone = true,
+                    Quantity = quantity, UnitCost = 0 });
+            input.MaterialLines.Add(new MaterialLineInput { IsKone = false, Quantity = 1, UnitCost = 10,
+                TaxApplicable = true, FreightApplicable = true });
+            var result = PricingEngine.Calculate(input);
+            Assert.Equal(1234.90m, result.PackageMaterialCost);
+            Assert.Equal(1234.90m, result.KoneMaterialCost);
+            Assert.Equal(10m, result.CustomMaterialCost);
+            Assert.Equal(0.50m, result.UseTaxAmount);
+            Assert.Equal(1m, result.FreightAmount);
+            Assert.Equal(1496.40m, result.TotalTrueCost);
+            Assert.Equal(2222.54m, result.SuggestedPriceWithKoneMaterial);
+            input.Parameters.Set(ParamCode.KoneSparesMarkup, 1m, null);
+            input.Parameters.Set(ParamCode.KoneSparesTax, 1m, null);
+            input.Parameters.Set(ParamCode.KoneSparesFreight, 1m, null);
+            Assert.Equal(2222.54m, PricingEngine.Calculate(input).SuggestedPriceWithKoneMaterial);
+        }
+
+        [Fact]
+        public void Package_kone_rejects_missing_cost_and_mixed_legacy_or_catalog_pricing()
+        {
+            var input = Baseline();
+            input.IsCustomPath = true;
+            var package = new PackageInput { IsCustom = true, PackagePricedKone = true, MaterialCostPerUnit = 10 };
+            input.Packages.Add(package);
+            Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+            package.MaterialBeforeMarkup = -1;
+            Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+            package.MaterialBeforeMarkup = 0;
+            PricingEngine.Calculate(input);
+            input.KoneSparesSalesPrice = 10;
+            Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+            input.KoneSparesSalesPrice = 0;
+            input.MaterialLines.Add(new MaterialLineInput { IsKone = true, UnitSellingPrice = 10, MarkupPercent = 0 });
+            Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+            input.MaterialLines.Clear();
+            input.MaterialLines.Add(new MaterialLineInput { Vendor = "KONE", Quantity = 1, UnitCost = 10 });
+            Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+        }
+
+        [Fact]
+        public void Package_kone_stated_rate_margin_uses_before_markup_cost_without_second_tax_or_freight()
+        {
+            var input = Baseline();
+            input.Packages.Clear();
+            input.Packages.Add(new PackageInput { IsCustom = true, PackagePricedKone = true,
+                MaterialBeforeMarkup = 100m, MaterialCostPerUnit = 200m, MechanicHoursPerUnit = 1m });
+            input.IsCustomPath = true;
+            input.MechanicLaborRate = 100m;
+            input.StatedLaborRate = 200m;
+            var sell = 200m + 100m / .35m;
+            Assert.Equal((sell - 200m) / sell, PricingEngine.Calculate(input).StatedRateMargin);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(10)]
+        [InlineData(100)]
+        public void Itemized_kone_markup_applies_to_selling_only_and_overrides_text_classification(int markup)
+        {
+            var input = Baseline();
+            input.IsCustomPath = true;
+            input.MaterialLines.Add(new MaterialLineInput { Quantity = 2, UnitCost = 7.73178m,
+                IsKone = true, UnitSellingPrice = 40.376m, MarkupPercent = markup, TaxApplicable = true, FreightApplicable = true });
+            input.MaterialLines.Add(new MaterialLineInput { Quantity = 1, UnitCost = 10,
+                IsKone = false, Vendor = "KONE", PartNumber = "KM123", TaxApplicable = true, FreightApplicable = true });
+            var original = PricingEngine.Calculate(input);
+            Assert.Equal(18.40m, original.KoneMaterialCost);
+            Assert.Equal(25.46m, original.CustomMaterialCost);
+            var expected = Math.Round((original.TotalTrueCost - original.KoneMaterialCost) /
+                (1m - original.RecommendedCmii.Value) + 2m * 40.376m * (1.15m + markup / 100m), 2, MidpointRounding.AwayFromZero);
+            Assert.Equal(expected, original.SuggestedPriceWithKoneMaterial);
+            input.MaterialLines[0].MarkupPercent = 100;
+            var changed = PricingEngine.Calculate(input);
+            Assert.Equal(original.TotalTrueCost, changed.TotalTrueCost);
+            Assert.True(changed.SuggestedPriceWithKoneMaterial >= original.SuggestedPriceWithKoneMaterial);
+            input.MaterialLines[0].MarkupPercent = 101;
+            Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+            input.MaterialLines[0].MarkupPercent = 10;
+            input.KoneSparesSalesPrice = 100;
+            Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+            input.KoneSparesSalesPrice = 0;
+            input.MaterialLines.Add(new MaterialLineInput { Vendor = "KONE", Quantity = 1, UnitCost = 1 });
+            Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+        }
+
+        [Fact]
         public void Negative_cmii_has_zero_incentives_without_discarding_valid_pricing()
         {
             var input = Baseline();

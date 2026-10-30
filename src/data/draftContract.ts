@@ -9,9 +9,15 @@ export type DraftPackage = {
   id: string; number: string; nameEn: string; nameFr?: string | null
   scopeEn: string; scopeFr?: string | null; hours: number; material: number
   isCustom?: boolean; isTimeMaterial?: boolean
+  materialBeforeMarkup?: number | null
 }
 export type DraftLabor = { id: string; packageId?: string | null; role: number; time: number; hours: number; rate?: number }
-export type DraftMaterial = { id: string; packageId?: string | null; description: string; vendor: string; part: string; quantity: number; unitCost: number }
+export type DraftMaterial = {
+  id: string; packageId?: string | null; description: string; vendor: string; part: string; quantity: number; unitCost: number
+  partType?: 'kone' | 'non-kone' | null; catalogPartId?: string | null; markupPercent?: number | null
+  unitPrice?: number | null; uom?: string | null; refreshPart?: boolean
+  pricingSource?: 'package' | 'manual' | null
+}
 export const MAX_DRAFT_BYTES = 200000
 export const MAX_DRAFT_CHILD_OPERATIONS = 1000
 export function serializeDraft(input: unknown): string {
@@ -22,7 +28,7 @@ export function serializeDraft(input: unknown): string {
 }
 export type DraftRecord = {
   mode: 'save' | 'load' | 'submit'; id: string; version: string | null; number?: string | null
-  status?: 126110000 | 126110002
+  status?: 126110000 | 126110001 | 126110002
   title: string; branchId: string; stateId: string; equipmentTypeId: string; jobTypeId: string
   building: string; customer: string; email: string; phone: string; market: Market
   salesperson?: string | null
@@ -41,7 +47,7 @@ export function parseDraft(value: unknown): DraftRecord {
     || !nullableString(record.email) || !nullableString(record.phone) || !nullableString(record.jobTypeId)
     || !nullableString(record.salesperson) || !nullableString(record.number)
     || !nullableString(record.pricingState)
-    || (record.status != null && ![126110000, 126110002].includes(record.status))
+    || (record.status != null && ![126110000, 126110001, 126110002].includes(record.status))
     || ![126110000, 126110001, 126110002].includes(record.market ?? -1)
     || !Array.isArray(record.fields) || !Array.isArray(record.equipment) || !Array.isArray(record.packages)) {
     throw new Error('The draft service returned incomplete data. Reload before editing.')
@@ -68,6 +74,7 @@ export function parseDraft(value: unknown): DraftRecord {
       || (item.isCustom != null && typeof item.isCustom !== 'boolean')
       || (item.isTimeMaterial != null && typeof item.isTimeMaterial !== 'boolean')
       || !Number.isFinite(item.hours) || item.hours < 0
+      || (item.materialBeforeMarkup != null && (!Number.isFinite(item.materialBeforeMarkup) || item.materialBeforeMarkup < 0))
       || !Number.isFinite(item.material) || item.material < 0) throw new Error('Invalid draft package snapshot.')
   }
   if (record.laborLines != null && (!Array.isArray(record.laborLines) || record.laborLines.some((line) =>
@@ -78,7 +85,23 @@ export function parseDraft(value: unknown): DraftRecord {
   if (record.materialLines != null && (!Array.isArray(record.materialLines) || record.materialLines.some((line) =>
     !line || typeof line.id !== 'string' || !nullableString(line.packageId) || typeof line.description !== 'string' ||
     !nullableString(line.vendor) || !nullableString(line.part) ||
-    !Number.isFinite(line.quantity) || line.quantity < 0 || !Number.isFinite(line.unitCost) || line.unitCost < 0)))
+    !Number.isFinite(line.quantity) || line.quantity < 0 || !Number.isFinite(line.unitCost) || line.unitCost < 0 ||
+    (line.partType != null && !['kone', 'non-kone'].includes(line.partType)) ||
+    (line.pricingSource != null && !['package', 'manual'].includes(line.pricingSource)) ||
+    (line.pricingSource != null && (line.catalogPartId != null || line.markupPercent != null || line.unitPrice != null ||
+      line.refreshPart || (line.pricingSource === 'package'
+        ? line.partType !== 'kone' || line.unitCost !== 0
+        : line.partType !== 'non-kone'))) ||
+    !nullableString(line.catalogPartId) || !nullableString(line.uom) ||
+    (line.catalogPartId != null && (!line.partType ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(line.catalogPartId) ||
+      !line.uom?.trim() || line.unitCost <= 0)) ||
+    (line.refreshPart != null && typeof line.refreshPart !== 'boolean') ||
+    (line.markupPercent != null && (line.partType !== 'kone' || !Number.isFinite(line.markupPercent) ||
+      line.markupPercent < 0 || line.markupPercent > 100 || Math.round(line.markupPercent * 100) / 100 !== line.markupPercent)) ||
+    (line.unitPrice != null && (!Number.isFinite(line.unitPrice) || line.unitPrice < 0)) ||
+    (line.partType === 'kone' && line.pricingSource !== 'package' &&
+      (!line.catalogPartId || line.markupPercent == null || !(line.unitPrice != null && line.unitPrice > 0))))))
     throw new Error('Invalid draft material snapshot.')
 
   function nullableString(value: unknown): boolean {

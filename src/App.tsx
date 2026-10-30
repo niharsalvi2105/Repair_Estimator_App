@@ -27,12 +27,18 @@ import koneLogo from './assets/kone-logo-small.jpg?no-inline'
 import { draftOperation, draftInputs, type DraftRecord } from './data/draftRepository'
 import { serializeDraft, MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
 import { EQUIPMENT_LOOKUP_BATCH_SIZE, isEquipmentList, parseEquipmentList, planEquipmentAdd } from './data/equipmentPaste'
+import { cloneRequest, DEFAULT_CLONE_SECTIONS, opportunityValues, type CloneSections, type OpportunityValues } from './data/requestClone'
+import { revalidateClone } from './data/cloneValidation'
+import { getDraftChoices } from './data/draftChoiceRepository'
+import { CloneRequestWorkspace } from './CloneRequestWorkspace'
+import { CloneRequestDialog } from './CloneRequestDialog'
+import { requestReuseErrorMessage } from './data/dataverseOperation'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
 
 type Language = 'en' | 'fr'
-type View = 'estimates' | 'requests' | 'new' | 'settings' | 'master' | 'packages'
+type View = 'estimates' | 'requests' | 'new' | 'settings' | 'master' | 'packages' | 'clone'
 export type SelectedEquipment = {
   id: string
   number: string
@@ -49,6 +55,8 @@ export type EquipmentPasteResult = {
   notFound: string[]
   alreadySelected: string[]
   overLimit: string[]
+  unlisted?: string[]
+  duplicates?: string[]
 }
 
 function toSelectedEquipment(equipment: Equipment): SelectedEquipment {
@@ -157,7 +165,7 @@ const copy = {
     pasteNotFound: 'Not found in this branch',
     pasteAlreadySelected: 'Already selected',
     pasteOverLimit: 'Not added (processing limit reached)',
-    pasteChecking: 'Checking pasted equipment numbers...',
+    pasteChecking: 'Checking equipment numbers...',
     noEquipment: 'No matching equipment found.',
     selectEquipment: 'Select',
     selectedEquipment: 'Selected equipment',
@@ -311,7 +319,7 @@ const copy = {
     pasteNotFound: 'Introuvables dans cette succursale',
     pasteAlreadySelected: 'Déjà sélectionnés',
     pasteOverLimit: 'Non ajoutés (limite de traitement atteinte)',
-    pasteChecking: 'Vérification des numéros d’équipement collés…',
+    pasteChecking: 'Vérification des numéros d’équipement…',
     noEquipment: 'Aucun équipement correspondant.',
     selectEquipment: 'Sélectionner',
     selectedEquipment: 'Équipement sélectionné',
@@ -464,6 +472,10 @@ function App() {
   const [draftBusy, setDraftBusy] = useState(false)
   const [draftError, setDraftError] = useState('')
   const [draftNotice, setDraftNotice] = useState('')
+  const [cloneSource, setCloneSource] = useState<{ id: string; name: string }>()
+  const [cloneError, setCloneError] = useState('')
+  const [reuseBusy, setReuseBusy] = useState(false)
+  const reuseInFlight = useRef(false)
   const [savedSalesperson, setSavedSalesperson] = useState('')
   const [pricingUnavailable, setPricingUnavailable] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -485,7 +497,7 @@ function App() {
     equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages, laborLines, materialLines])
   const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || estimateTitle
     || customerName || customerEmail || customerPhone || equipmentTypeId || jobTypeId || Object.values(editableRequestInputs).some(Boolean))
-  const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty || masterDirty || masterBusy)
+  const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty || masterDirty || masterBusy || reuseBusy)
   const selectedBranch = branches.find((branch) => branch.re_branchid === branchId)
   const marketBranches = branches.filter((branch) => branch.re_market === market)
   const marketName =
@@ -631,9 +643,8 @@ function App() {
     setSelectedEquipment((current) => [...current, toSelectedEquipment(equipment)])
   }
 
-  async function addEquipmentList(text: string) {
-    const numbers = parseEquipmentList(text)
-    if (!branchId || numbers.length === 0) return
+  async function addEquipmentList(text: string, file?: File) {
+    if (!branchId || draftInFlight.current || submitted) return
     const request = ++equipmentPasteRequest.current
     const requestBranch = branchId
     setEquipmentQuery('')
@@ -641,6 +652,18 @@ function App() {
     setEquipmentBulkError('')
     setEquipmentBulkBusy(true)
     try {
+      let upload: Awaited<ReturnType<typeof import('./data/equipmentExcel').readEquipmentExcel>> | undefined
+      if (file) {
+        const { readEquipmentExcel, MAX_EQUIPMENT_EXCEL_BYTES } = await import('./data/equipmentExcel')
+        if (!/\.xlsx$/i.test(file.name)) throw new Error(language === 'fr'
+          ? 'Téléversez un fichier Excel .xlsx.' : 'Upload an Excel .xlsx file.')
+        if (file.size > MAX_EQUIPMENT_EXCEL_BYTES) throw new Error(language === 'fr'
+          ? 'Le fichier Excel ne doit pas dépasser 5 Mo.' : 'The Excel file must be no larger than 5 MB.')
+        upload = await readEquipmentExcel(await file.arrayBuffer(), language, MAX_DRAFT_CHILD_OPERATIONS)
+      }
+      if (request !== equipmentPasteRequest.current) return
+      const numbers = upload ? upload.rows.map((row) => row.number) : parseEquipmentList(text)
+      if (numbers.length === 0) return
       const matches: Equipment[] = []
       for (let offset = 0; offset < numbers.length; offset += EQUIPMENT_LOOKUP_BATCH_SIZE) {
         matches.push(...await findEquipmentByNumbers(requestBranch, numbers.slice(offset, offset + EQUIPMENT_LOOKUP_BATCH_SIZE)))
@@ -648,13 +671,29 @@ function App() {
       }
       if (request !== equipmentPasteRequest.current) return
       const plan = planEquipmentAdd(selectedEquipment.map((item) => item.number), numbers, matches)
+      const selectedNumbers = new Set(selectedEquipment.map((item) => item.number.toLowerCase()))
+      const unlisted = upload?.rows.filter((row) =>
+        !selectedNumbers.has(row.number.toLowerCase()) && plan.notFound.includes(row.number)) ?? []
+      const additions: SelectedEquipment[] = [...plan.add.map(toSelectedEquipment), ...unlisted.map((row) => ({
+        ...row, id: `unlisted-${crypto.randomUUID()}`, customer: customerName.trim(), matched: false,
+      }))]
+      if (upload && additions.length + selectedEquipment.length + selectedPackages.length + laborLines.length +
+        materialLines.length > MAX_DRAFT_CHILD_OPERATIONS)
+        throw new Error(language === 'fr' ? 'Limite technique du devis dépassée. Divisez la demande.'
+          : 'The estimate processing budget would be exceeded. Split this request.')
+      const byNumber = new Map(additions.map((row) => [row.number.toLowerCase(), row]))
+      const orderedAdditions = numbers.flatMap((number) => {
+        const row = byNumber.get(number.toLowerCase())
+        return row ? [row] : []
+      })
       setSelectedEquipment((current) => {
-        const present = new Set(current.map((item) => item.number))
-        return [...current, ...plan.add.filter((item) => !present.has(item.re_equipment)).map(toSelectedEquipment)]
+        const present = new Set(current.map((item) => item.number.toLowerCase()))
+        return [...current, ...orderedAdditions.filter((item) => !present.has(item.number.toLowerCase()))]
       })
       setEquipmentPasteResult({
-        added: plan.add.map((item) => item.re_equipment), notFound: plan.notFound,
+        added: orderedAdditions.map((item) => item.number), notFound: upload ? [] : plan.notFound,
         alreadySelected: plan.alreadySelected, overLimit: plan.overLimit,
+        unlisted: upload ? unlisted.map((row) => row.number) : undefined, duplicates: upload?.duplicates,
       })
     } catch (error) {
       if (request === equipmentPasteRequest.current) setEquipmentBulkError(message(error))
@@ -787,6 +826,10 @@ function App() {
       laborLines, materialLines, language))
 
   function applyDraft(record: DraftRecord) {
+    equipmentPasteRequest.current++
+    setEquipmentBulkBusy(false)
+    setEquipmentPasteResult(undefined)
+    setEquipmentBulkError('')
     const inputs = draftInputs(record)
     const equipment = record.equipment.map((item) => ({
       ...item, id: item.matched ? item.id : `unlisted-${crypto.randomUUID()}`,
@@ -797,6 +840,7 @@ function App() {
       re_repairpackageid: item.id, re_packagenumber: item.number, re_packagenameen: item.nameEn,
       re_packagenamefr: item.nameFr ?? undefined, re_proposalscopeen: item.scopeEn,
       re_proposalscopefr: item.scopeFr ?? undefined, re_mechanichours: item.hours, re_materialmisctaxcost: item.material,
+      re_materialbeforemarkup: item.materialBeforeMarkup ?? undefined,
       re_iscustompackage: item.isCustom ?? false, re_istimematerial: item.isTimeMaterial ?? false,
     }))
     const customIds = packages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid)
@@ -829,7 +873,7 @@ function App() {
   }
 
   async function openDraft(id: string) {
-    if (draftInFlight.current || (draftDirty && !window.confirm(dt.warning))) return
+    if (draftInFlight.current || reuseBusy || (draftDirty && !window.confirm(dt.warning))) return
     draftInFlight.current = true
     setDraftBusy(true); setDraftError(''); setDraftNotice('')
     try {
@@ -840,7 +884,7 @@ function App() {
   }
 
   async function saveDraft(submit = false) {
-    if (draftInFlight.current || submitted) return
+    if (draftInFlight.current || submitted || equipmentBulkBusy) return
     setDraftError(''); setDraftNotice('')
     const customError = customCostsError(selectedPackages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid),
       laborLines, materialLines, language)
@@ -872,6 +916,19 @@ function App() {
       }
       serializeDraft(input)
       const record = await draftOperation(input)
+      const missingDetails = input.equipment.filter((item) => !item.matched).some((item) => {
+        const saved = record.equipment.find((row) => row.number === item.number && !row.matched)
+        return !saved || (item.name && saved.name !== item.name) || (item.location && saved.location !== item.location) ||
+          (item.oem && saved.oem !== item.oem) || (item.age != null && saved.age !== item.age) ||
+          (item.customer && saved.customer !== item.customer)
+      })
+      if (missingDetails) {
+        setDraftVersion(record.version); setDraftNumber(record.number || '')
+        setSubmitted(record.status === 126110002)
+        throw new Error(language === 'fr'
+          ? 'Le devis a été enregistré, mais le serveur n’a pas conservé les détails des équipements non répertoriés. Vos détails restent à l’écran. Conservez le fichier Excel et contactez votre administrateur pour déployer le plug-in de brouillon mis à jour et récupérer les détails.'
+          : 'The draft was saved, but the server did not retain unlisted equipment details. Your details remain on screen. Keep the Excel file and contact your administrator to deploy the updated draft plugin and recover the details.')
+      }
       if (submit && record.status !== 126110002) throw new Error(language === 'fr'
         ? 'La soumission n’a pas été confirmée par le serveur. Rechargez le devis avant de réessayer.'
         : 'Submission was not confirmed by the server. Reload the estimate before retrying.')
@@ -891,7 +948,7 @@ function App() {
   }
 
   function newDraft() {
-    if (!canStart || draftInFlight.current || draftBusy || (draftDirty && !window.confirm(dt.warning))) return
+    if (!canStart || reuseBusy || draftInFlight.current || draftBusy || (draftDirty && !window.confirm(dt.warning))) return
     if (!leaveMaster()) return
     setReferencesNeeded(true)
     resetDraftWorkspace()
@@ -908,9 +965,38 @@ function App() {
   }
 
   function navigate(next: View) {
-    if (next === view || !leaveMaster()) return
+    if (next === view || reuseBusy || !leaveMaster()) return
+    if (next === 'clone') setReferencesNeeded(true)
     if (next === 'settings') settingsReturnView.current = view
     setView(next)
+  }
+
+  const currentOpportunity = opportunityValues({
+    branchId, stateId, equipmentTypeId, jobTypeId, building: buildingName, customer: customerName,
+    email: customerEmail, phone: customerPhone, market,
+    fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
+  })
+
+  async function startClone(source: OpportunityValues | string, sections: CloneSections) {
+    if (!canStart || draftInFlight.current || reuseInFlight.current || equipmentBulkBusy) return
+    if (draftDirty && !window.confirm(dt.warning)) return
+    if (!leaveMaster()) return
+    reuseInFlight.current = true
+    setReuseBusy(true); setCloneError('')
+    try {
+      const original = typeof source === 'string' ? await draftOperation({ mode: 'clonesource', id: source }) : source
+      const fresh = await revalidateClone(cloneRequest(original, sections, crypto.randomUUID()), {
+        branches: getBranches, references: getRequestReferences, locations: getDraftReferences,
+        choices: getDraftChoices, equipment: findEquipmentByNumbers, packages: listPackages,
+      })
+      applyDraft(fresh)
+      setSavedSnapshot(''); setDraftError(''); setCloneError(''); setCloneSource(undefined)
+      setDraftNotice(language === 'fr'
+        ? 'Nouvelle copie non enregistrée. Vérifiez les détails, donnez un nom au devis et enregistrez pour recalculer les coûts.'
+        : 'New unsaved copy. Review the details, enter an estimate title, and save to recalculate costs.')
+      setReferencesNeeded(true); setStep(1); setView('new')
+    } catch (reason) { setCloneError(message(reason)) }
+    finally { reuseInFlight.current = false; setReuseBusy(false) }
   }
 
   return (
@@ -961,6 +1047,12 @@ function App() {
             <NavigationIcon name="requests" />
             {t.repairRequests}
           </button>
+          <button className={`nav-item ${view === 'clone' ? 'active' : ''}`}
+            onClick={() => navigate('clone')} disabled={!canStart || draftBusy || equipmentBulkBusy || reuseBusy}>
+            <svg className="nav-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+              strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3" /></svg>
+            {language === 'fr' ? 'Cloner une demande' : 'Clone request'}
+          </button>
           <button className={`nav-item ${view === 'packages' ? 'active' : ''}`}
             onClick={() => navigate('packages')} disabled={!session?.role}>
             <NavigationIcon name="data" />{t.packagesNav}
@@ -988,7 +1080,7 @@ function App() {
           <form className="header-request-search" role="search" aria-label={t.requestSearch}
             onSubmit={(event) => {
               event.preventDefault()
-              if (!session?.canReadEstimates || draftBusy) return
+              if (!session?.canReadEstimates || draftBusy || reuseBusy) return
               if (view === 'new' && draftDirty && !window.confirm(dt.warning)) return
               if (!leaveMaster()) return
               setRequestSearch(searchInput.trim()); setView('requests')
@@ -996,9 +1088,9 @@ function App() {
             <label className="sr-only" htmlFor="header-request-search">{t.requestSearch}</label>
             <span className="search-icon" aria-hidden="true" />
             <input id="header-request-search" type="search" maxLength={150} value={searchInput}
-              placeholder={t.requestSearch} disabled={!session?.canReadEstimates || draftBusy}
+              placeholder={t.requestSearch} disabled={!session?.canReadEstimates || draftBusy || reuseBusy}
               onChange={(event) => setSearchInput(event.target.value)} />
-            <button type="submit" className="button secondary" disabled={!session?.canReadEstimates || draftBusy}>
+            <button type="submit" className="button secondary" disabled={!session?.canReadEstimates || draftBusy || reuseBusy}>
               {t.searchAction}
             </button>
           </form>
@@ -1006,7 +1098,7 @@ function App() {
             <label className="market-control">
               <span className="sr-only">{t.market}</span>
               <select aria-label={t.market} value={market} disabled={!preferences.ready || preferences.busy || draftBusy
-                || (Boolean(draftVersion) && (view === 'new' || (view === 'settings' && settingsReturnView.current === 'new')))} onChange={(event) => {
+                || reuseBusy || (Boolean(draftVersion) && (view === 'new' || (view === 'settings' && settingsReturnView.current === 'new')))} onChange={(event) => {
                 const value = Number(event.target.value)
                 if (value === 126110000 || value === 126110001 || value === 126110002) changeMarket(value)
               }}>
@@ -1072,6 +1164,11 @@ function App() {
               language, admin: session.role === 'admin', catalog: view === 'packages',
               onDirtyChange: setMasterDirty, onBusyChange: setMasterBusy,
             }} />
+          ) : view === 'clone' ? (
+            canStart && <><CloneRequestWorkspace key={`${session?.userId}:${market}`} language={language} market={market}
+              current={currentOpportunity} busy={reuseBusy || draftBusy} onBusyChange={setReuseBusy}
+              onUse={values => startClone(values, DEFAULT_CLONE_SECTIONS)} onRequests={() => navigate('requests')} />
+              {cloneError && <p className="error-box clone-page-error" role="alert">{cloneError}</p>}</>
           ) : view === 'requests' ? (
             session?.canReadEstimates ?
             <section className="page-content">
@@ -1079,7 +1176,9 @@ function App() {
                 <h1>{t.repairRequests}</h1>
                 <p>{t.recentRequestsHint}</p>
               </div></div>
-              <section className="dashboard-card"><EstimateList key={market} market={market} ownerId={session.role === 'admin' ? null : session.userId} search={requestSearch} language={language} onOpen={(id) => void openDraft(id)} busy={draftBusy} /></section>
+              <section className="dashboard-card"><EstimateList key={market} market={market} ownerId={session.role === 'admin' ? null : session.userId} search={requestSearch} language={language}
+                onOpen={(id) => void openDraft(id)} busy={draftBusy || reuseBusy}
+                onClone={canStart ? (id, name) => { setCloneError(''); setCloneSource({ id, name }) } : undefined} /></section>
             </section>
             : null
           ) : view === 'new' && !canWork ? null : (
@@ -1120,6 +1219,7 @@ function App() {
               dt,
               draftNumber,
               newDraft,
+              onSaveOpportunity: () => navigate('clone'),
               draftBusy,
               canStart,
               openDraft,
@@ -1166,6 +1266,7 @@ function App() {
               selectedEquipment,
               addUnlistedEquipment,
               addEquipmentList,
+              uploadEquipmentExcel: (file: File) => addEquipmentList('', file),
               equipmentPasteResult,
               setSelectedEquipment,
               selectedPackages,
@@ -1192,6 +1293,9 @@ function App() {
           )}
         </div>
       </main>
+      {cloneSource && <CloneRequestDialog language={language} busy={reuseBusy} sourceName={cloneSource.name}
+        error={cloneError ? requestReuseErrorMessage(cloneError, 'clone', language) : ''} onCancel={() => { setCloneSource(undefined); setCloneError('') }}
+        onClone={sections => startClone(cloneSource.id, sections)} />}
     </div>
   )
 }

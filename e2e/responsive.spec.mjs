@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import ExcelJS from 'exceljs'
 
 const viewports = [
   { width: 320, height: 568 },
@@ -89,7 +90,7 @@ async function mockData(page, language, theme, state = 'records') {
         if (window.__draftDelay) await new Promise((resolve) => setTimeout(resolve, window.__draftDelay));
         const failure = window.__draftFailure;
         if (failure && failure !== 'timeout-after-commit') throw new Error(failure);
-        if (input.mode === 'load') {
+        if (input.mode === 'load' || input.mode === 'clonesource') {
           if (!window.__draftSaved || window.__draftSaved.id !== input.id) throw new Error('Draft not found');
           return structuredClone(window.__draftSaved);
         }
@@ -97,15 +98,58 @@ async function mockData(page, language, theme, state = 'records') {
           status:input.mode === 'submit' ? 126110002 : 126110000,
           version:String(Number(window.__draftSaved?.version || 0) + 1),
           number:'0000000042', salesperson:'Original Salesperson', pricingState:window.__pricingState,
-          equipment:input.equipment.map((e) => ({...e,name:'Persisted equipment snapshot'})),
-          packages:input.packages.map((p) => ({...p,nameEn:'Persisted package snapshot',
-            nameFr:'Forfait enregistré',scopeEn:'Persisted scope',hours:2.5,material:125})),
+          equipment:input.equipment.map((e) => e.matched ? {...e,name:'Persisted equipment snapshot'}
+            : window.__dropUnlistedDetails ? {...e,name:'',location:'',oem:'',age:null} : e),
+          packages:input.packages.map((p) => {
+            const packagePriced = input.materialLines?.some(m => m.packageId === p.id && m.pricingSource === 'package');
+            const source = window.__extraPackages?.find(master => master.re_repairpackageid === p.id);
+            return {...p,nameEn:'Persisted package snapshot',nameFr:'Forfait enregistré',scopeEn:'Persisted scope',
+              hours:packagePriced ? source.re_mechanichours : 2.5,
+              material:packagePriced ? source.re_materialmisctaxcost : 125,
+              ...(packagePriced ? {materialBeforeMarkup:source.re_materialbeforemarkup} : {})};
+          }),
           laborLines:(input.laborLines || []).map((line) => ({...line,rate:line.rate ?? 200})),
           materialLines:input.materialLines || []
         };
         if (failure === 'timeout-after-commit') throw new Error('Timeout: outcome unknown');
         return structuredClone(window.__draftSaved);
       }`,
+  }))
+  await page.route('**/src/generated/services/Re_DraftEstimateService.ts*', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export class Re_DraftEstimateService {
+      static async re_DraftEstimate(json) {
+        const input = JSON.parse(json);
+        if (input.mode.startsWith('preset')) {
+          window.__presetCalls ??= [];
+          window.__presetCalls.push(structuredClone(input));
+          if (window.__presetFailure) throw new Error(window.__presetFailure);
+          window.__presets ??= [];
+          let presets = [];
+          if (input.mode === 'presetlist') presets = window.__presets.filter(row => row.opportunity.market === input.market);
+          if (input.mode === 'presetsave') {
+            presets = [{id:crypto.randomUUID(),name:input.presetName,opportunity:input.opportunity}];
+            window.__presets.push(...presets);
+          }
+          if (input.mode === 'presetdelete') window.__presets = window.__presets.filter(row => row.id !== input.id);
+          return {success:true,data:{ResultJson:JSON.stringify({mode:'presets',presets,nextToken:null})}};
+        }
+        window.__catalogRequests ??= [];
+        window.__catalogRequests.push(input);
+        if (window.__catalogFailure) throw new Error(window.__catalogFailure);
+        if (!['partcapabilities','partcatalog'].includes(input.mode)) throw new Error('Unsupported mock catalog operation');
+        const base = {mode:'partcatalog',available:!!window.__catalogEnabled,
+          reason:window.__catalogEnabled ? null : 'Catalog schema and approved data not deployed.',
+          currency:'USD',defaultMarkupPercent:10,more:false,parts:[]};
+        if (input.mode === 'partcatalog' && window.__catalogEnabled) {
+          base.parts = input.search.startsWith('NONE') ? [] : [{
+            id:window.__badCatalogId || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',number:'TEST-PART-001',description:'Test catalog motor',
+            partType:input.partType,unitCost:7.73178,unitPrice:40.376,uom:'PC'
+          }];
+        }
+        return {success:true,data:{ResultJson:JSON.stringify(base)}};
+      }
+    }`,
   }))
   await page.route('**/src/data/sessionRepository.ts*', (route) => route.fulfill({
     contentType: 'application/javascript',
@@ -164,6 +208,8 @@ async function mockData(page, language, theme, state = 'records') {
       export async function findEquipmentByNumbers(branchId, numbers) {
         window.__equipmentLookups ??= [];
         window.__equipmentLookups.push({ branchId, numbers });
+        if (window.__equipmentLookupError) throw new Error(window.__equipmentLookupError);
+        if (window.__equipmentLookupDelay) await new Promise(resolve => setTimeout(resolve, window.__equipmentLookupDelay));
         if (window.__equipmentResults) return window.__equipmentResults.filter((item) => numbers.includes(item.re_equipment));
         return numbers.filter((n) => n === 'TEST123').map(() => ({
           re_equipmentid:'test-equipment', re_equipment:'TEST123', re_equipmentname:'Equipment with a long descriptive name / Équipement avec un nom long',
@@ -258,7 +304,7 @@ async function checkLayout(page, viewport, stage) {
     const action = card.locator('.request-record-actions button')
     if (!await action.count()) continue
     const badge = card.locator('.preview-badge')
-    const buttonRect = await action.boundingBox()
+    const buttonRect = await action.first().boundingBox()
     const badgeRect = await badge.boundingBox()
     // DOMRect subtraction can report 43.99994 for an exact 44px layout height.
     expect(Math.round(buttonRect.height * 1000) / 1000).toBeGreaterThanOrEqual(44)
@@ -1020,6 +1066,219 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await next(page)
 }
 
+for (const width of [320, 1366]) {
+  for (const language of ['en', 'fr']) {
+    test(`request clone defaults open a clean unsaved identity at ${width}px ${language}`, async ({ page }, testInfo) => {
+      const fr = language === 'fr'
+      await completeDraft(page, { width, height: 900 }, language)
+      await page.locator('.draft-save-action').click()
+      await expect(page.locator('.draft-saved')).toContainText('0000000042')
+      const original = await page.evaluate(() => structuredClone(window.__draftSaved))
+      await page.locator('.main-nav .nav-item').nth(2).click()
+      await checkLayout(page, { width, height: 900 }, 'requests with clone action')
+      await page.locator('.request-record').getByRole('button', { name: fr ? 'Cloner' : 'Clone', exact: true }).click()
+      const modal = page.getByRole('dialog')
+      await expect(modal).toBeVisible()
+      const bounds = await modal.boundingBox()
+      expect(bounds.x).toBeGreaterThanOrEqual(0)
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width)
+      await modal.screenshot({ path: testInfo.outputPath('clone-dialog.png') })
+      await expect(modal.getByRole('checkbox').first()).toBeChecked()
+      for (const box of (await modal.getByRole('checkbox').all()).slice(1)) await expect(box).not.toBeChecked()
+      await modal.getByRole('button', { name: fr ? 'Ouvrir une nouvelle copie' : 'Open new copy' }).click()
+      await expect(modal).not.toBeVisible()
+      await expect(page.locator('#estimate-title')).toHaveValue('')
+      await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+      await expect(page.locator('#branch-select')).toBeEnabled()
+      await expect(page.locator('#salesperson')).toHaveValue('Responsive Test User')
+      expect(await page.evaluate(() => window.__draftCalls.map(row => row.mode))).toEqual(['save', 'clonesource'])
+      expect(await page.evaluate(() => window.__draftSaved)).toEqual(original)
+      await checkLayout(page, { width, height: 900 }, 'unsaved default clone')
+      await page.locator('#estimate-title').fill('New Opportunity copy')
+      await next(page)
+      await expect(page.locator('.selected-card')).toHaveCount(0)
+    })
+  }
+}
+
+test('request clone selected sections use current masters, reset selling price and save as another request', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  const original = await page.evaluate(() => structuredClone(window.__draftSaved))
+  await page.locator('.main-nav .nav-item').nth(2).click()
+  await page.locator('.request-record').getByRole('button', { name: 'Clone', exact: true }).click()
+  const modal = page.getByRole('dialog')
+  await modal.getByRole('checkbox', { name: 'Equipment selection', exact: true }).check()
+  await modal.getByRole('checkbox', { name: 'Custom labor, materials and scope', exact: true }).check()
+  await expect(modal.getByRole('checkbox', { name: 'Package selection', exact: true })).toBeChecked()
+  await modal.getByRole('button', { name: 'Open new copy' }).click()
+  await expect(page.locator('#estimate-title')).toHaveValue('')
+  await page.locator('#estimate-title').fill('New repair copy')
+  await next(page)
+  await expect(page.locator('.selected-card')).toHaveCount(2)
+  await expect(page.locator('.selected-card').first()).toContainText('Equipment with a long descriptive name')
+  await expect(page.locator('.selected-card').last()).toContainText('Repair package with a long descriptive name')
+  await next(page)
+  await next(page)
+  await expect(page.locator('#request-re_sellprice')).toHaveValue('')
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  const calls = await page.evaluate(() => window.__draftCalls)
+  expect(calls.map(row => row.mode)).toEqual(['save', 'clonesource', 'save'])
+  expect(calls[2].id).not.toEqual(original.id)
+  expect(calls[2].version).toBeNull()
+  expect(calls[2].fields).not.toContainEqual({ key: 're_sellprice', value: '1500' })
+})
+
+test('request clone stale master errors and canceled discard preserve the existing workspace', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  await page.locator('.main-nav .nav-item').nth(2).click()
+  await page.locator('.request-record').getByRole('button', { name: 'Clone', exact: true }).click()
+  await page.evaluate(() => { window.__branches = [] })
+  await page.getByRole('dialog').getByRole('button', { name: 'Open new copy' }).click()
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('source branch/currency')
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.locator('.request-record').getByRole('button', { name: 'Open draft', exact: true }).click()
+  await expect(page.locator('#estimate-title')).toHaveValue('Motor repair draft')
+  await page.locator('#estimate-title').fill('Do not lose this')
+  await page.locator('.main-nav .nav-item').nth(2).click()
+  await page.locator('.request-record').getByRole('button', { name: 'Clone', exact: true }).click()
+  page.once('dialog', dialog => dialog.dismiss())
+  await page.getByRole('dialog').getByRole('button', { name: 'Open new copy' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  expect(await page.evaluate(() => window.__draftCalls.filter(row => row.mode === 'save').length)).toBe(1)
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
+})
+
+for (const width of [320, 1366]) {
+  test(`Opportunity presets save, reload, use and delete privately at ${width}px`, async ({ page }, testInfo) => {
+    await completeDraft(page, { width, height: 900 })
+    for (let index = 0; index < 4; index++) await page.locator('.form-footer > button').click()
+    await page.getByRole('button', { name: 'Save as Opportunity preset', exact: true }).click()
+    await expect(page.getByText('No saved presets for this market yet.')).toBeVisible()
+    await page.getByRole('textbox', { name: 'Preset name', exact: true }).fill('Frequent customer')
+    await page.getByRole('button', { name: 'Save Opportunity details', exact: true }).click()
+    await expect(page.locator('.clone-preset-card')).toHaveCount(1)
+    const saved = await page.evaluate(() => structuredClone(window.__presets[0]))
+    expect(saved.opportunity.customer).toBe('Draft customer')
+    expect(saved.opportunity.fields.every(field => !['re_sellprice', 're_hasbeenapproved', 're_statedlaborrate'].includes(field.key))).toBe(true)
+    expect(await page.evaluate(() => window.__draftCalls || [])).toEqual([])
+    await checkLayout(page, { width, height: 900 }, 'private preset page')
+    await page.screenshot({ path: testInfo.outputPath('opportunity-presets.png'), fullPage: true })
+    await page.locator('.main-nav .nav-item').nth(2).click()
+    await page.locator('.main-nav').getByRole('button', { name: 'Clone request', exact: true }).click()
+    await expect(page.locator('.clone-preset-card')).toContainText('Frequent customer')
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('button', { name: 'Use preset', exact: true }).click()
+    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+    expect(await page.evaluate(() => window.__draftCalls || [])).toEqual([])
+    await page.locator('.main-nav').getByRole('button', { name: 'Clone request', exact: true }).click()
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('button', { name: 'Delete Frequent customer', exact: true }).click()
+    await expect(page.locator('.clone-preset-card')).toHaveCount(0)
+    expect(await page.evaluate(() => window.__presetCalls.map(row => row.mode))).toContain('presetdelete')
+  })
+}
+
+test('Opportunity presets unavailable leaves existing-request cloning available with explicit diagnostics', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.addInitScript(() => { window.__presetFailure = 'Opportunity presets are unavailable. Deploy the private preset table.' })
+  await page.goto('/')
+  await page.locator('.main-nav').getByRole('button', { name: 'Clone request', exact: true }).click()
+  await expect(page.locator('.clone-workspace').getByRole('alert')).toContainText('Deploy the private preset table')
+  await expect(page.getByRole('button', { name: 'Save Opportunity details', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Browse repair requests', exact: true }).click()
+  await expect(page.locator('.request-record').getByRole('button', { name: 'Clone', exact: true })).toBeVisible()
+})
+
+test('unsupported deployed clone and preset operations explain the required backend update without losing work', async ({ page }) => {
+  const failure = JSON.stringify({ error: { code: '0x80040265', message: 'Unsupported draft operation.' } })
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  const original = await page.evaluate(() => structuredClone(window.__draftSaved))
+  await page.evaluate(error => { window.__draftFailure = error; window.__presetFailure = error }, failure)
+  await page.locator('.main-nav .nav-item').nth(2).click()
+  await page.locator('.request-record').getByRole('button', { name: 'Clone', exact: true }).click()
+  const modal = page.getByRole('dialog')
+  await modal.getByRole('button', { name: 'Open new copy' }).click()
+  await expect(modal.getByRole('alert')).toContainText('update the existing RepairEstimator.Drafts assembly')
+  await expect(modal.getByRole('alert')).toContainText('clonesource')
+  await expect(modal.getByRole('alert')).not.toContainText('"error"')
+  expect(await page.evaluate(() => window.__draftSaved)).toEqual(original)
+  await modal.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.locator('.main-nav').getByRole('button', { name: 'Clone request', exact: true }).click()
+  const error = page.locator('.clone-workspace').getByRole('alert')
+  await expect(error).toContainText('presetlist / presetsave / presetdelete')
+  await expect(error).toContainText('re_opportunitypreset')
+  await expect(error).not.toContainText('"error"')
+  await expect(page.getByRole('button', { name: 'Save Opportunity details', exact: true })).toBeDisabled()
+  expect(await page.evaluate(() => window.__draftCalls.filter(row => row.mode === 'save').length)).toBe(1)
+  expect(await page.evaluate(() => window.__presets || [])).toEqual([])
+})
+
+for (const width of [320, 1366]) {
+  for (const language of ['en', 'fr']) {
+    test(`billing plan payment amounts update and remain visible in review at ${width}px ${language}`, async ({ page }) => {
+      await completeDraft(page, { width, height: 900 }, language)
+      await page.locator('.form-footer > button').click()
+      const price = page.locator('#request-re_sellprice')
+      async function setPrice(value) {
+        await price.focus()
+        await price.press('ControlOrMeta+A')
+        await price.press('Backspace')
+        if (value) await price.pressSequentially(value)
+      }
+      const plan = page.locator('#request-re_billingplan')
+      const payments = page.locator('.billing-payment-details')
+      const amounts = (first, last) => language === 'fr'
+        ? [`${first.replace('.', ',')} USD`, `${last.replace('.', ',')} USD`]
+        : [`${first} USD`, `${last} USD`]
+      await setPrice('100')
+      await plan.selectOption('126110001')
+      await expect(payments.locator('dd')).toHaveText(amounts('60.00', '40.00'))
+      await expect(payments.locator('dt')).toHaveText(language === 'fr'
+        ? ['Acompte (60%)', 'Paiement final (40%)'] : ['Down payment (60%)', 'Final payment (40%)'])
+      await plan.selectOption('126110000')
+      await expect(payments.locator('dd')).toHaveText(amounts('50.00', '50.00'))
+      await setPrice('100.01')
+      await expect(payments.locator('dd')).toHaveText(amounts('50.01', '50.00'))
+      await plan.selectOption('126110002')
+      await expect(payments.locator('dd')).toHaveText(amounts('0.00', '100.01'))
+      await plan.selectOption('126110003')
+      await expect(payments).toHaveCount(0)
+      await expect(page.getByText(language === 'fr'
+        ? 'Plan personnalisé : consultez les notes pour les montants et les échéances.'
+        : 'Custom billing plan: see notes for payment amounts and timing.')).toBeVisible()
+      await plan.selectOption('126110001')
+      await setPrice('')
+      await expect(payments).toHaveCount(0)
+      await expect(page.getByText(language === 'fr'
+        ? 'Saisissez le prix de vente pour voir les paiements.'
+        : 'Enter a selling price to see payment amounts.')).toBeVisible()
+      await setPrice('-1')
+      await expect(payments).toHaveCount(0)
+      await expect(page.getByText(language === 'fr'
+        ? 'Saisissez un prix de vente valide et non négatif dans la plage de montants prise en charge.'
+        : 'Enter a valid nonnegative selling price within the supported amount range.')).toBeVisible()
+      await setPrice('0')
+      await expect(payments.locator('dd')).toHaveText(amounts('0.00', '0.00'))
+      await setPrice('200')
+      await expect(payments.locator('dd')).toHaveText(amounts('120.00', '80.00'))
+      await checkLayout(page, { width, height: 900 }, 'billing payment preview')
+      await next(page)
+      await page.locator('details').filter({ has: plan }).locator('summary').click()
+      await expect(plan).toBeDisabled()
+      await expect(payments.locator('dd')).toHaveText(amounts('120.00', '80.00'))
+      await checkLayout(page, { width, height: 900 }, 'billing payment review')
+    })
+  }
+}
+
 for (const width of [320, 768, 1366]) {
   for (const language of ['en', 'fr']) {
     test(`selected package description and pricing align at ${width}px in ${language}`, async ({ page }, testInfo) => {
@@ -1027,6 +1286,7 @@ for (const width of [320, 768, 1366]) {
       for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
       const card = page.locator('.selected-package-card').first()
       await expect(card.locator('.package-cost-details')).toBeVisible()
+      await expect(card.locator('dt').filter({ hasText: /^(Number of equipment|Nombre d’équipements)$/ }).locator('+ dd')).toHaveText('1')
       await expect(card.locator('dt').filter({ hasText: /^(Tax|Taxe) \(%\)$/ }).locator('+ dd')).toHaveText(language === 'fr' ? '5,00%' : '5.00%')
       await expect(card.locator('dt').filter({ hasText: /^(Freight|Fret) \(%\)$/ }).locator('+ dd')).toHaveText(language === 'fr' ? '14,00%' : '14.00%')
       const description = await card.locator('.selected-package-description').boundingBox()
@@ -1091,6 +1351,104 @@ test('package preview rates query current branch mechanic cost data from Dataver
   expect(result.query.filter).toContain('re_effectivefrom le')
   expect(result.query.filter).toContain('re_effectiveto')
 })
+
+  async function openCatalogMaterial(page, enabled, language = 'en', width = 1366, withoutAmounts = false) {
+    await page.addInitScript(({ ready, withoutAmounts }) => {
+      window.__catalogEnabled = ready
+      window.__extraPackages = [{
+        re_repairpackageid: 'catalog-custom', re_packagenumber: 'CSTM-CATALOG', re_packagenameen: 'CSTM Catalog',
+        re_iscustompackage: true, re_mechanichours: 0, re_materialbeforemarkup: withoutAmounts ? undefined : 617.45,
+        re_materialmisctaxcost: 849.77, re_effectivefrom: '2020-01-01',
+      }]
+    }, { ready: enabled, withoutAmounts })
+    await completeDraft(page, { width, height: 900 }, language)
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    await page.locator('#package-search').fill('CSTM-CATALOG')
+    await page.locator('#package-options button').first().click()
+    for (const [key, value] of [['re_usetax', '5'], ['re_freight', '14']]) {
+      const input = page.locator(`#request-${key}`)
+      await input.focus()
+      await input.press('ControlOrMeta+A')
+      await input.pressSequentially(value)
+    }
+    await page.getByRole('button', { name: language === 'fr' ? 'Ajouter main-d’œuvre' : 'Add labor', exact: true }).click()
+    await page.locator('.custom-cost-line').filter({ has: page.locator('legend', { hasText: /^(Labor|Main-d’œuvre)/ }) }).getByRole('spinbutton').fill('2')
+    await page.getByRole('button', { name: language === 'fr' ? 'Ajouter un matériau' : 'Add material', exact: true }).click()
+    return page.locator('.custom-cost-line').filter({ has: page.locator('legend', { hasText: /^(Material|Matériau)/ }) })
+  }
+
+  for (const width of [320, 1366]) for (const language of ['en', 'fr']) {
+    test(`CSTM package KONE and manual non-KONE save without catalog at ${width}px ${language}`, async ({ page }) => {
+      const fr = language === 'fr'
+      const materials = await openCatalogMaterial(page, false, language, width)
+      const material = materials.first()
+      const type = fr ? 'Type de pièce' : 'Part type'
+      await material.getByRole('combobox', { name: type, exact: true }).selectOption('package')
+      await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Package-priced motor')
+      await material.getByRole('textbox', { name: fr ? 'Numéro de pièce' : 'Part number', exact: true }).fill('KM-MANUAL')
+      await material.getByRole('spinbutton', { name: fr ? 'Quantité (information seulement)' : 'Quantity (reference only)', exact: true }).fill('50')
+      await expect(material.getByLabel(fr ? 'Majoration KONE (%)' : 'KONE markup (%)')).toHaveCount(0)
+      await expect(material.getByRole('spinbutton', { name: fr ? 'Coût unitaire' : 'Unit cost', exact: true })).toHaveCount(0)
+      await expect(material).toContainText(fr ? '617,45' : '617.45')
+      await expect(material).toContainText(fr ? '849,77' : '849.77')
+      await page.getByRole('button', { name: fr ? 'Ajouter un matériau' : 'Add material', exact: true }).click()
+      const manual = materials.last()
+      await manual.getByRole('combobox', { name: type, exact: true }).selectOption('manual')
+      await manual.getByRole('textbox', { name: 'Description', exact: true }).fill('Manual non-KONE component')
+      await manual.getByRole('textbox', { name: fr ? 'Numéro de pièce' : 'Part number', exact: true }).fill('MANUAL-001')
+      await manual.getByRole('spinbutton', { name: fr ? 'Coût unitaire' : 'Unit cost', exact: true }).fill('12.50')
+      await expect(page.locator('body')).toHaveJSProperty('scrollWidth', width)
+      await page.getByRole('button', { name: fr ? 'Calculer et retourner aux forfaits' : 'Calculate and return to packages', exact: true }).click()
+      await expect(page.locator('#package-search')).toBeVisible()
+      await page.locator('.draft-save-action').click()
+      await expect(page.locator('.draft-saved')).toBeVisible()
+      const lines = await page.evaluate(() => window.__draftSaved.materialLines)
+      expect(await page.evaluate(() => window.__draftSaved.packages.find(p => p.id === 'catalog-custom')))
+        .toMatchObject({ materialBeforeMarkup: 617.45, material: 849.77 })
+      expect(lines[0]).toMatchObject({ partType: 'kone', pricingSource: 'package',
+        unitCost: 0, part: 'KM-MANUAL', quantity: 50, packageId: 'catalog-custom' })
+      expect(lines[0].catalogPartId).toBeUndefined()
+      expect(lines[0].markupPercent).toBeUndefined()
+      expect(lines[1]).toMatchObject({ partType: 'non-kone', pricingSource: 'manual', part: 'MANUAL-001', unitCost: 12.5 })
+      expect(lines[1].catalogPartId).toBeUndefined()
+      expect(lines[1].markupPercent).toBeUndefined()
+      expect(await page.evaluate(() => window.__catalogRequests || [])).toEqual([])
+    })
+  }
+
+  test('CSTM manual entry is available without catalog warnings or requests', async ({ page }) => {
+    const material = (await openCatalogMaterial(page, false)).first()
+    await expect(page.locator('.custom-cost-lines')).not.toContainText('Catalog unavailable')
+    await expect(material.getByRole('combobox', { name: 'Part type', exact: true })).toBeEnabled()
+    await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Existing manual motor')
+    await material.getByRole('spinbutton', { name: 'Unit cost', exact: true }).fill('25')
+    await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    expect(await page.evaluate(() => window.__draftSaved.materialLines[0].pricingSource)).toBe('manual')
+  })
+
+  test('CSTM switching between package KONE and manual non-KONE clears extra pricing', async ({ page }) => {
+    const material = (await openCatalogMaterial(page, true)).first()
+    await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Manual motor')
+    await material.getByRole('spinbutton', { name: 'Unit cost', exact: true }).fill('100')
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('package')
+    await expect(material.getByRole('spinbutton', { name: 'Unit cost', exact: true })).toHaveCount(0)
+    await expect(material.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Manual motor')
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('manual')
+    await expect(material.getByRole('spinbutton', { name: 'Unit cost', exact: true })).toHaveValue('0')
+    await expect(page.locator('.draft-save-action')).toBeDisabled()
+  })
+
+  test('CSTM package KONE preview rejects missing source amounts rather than pricing them as zero', async ({ page }) => {
+    const material = (await openCatalogMaterial(page, false, 'en', 1366, true)).first()
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('package')
+    await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Motor')
+    await expect(material).toContainText('Package amounts are missing')
+    await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Package Material Before Markup is missing or invalid.' })).toBeVisible()
+    expect(await page.evaluate(() => window.__draftCalls || [])).toEqual([])
+  })
 
 test('package costs show immediately and each CSTM requires separate positive entries before returning to packages', async ({ page }) => {
   await page.addInitScript(() => {
@@ -1194,6 +1552,8 @@ for (const width of [320, 1366]) {
     await next(page)
     const summary = page.locator('.package-cost-summary')
     await expect(summary.locator('.package-overview-card')).toHaveCount(3)
+    for (const card of await summary.locator('.package-overview-card').all())
+      await expect(card.locator('dt').filter({ hasText: 'Number of equipment' }).locator('+ dd')).toHaveText('1')
     for (const [index, amount] of ['259.50 USD', '264.00 USD', '219.00 USD'].entries())
       await expect(summary.locator('.package-overview-card').nth(index).locator('dd.package-cost-total')).toHaveText(amount)
     await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
@@ -1241,6 +1601,7 @@ test('equipment selection exceeds fourteen for catalog and unlisted units and su
   await expect(catalog).toHaveCount(20)
   for (let i = 0; i < 20; i++) await catalog.nth(i).click()
   await expect(page.locator('.selected-card').first().locator('.equipment-card')).toHaveCount(21)
+  await expect(page.locator('.selected-package-card dt').filter({ hasText: 'Number of equipment' }).locator('+ dd')).toHaveText('21')
   await expect(page.locator('.aside-stat strong').first()).toHaveText('21')
   await page.locator('#equipment-search').fill('UNLISTED-EXTRA')
   await page.locator('#equipment-options button').filter({ hasText: 'UNLISTED-EXTRA' }).click()
@@ -2549,4 +2910,149 @@ test('dashboard adapter calls the existing generated action without a client-sel
     }, actionResponse)
     expect(error).toMatch(/invalid response|Invalid dashboard|Permission denied/)
   }
+})
+
+async function equipmentWorkbook(rows, headers = ['Equipment Number', 'Equipment Name', 'Age', 'Location', 'Manufacturer']) {
+  const book = new ExcelJS.Workbook()
+  const sheet = book.addWorksheet('Equipment')
+  sheet.addRow(headers)
+  sheet.getColumn(1).numFmt = '@'
+  for (const row of rows) sheet.addRow(row)
+  return { name: 'equipment.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.from(await book.xlsx.writeBuffer()) }
+}
+
+for (const language of ['en', 'fr']) for (const width of [320, 1366]) {
+  test(`Excel equipment upload adds matched and unlisted details and survives reopen at ${width}px ${language}`, async ({ page }, testInfo) => {
+    test.setTimeout(180000)
+    await completeDraft(page, { width, height: 900 }, language)
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    await page.evaluate(() => {
+      window.__equipmentResults = [{
+        re_equipmentid: 'master-from-excel', re_equipment: '20000711', re_equipmentname: 'Trusted master lift',
+        re_functionallocation: 'Master location', re_equipmentage: 12, re_oem: 'Master manufacturer',
+        re_soldtoname: 'Master customer',
+      }]
+    })
+    const upload = page.locator('.equipment-excel-upload input[type="file"]')
+    const importPanel = page.locator('.equipment-excel-upload')
+    await expect(upload).toBeHidden()
+    const buttons = importPanel.getByRole('button')
+    await expect(buttons).toHaveCount(2)
+    const boxes = await buttons.evaluateAll(elements => elements.map(element => {
+      const rect = element.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, height: rect.height,
+        fits: element.scrollWidth <= element.clientWidth + 1 }
+    }))
+    expect(boxes.every(box => box.height >= 44 && box.fits)).toBe(true)
+    if (width === 320) expect(boxes[1].y).toBeGreaterThan(boxes[0].bottom)
+    else {
+      expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(2)
+      expect(boxes[1].x).toBeGreaterThan(boxes[0].right)
+    }
+    const chooserEvent = page.waitForEvent('filechooser')
+    await importPanel.getByRole('button', { name: language === 'fr' ? 'Téléverser le fichier Excel' : 'Upload Excel file', exact: true }).click()
+    const chooser = await chooserEvent
+    const file = await equipmentWorkbook([
+      ['20000711', 'Do not override master', 99, 'Wrong location', 'Wrong manufacturer'],
+      ['00000712', 'New lobby lift', 0, 'Ground floor', 'KONE'],
+      ['00000712', 'New lobby lift', 0, 'Ground floor', 'KONE'],
+      ['TEST123', 'Already selected', 15, '', ''],
+    ])
+    await chooser.setFiles(file)
+    await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(3, { timeout: 90000 })
+    const matched = page.locator('.equipment-card:not(.selected-package-card)').filter({ hasText: '20000711' })
+    await expect(matched).toContainText('Trusted master lift')
+    await expect(matched).not.toContainText('Do not override master')
+    const unlisted = page.locator('.equipment-card:not(.selected-package-card)').filter({ hasText: '00000712' })
+    for (const value of ['New lobby lift', 'Ground floor', 'KONE', 'Draft customer'])
+      await expect(unlisted).toContainText(value)
+    await expect(unlisted).toContainText(language === 'fr' ? 'Âge: 0' : 'Age: 0')
+    await expect(importPanel.locator('.equipment-excel-filename')).toContainText('equipment.xlsx')
+    await expect(page.locator('.equipment-import-total')).toContainText(language === 'fr' ? 'Équipements ajoutés' : 'Equipment added')
+    await expect(page.locator('.equipment-import-summary')).not.toContainText('pasted list')
+    await importPanel.screenshot({ path: testInfo.outputPath('excel-import-panel.png') })
+    await expect(page.locator('body')).toHaveJSProperty('scrollWidth', width)
+    await expect(page.locator('.selected-package-card dt').filter({ hasText: /^(Number of equipment|Nombre d’équipements)$/ }).locator('+ dd')).toHaveText('3')
+    await upload.setInputFiles(file)
+    await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(3)
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    const equipment = await page.evaluate(() => window.__draftSaved.equipment)
+    expect(equipment.map(row => row.number)).toEqual(['TEST123', '20000711', '00000712'])
+    expect(equipment[2]).toMatchObject({ matched: false, name: 'New lobby lift', age: 0,
+      location: 'Ground floor', oem: 'KONE', customer: 'Draft customer' })
+    await page.locator('.draft-secondary-actions button').nth(1).click()
+    await next(page)
+    await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(3)
+    await expect(page.locator('.equipment-card:not(.selected-package-card)').filter({ hasText: '00000712' })).toContainText('New lobby lift')
+  })
+}
+
+test('Excel equipment template downloads and corrupt, conflicting and invalid rows add nothing', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  const downloadEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download Excel template', exact: true }).click()
+  const download = await downloadEvent
+  expect(download.suggestedFilename()).toBe('Equipment-Template.xlsx')
+  const book = new ExcelJS.Workbook()
+  await book.xlsx.readFile(await download.path())
+  expect(book.worksheets[0].getRow(1).values.slice(1)).toEqual(['Equipment Number', 'Equipment Name', 'Age', 'Location', 'Manufacturer'])
+  const upload = page.locator('.equipment-excel-upload input[type="file"]')
+  for (const [file, error] of [
+    [{ name: 'equipment.csv', mimeType: 'text/csv', buffer: Buffer.from('20000711') }, 'Upload an Excel .xlsx file'],
+    [{ name: 'corrupt.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.from('not Excel') }, 'Cannot read this workbook'],
+    [await equipmentWorkbook([['NEW1', 'Valid'], ['NEW2', 'Invalid age', 201]]), 'Row 3'],
+    [await equipmentWorkbook([['NEW1', 'One'], ['NEW1', 'Conflicting']]), 'conflicting details'],
+  ]) {
+    await upload.setInputFiles(file)
+    await expect(page.locator('.error-box').filter({ hasText: error })).toBeVisible()
+    await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(1)
+  }
+})
+
+test('Excel equipment lookup failure adds no unlisted rows and retry uses batches without truncation', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__equipmentLookupError = 'Equipment lookup unavailable'
+    window.__equipmentResults = []
+    window.__equipmentLookups = []
+  })
+  const file = await equipmentWorkbook(Array.from({ length: 60 }, (_, i) => [`EXCEL-${i}`, `Lift ${i}`, 5, 'Lobby', 'KONE']))
+  const upload = page.locator('.equipment-excel-upload input[type="file"]')
+  await upload.setInputFiles(file)
+  await expect(page.locator('.error-box').filter({ hasText: 'Equipment lookup unavailable' })).toBeVisible()
+  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(1)
+  await page.evaluate(() => { window.__equipmentLookupError = ''; window.__equipmentLookups = [] })
+  await upload.setInputFiles(file)
+  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(61)
+  expect(await page.evaluate(() => window.__equipmentLookups.map(call => call.numbers.length))).toEqual([50, 10])
+})
+
+test('Excel equipment late lookup cannot populate a new draft and saving is blocked while importing', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => { window.__equipmentLookupDelay = 1500; window.__equipmentResults = [] })
+  await page.locator('.equipment-excel-upload input[type="file"]').setInputFiles(await equipmentWorkbook([['LATE1', 'Late lift']]))
+  await expect(page.locator('.draft-save-action')).toBeDisabled()
+  page.once('dialog', dialog => dialog.accept())
+  await page.locator('.draft-secondary-actions button').first().click()
+  await expect(page.locator('#estimate-title')).toHaveValue('')
+  await page.waitForTimeout(1700)
+  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(0)
+  await expect(page.locator('#estimate-title')).toHaveValue('')
+})
+
+test('Excel equipment details are kept on screen with explicit warning when an older server drops snapshots', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.locator('.equipment-excel-upload input[type="file"]').setInputFiles(await equipmentWorkbook([['NEW1', 'Keep my lift', 5, 'Lobby', 'KONE']]))
+  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(2)
+  await page.evaluate(() => { window.__dropUnlistedDetails = true })
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.error-box').filter({ hasText: 'server did not retain unlisted equipment details' })).toBeVisible()
+  await expect(page.locator('.equipment-card:not(.selected-package-card)').filter({ hasText: 'NEW1' })).toContainText('Keep my lift')
+  await expect(page.locator('.draft-saved')).toHaveCount(0)
 })
