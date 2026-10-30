@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type Dispatch, type SetStateAction, type 
 import type { Branch, DraftReferences, Equipment, RepairPackage, ReferenceOption } from './data/repairEstimatorRepository'
 import type { AppSession } from './data/sessionRepository'
 import type { Market } from './data/estimateQuery'
-import type { AppCopy, SelectedEquipment } from './App'
+import type { AppCopy, EquipmentPasteResult, SelectedEquipment } from './App'
 import { RequestFields, type RequestInputs } from './RequestFields'
 import { PricingSummary } from './PricingSummary'
 import { BranchSelect } from './BranchSelect'
@@ -69,9 +69,12 @@ type Props = {
   equipmentLoading: boolean
   equipmentError: string
   equipmentResults: Equipment[]
+  equipmentBulkBusy: boolean
   toggleEquipment: (equipment: Equipment) => void
   selectedEquipment: SelectedEquipment[]
   addUnlistedEquipment: () => void
+  addEquipmentList: (text: string) => Promise<void>
+  equipmentPasteResult: EquipmentPasteResult | undefined
   setSelectedEquipment: Dispatch<SetStateAction<SelectedEquipment[]>>
   selectedPackages: Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]
   packageLoading: boolean
@@ -106,8 +109,8 @@ export default function EstimatorWorkspace({
   setReferenceError, references, equipmentTypeId, setEquipmentTypeId, jobTypeId,
   setJobTypeId, savedSalesperson, session, buildingName, setBuildingName,
   stateId, updateRequestInput, requestInputs, equipmentQuery,
-  changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, toggleEquipment,
-  selectedEquipment, addUnlistedEquipment, setSelectedEquipment,
+  changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, equipmentBulkBusy, toggleEquipment,
+  selectedEquipment, addUnlistedEquipment, addEquipmentList, equipmentPasteResult, setSelectedEquipment,
   selectedPackages, packageLoading, packageError, packageResults, togglePackage, retryPackages,
   selectedPackageIds, setSelectedPackages, marketName, customerName, setCustomerName,
   customerEmail, setCustomerEmail, customerPhone, setCustomerPhone, setStep,
@@ -358,10 +361,26 @@ export default function EstimatorWorkspace({
               <label className="field-label search-label" htmlFor="equipment-search">{t.equipment}<span className="required">*</span></label>
               <EquipmentSelect results={equipmentResults} selectedNumbers={selectedEquipmentNumbers} onToggle={toggleEquipment}
                 query={equipmentQuery} onQueryChange={changeEquipmentQuery} loading={equipmentLoading}
-                disabled={!branchId} t={t} onAddUnlisted={addUnlistedEquipment} />
+                disabled={!branchId} t={t} onAddUnlisted={addUnlistedEquipment} onPasteList={addEquipmentList} />
               <p className="field-help">
                 {branchId ? t.searchHelp : t.branchRequired}
               </p>
+
+              {equipmentBulkBusy && <p className="field-help" role="status">{t.pasteChecking}</p>}
+              {equipmentPasteResult && (
+                <div className={equipmentPasteResult.notFound.length || equipmentPasteResult.overLimit.length
+                  || equipmentPasteResult.truncated ? 'warning-box' : 'paste-summary'} role="status">
+                  <p><strong>{t.pasteAdded}:</strong> {equipmentPasteResult.added.length}</p>
+                  {([
+                    [t.pasteNotFound, equipmentPasteResult.notFound],
+                    [t.pasteOverLimit, equipmentPasteResult.overLimit],
+                    [t.pasteAlreadySelected, equipmentPasteResult.alreadySelected],
+                  ] as const).filter(([, values]) => values.length > 0).map(([label, values]) => (
+                    <p key={label}><strong>{label}:</strong> {values.join(', ')}</p>
+                  ))}
+                  {equipmentPasteResult.truncated && <p>{t.pasteTruncated}</p>}
+                </div>
+              )}
 
               {equipmentError && (
                 <div className="error-box compact" role="alert">

@@ -2006,6 +2006,44 @@
   margin: 13px 0 0;
 }
 
+.warning-box,
+.paste-summary {
+  display: grid;
+  overflow-wrap: anywhere;
+  margin: 13px 0 0;
+  padding: 13px;
+  gap: 4px;
+  border: 1px solid #f1d58a;
+  border-radius: 7px;
+  color: #6b4e00;
+  background: #fff8e1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.paste-summary {
+  color: #1d5a3a;
+  border-color: #b7dfc8;
+  background: #eefaf3;
+}
+
+.warning-box p,
+.paste-summary p {
+  margin: 0;
+}
+
+:root[data-theme='dark'] .warning-box {
+  color: #ffe2a0;
+  border-color: #8a6d2a;
+  background: #3a2f14;
+}
+
+:root[data-theme='dark'] .paste-summary {
+  color: #bfeccf;
+  border-color: #3f7a58;
+  background: #183327;
+}
+
 .selected-card {
   padding-bottom: 12px;
 }

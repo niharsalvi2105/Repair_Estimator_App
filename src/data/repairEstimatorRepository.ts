@@ -161,6 +161,26 @@ export async function searchEquipment(
   return unwrap(result)
 }
 
+export async function findEquipmentByNumbers(branchId: string, numbers: string[]): Promise<Equipment[]> {
+  if (numbers.length === 0) return []
+  const matches = numbers.map((number) => `re_equipment eq '${number.replaceAll("'", "''")}'`).join(' or ')
+  const result = await withTimeout(Re_equipmentsService.getAll({
+    select: [
+      're_equipmentid',
+      're_equipment',
+      're_equipmentname',
+      're_functionallocation',
+      're_soldtoname',
+      're_oem',
+      're_equipmentage',
+    ],
+    filter: `statecode eq 0 and _re_branch_value eq ${branchId} and (${matches})`,
+    orderBy: ['re_equipment asc', 're_equipmentid asc'],
+    maxPageSize: 500,
+  }))
+  return unwrap(result)
+}
+
 export async function listPackages(branchCountryId: string): Promise<RepairPackage[]> {
   const records: RepairPackage[] = []
   const seenTokens = new Set<string>()

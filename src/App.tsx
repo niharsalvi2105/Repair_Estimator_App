@@ -5,6 +5,7 @@ import {
   getDraftReferences,
   type DraftReferences,
   searchEquipment,
+  findEquipmentByNumbers,
   listPackages,
   type Branch,
   type Equipment,
@@ -25,6 +26,7 @@ import { UserAvatar } from './UserAvatar'
 import koneLogo from './assets/kone-logo-small.jpg?no-inline'
 import { draftOperation, draftInputs, type DraftRecord } from './data/draftRepository'
 import { serializeDraft, MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
+import { MAX_PASTED_EQUIPMENT, parseEquipmentList, planEquipmentAdd } from './data/equipmentPaste'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -40,6 +42,27 @@ export type SelectedEquipment = {
   oem: string
   age?: number
   matched: boolean
+}
+
+export type EquipmentPasteResult = {
+  added: string[]
+  notFound: string[]
+  alreadySelected: string[]
+  overLimit: string[]
+  truncated: boolean
+}
+
+function toSelectedEquipment(equipment: Equipment): SelectedEquipment {
+  return {
+    id: equipment.re_equipmentid,
+    number: equipment.re_equipment,
+    name: equipment.re_equipmentname ?? '',
+    location: equipment.re_functionallocation,
+    customer: equipment.re_soldtoname ?? '',
+    oem: equipment.re_oem ?? '',
+    age: equipment.re_equipmentage,
+    matched: true,
+  }
 }
 
 const copy = {
@@ -126,9 +149,15 @@ const copy = {
     equipmentHint:
       'Search by equipment number or name. Results are limited to the selected branch.',
     equipmentSearch: 'Browse or search equipment by number or name',
-    searchHelp: 'Open the list to browse equipment for this branch, or type to filter. Select as many units as needed.',
+    searchHelp: 'Open the list to browse equipment for this branch, or type to filter. Paste several numbers separated by commas, semicolons, spaces or new lines to add them at once. Select as many units as needed.',
     searching: 'Searching Dataverse...',
     refineSearch: 'Showing the first 20 matches. Type to narrow the list.',
+    pasteAdded: 'Equipment added from pasted list',
+    pasteNotFound: 'Not found in this branch',
+    pasteAlreadySelected: 'Already selected',
+    pasteOverLimit: 'Not added (processing limit reached)',
+    pasteTruncated: 'Only the first 50 pasted values were checked.',
+    pasteChecking: 'Checking pasted equipment numbers...',
     noEquipment: 'No matching equipment found.',
     selectEquipment: 'Select',
     selectedEquipment: 'Selected equipment',
@@ -273,9 +302,15 @@ const copy = {
     equipmentHint:
       'Recherchez par numéro ou nom d’équipement. Les résultats sont limités à la succursale choisie.',
     equipmentSearch: 'Parcourir ou rechercher par numéro ou nom',
-    searchHelp: 'Ouvrez la liste pour parcourir les équipements de cette succursale, ou saisissez pour filtrer. Sélectionnez autant d’unités que nécessaire.',
+    searchHelp: 'Ouvrez la liste pour parcourir les équipements de cette succursale, ou saisissez pour filtrer. Collez plusieurs numéros séparés par des virgules, points-virgules, espaces ou retours à la ligne pour les ajouter en une fois. Sélectionnez autant d’unités que nécessaire.',
     searching: 'Recherche dans Dataverse…',
     refineSearch: 'Affichage des 20 premiers résultats. Saisissez pour affiner.',
+    pasteAdded: 'Équipements ajoutés depuis la liste collée',
+    pasteNotFound: 'Introuvables dans cette succursale',
+    pasteAlreadySelected: 'Déjà sélectionnés',
+    pasteOverLimit: 'Non ajoutés (limite de traitement atteinte)',
+    pasteTruncated: 'Seules les 50 premières valeurs collées ont été vérifiées.',
+    pasteChecking: 'Vérification des numéros d’équipement collés…',
     noEquipment: 'Aucun équipement correspondant.',
     selectEquipment: 'Sélectionner',
     selectedEquipment: 'Équipement sélectionné',
@@ -380,9 +415,12 @@ function App() {
   const [branchError, setBranchError] = useState('')
   const [branchId, setBranchId] = useState('')
   const [equipmentQuery, setEquipmentQuery] = useState('')
-  const [equipmentResults, setEquipmentResults] = useState<Equipment[]>([])
-  const [equipmentLoading, setEquipmentLoading] = useState(false)
-  const [equipmentError, setEquipmentError] = useState('')
+  const [equipmentSearch, setEquipmentSearch] = useState<{ key: string; records: Equipment[]; error: string }>()
+  const [equipmentSearchNonce, setEquipmentSearchNonce] = useState(0)
+  const [equipmentBulkBusy, setEquipmentBulkBusy] = useState(false)
+  const [equipmentBulkError, setEquipmentBulkError] = useState('')
+  const [equipmentPasteResult, setEquipmentPasteResult] = useState<EquipmentPasteResult>()
+  const equipmentPasteRequest = useRef(0)
   const [selectedEquipment, setSelectedEquipment] = useState<
     SelectedEquipment[]
   >([])
@@ -528,23 +566,19 @@ function App() {
     return () => { cancelled = true }
   }, [session?.canReadEstimates, referenceAttempt, referencesNeeded])
 
-  useEffect(() => {
-    const query = equipmentQuery.trim()
-    if (!branchId || step !== 2) return
+  const equipmentSearchKey = branchId && step === 2 ? `${branchId}|${equipmentSearchNonce}|${equipmentQuery.trim()}` : ''
 
+  useEffect(() => {
+    if (!equipmentSearchKey) return
+    const query = equipmentQuery.trim()
     let cancelled = false
     const timeout = window.setTimeout(() => {
-      setEquipmentLoading(true)
-      setEquipmentError('')
-      void searchEquipment(branchId, query)
+      searchEquipment(branchId, query)
         .then((records) => {
-          if (!cancelled) setEquipmentResults(records)
+          if (!cancelled) setEquipmentSearch({ key: equipmentSearchKey, records, error: '' })
         })
         .catch((error: unknown) => {
-          if (!cancelled) setEquipmentError(message(error))
-        })
-        .finally(() => {
-          if (!cancelled) setEquipmentLoading(false)
+          if (!cancelled) setEquipmentSearch({ key: equipmentSearchKey, records: [], error: message(error) })
         })
     }, query ? 300 : 0)
 
@@ -552,7 +586,12 @@ function App() {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [branchId, equipmentQuery, step])
+  }, [branchId, equipmentQuery, equipmentSearchKey])
+
+  // Results are only shown for the exact branch/query they were fetched for, so stale lists never leak.
+  const equipmentLoading = equipmentSearchKey !== '' && equipmentSearch?.key !== equipmentSearchKey
+  const equipmentResults = equipmentSearch?.key === equipmentSearchKey ? equipmentSearch.records : []
+  const equipmentError = equipmentBulkError || (equipmentSearch?.key === equipmentSearchKey ? equipmentSearch.error : '')
 
   const packageCountryId = selectedBranch?._re_country_value
   const packageKey = packageCountryId ? `${packageCountryId}:${packageAttempt}` : ''
@@ -584,19 +623,41 @@ function App() {
       setSelectedEquipment((current) => current.filter((item) => item.number !== equipment.re_equipment))
       return
     }
-    setSelectedEquipment((current) => [
-      ...current,
-      {
-        id: equipment.re_equipmentid,
-        number: equipment.re_equipment,
-        name: equipment.re_equipmentname ?? '',
-        location: equipment.re_functionallocation,
-        customer: equipment.re_soldtoname ?? '',
-        oem: equipment.re_oem ?? '',
-        age: equipment.re_equipmentage,
-        matched: true,
-      },
-    ])
+    setSelectedEquipment((current) => [...current, toSelectedEquipment(equipment)])
+  }
+
+  async function addEquipmentList(text: string) {
+    const parsed = parseEquipmentList(text)
+    if (!branchId || parsed.length === 0) return
+    const numbers = parsed.slice(0, MAX_PASTED_EQUIPMENT)
+    const request = ++equipmentPasteRequest.current
+    const requestBranch = branchId
+    setEquipmentQuery('')
+    setEquipmentPasteResult(undefined)
+    setEquipmentBulkError('')
+    setEquipmentBulkBusy(true)
+    try {
+      const matches = await findEquipmentByNumbers(requestBranch, numbers)
+      if (request !== equipmentPasteRequest.current) return
+      const plan = planEquipmentAdd(selectedEquipment.map((item) => item.number), numbers, matches)
+      setSelectedEquipment((current) => {
+        const present = new Set(current.map((item) => item.number))
+        return [...current, ...plan.add.filter((item) => !present.has(item.re_equipment)).map(toSelectedEquipment)]
+      })
+      setEquipmentPasteResult({
+        added: plan.add.map((item) => item.re_equipment), notFound: plan.notFound,
+        alreadySelected: plan.alreadySelected, overLimit: plan.overLimit,
+        truncated: parsed.length > numbers.length,
+      })
+    } catch (error) {
+      if (request === equipmentPasteRequest.current) setEquipmentBulkError(message(error))
+    } finally {
+      if (request === equipmentPasteRequest.current) {
+        setEquipmentBulkBusy(false)
+        // Refresh the browse list so the dropdown reflects the empty query, not the pasted text.
+        setEquipmentSearchNonce((current) => current + 1)
+      }
+    }
   }
 
   function addUnlistedEquipment() {
@@ -616,20 +677,20 @@ function App() {
       },
     ])
     setEquipmentQuery('')
-    setEquipmentResults([])
   }
 
   function resetBranch(nextBranchId: string) {
+    equipmentPasteRequest.current++
+    setEquipmentPasteResult(undefined)
+    setEquipmentBulkBusy(false)
+    setEquipmentBulkError('')
     setBranchId(nextBranchId)
     setCustomerName('')
     setEquipmentQuery('')
-    setEquipmentResults([])
     setSelectedEquipment([])
     setSelectedPackages([])
     setLaborLines([]); setMaterialLines([])
-    setEquipmentError('')
     setPackageError('')
-    setEquipmentLoading(false)
   }
 
   function changeBranch(nextBranchId: string) {
@@ -672,8 +733,8 @@ function App() {
 
   function changeEquipmentQuery(value: string) {
     setEquipmentQuery(value)
-    setEquipmentResults([])
-    setEquipmentError('')
+    setEquipmentBulkError('')
+    setEquipmentPasteResult(undefined)
   }
 
   function togglePackage(repairPackage: RepairPackage) {
@@ -745,7 +806,7 @@ function App() {
     setCustomerEmail(record.email ?? ''); setCustomerPhone(record.phone ?? '')
     setEquipmentTypeId(record.equipmentTypeId); setJobTypeId(record.jobTypeId ?? '')
     setMarket(record.market); setRequestInputs(inputs); setSelectedEquipment(equipment); setSelectedPackages(packages)
-    setEquipmentQuery(''); setEquipmentResults([])
+    setEquipmentQuery('')
     setSavedSnapshot(JSON.stringify({
       branchId: record.branchId, stateId: record.stateId, estimateTitle: record.title,
       buildingName: record.building, customerName: record.customer, customerEmail: record.email ?? '',
@@ -1088,9 +1149,12 @@ function App() {
               equipmentLoading,
               equipmentError,
               equipmentResults,
+              equipmentBulkBusy,
               toggleEquipment,
               selectedEquipment,
               addUnlistedEquipment,
+              addEquipmentList,
+              equipmentPasteResult,
               setSelectedEquipment,
               selectedPackages,
               laborLines, materialLines, setLaborLines, setMaterialLines,

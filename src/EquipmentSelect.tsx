@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Equipment } from './data/repairEstimatorRepository'
 import type { AppCopy } from './App'
+import { isEquipmentList } from './data/equipmentPaste'
 
 const RESULT_LIMIT = 20
 
@@ -9,6 +10,7 @@ type Option = { kind: 'equipment'; equipment: Equipment } | { kind: 'unlisted' }
 export function EquipmentSelect({
   results, selectedNumbers, onToggle, query, onQueryChange, loading, disabled = false, t,
   onAddUnlisted,
+  onPasteList,
 }: {
   results: Equipment[]
   selectedNumbers: Set<string>
@@ -19,14 +21,15 @@ export function EquipmentSelect({
   disabled?: boolean
   t: AppCopy
   onAddUnlisted: () => void
+  onPasteList: (text: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const list = useRef<HTMLUListElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const typed = query.trim()
-  const options: Option[] = results.map((equipment) => ({ kind: 'equipment', equipment }))
-  if (typed.length >= 3 && !selectedNumbers.has(typed)) options.push({ kind: 'unlisted' })
+  const options: Option[] = loading ? [] : results.map((equipment) => ({ kind: 'equipment', equipment }))
+  if (!loading && typed.length >= 3 && !selectedNumbers.has(typed)) options.push({ kind: 'unlisted' })
   const activeOption = options[active]
 
   useEffect(() => {
@@ -58,8 +61,19 @@ export function EquipmentSelect({
           value={query}
           onClick={() => { if (!open) show() }}
           onChange={(event) => { onQueryChange(event.target.value); setActive(0); setOpen(true) }}
+          onPaste={(event) => {
+            const text = event.clipboardData.getData('text')
+            if (!isEquipmentList(text)) return
+            event.preventDefault()
+            setOpen(false)
+            onPasteList(text)
+          }}
           onKeyDown={(event) => {
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            if (event.key === 'Enter' && isEquipmentList(query)) {
+              event.preventDefault()
+              setOpen(false)
+              onPasteList(query)
+            } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
               event.preventDefault()
               if (!open) show()
               else setActive((current) => Math.max(0, Math.min(options.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1))))
