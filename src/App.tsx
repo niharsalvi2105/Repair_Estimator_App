@@ -26,7 +26,7 @@ import { UserAvatar } from './UserAvatar'
 import koneLogo from './assets/kone-logo-small.jpg?no-inline'
 import { draftOperation, draftInputs, type DraftRecord } from './data/draftRepository'
 import { serializeDraft, MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
-import { MAX_PASTED_EQUIPMENT, parseEquipmentList, planEquipmentAdd } from './data/equipmentPaste'
+import { EQUIPMENT_LOOKUP_BATCH_SIZE, isEquipmentList, parseEquipmentList, planEquipmentAdd } from './data/equipmentPaste'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -49,7 +49,6 @@ export type EquipmentPasteResult = {
   notFound: string[]
   alreadySelected: string[]
   overLimit: string[]
-  truncated: boolean
 }
 
 function toSelectedEquipment(equipment: Equipment): SelectedEquipment {
@@ -126,10 +125,10 @@ const copy = {
     locationAssignment: 'Location & assignment',
     opportunityHint: 'Estimator header inputs for the selected market. Supervisor is optional; customer contact details are confirmed at review.',
     nextEquipment: 'Continue to equipment & packages',
-    costsHint: 'Inputs only. No costs, margins or incentives are calculated or saved in this browser.',
+    costsHint: 'Review all selected package costs before additional details. Additional cost inputs require a CSTM package. Save to calculate authoritative server pricing.',
     pricingHint: 'Use Calculate below to save your draft and calculate pricing in Dataverse. After changing inputs, use Recalculate. An entered selling price is not an approved quote.',
     equipmentNote: 'Equipment names are resolved from Dataverse. Unlisted numbers remain explicitly unbound.',
-    costsTitle: 'Estimate costs and additions',
+    costsTitle: 'Additional details',
     costsUnavailable: 'Save to calculate server totals. Enter 5 for 5%. Package costs scale with equipment; custom lines and additional costs are added once. Do not enter the same work in both.',
     proposalPrice: 'Proposal pricing',
     partnerTitle: 'Partner information & CTT notes',
@@ -149,6 +148,8 @@ const copy = {
     equipmentHint:
       'Search by equipment number or name. Results are limited to the selected branch.',
     equipmentSearch: 'Browse or search equipment by number or name',
+    addEquipmentList: 'Add equipment list',
+    equipmentListHelp: 'Select Add equipment list or press Enter to check these numbers in this branch.',
     searchHelp: 'Open the list to browse equipment for this branch, or type to filter. Paste several numbers separated by commas, semicolons, spaces or new lines to add them at once. Select as many units as needed.',
     searching: 'Searching Dataverse...',
     refineSearch: 'Showing the first 20 matches. Type to narrow the list.',
@@ -156,7 +157,6 @@ const copy = {
     pasteNotFound: 'Not found in this branch',
     pasteAlreadySelected: 'Already selected',
     pasteOverLimit: 'Not added (processing limit reached)',
-    pasteTruncated: 'Only the first 50 pasted values were checked.',
     pasteChecking: 'Checking pasted equipment numbers...',
     noEquipment: 'No matching equipment found.',
     selectEquipment: 'Select',
@@ -279,10 +279,10 @@ const copy = {
     locationAssignment: 'Emplacement et affectation',
     opportunityHint: 'En-tête de l’estimateur pour le marché sélectionné. Le superviseur est facultatif ; les coordonnées du client sont confirmées à la vérification.',
     nextEquipment: 'Continuer vers les équipements et forfaits',
-    costsHint: 'Saisie uniquement. Aucun coût, marge ou incitatif n’est calculé ou enregistré dans le navigateur.',
+    costsHint: 'Vérifiez les coûts des forfaits avant les détails supplémentaires. Les ajouts nécessitent un forfait CSTM. Enregistrez pour calculer les prix sur le serveur.',
     pricingHint: 'Utilisez Calculer ci-dessous pour enregistrer le brouillon et calculer les prix dans Dataverse. Après modification, utilisez Recalculer. Le prix saisi n’est pas un devis approuvé.',
     equipmentNote: 'Les noms des équipements proviennent de Dataverse. Les numéros non répertoriés restent sans correspondance.',
-    costsTitle: 'Coûts et ajouts au devis',
+    costsTitle: 'Détails supplémentaires',
     costsUnavailable: 'Enregistrez pour calculer les totaux serveur. Saisissez 5 pour 5 %. Les coûts des forfaits sont multipliés par les équipements ; les lignes personnalisées et les ajouts ne sont comptés qu’une fois. Évitez les doublons.',
     proposalPrice: 'Prix de la proposition',
     partnerTitle: 'Partenaires et notes CTT',
@@ -302,6 +302,8 @@ const copy = {
     equipmentHint:
       'Recherchez par numéro ou nom d’équipement. Les résultats sont limités à la succursale choisie.',
     equipmentSearch: 'Parcourir ou rechercher par numéro ou nom',
+    addEquipmentList: 'Ajouter la liste des équipements',
+    equipmentListHelp: 'Sélectionnez Ajouter la liste des équipements ou appuyez sur Entrée pour vérifier ces numéros dans cette succursale.',
     searchHelp: 'Ouvrez la liste pour parcourir les équipements de cette succursale, ou saisissez pour filtrer. Collez plusieurs numéros séparés par des virgules, points-virgules, espaces ou retours à la ligne pour les ajouter en une fois. Sélectionnez autant d’unités que nécessaire.',
     searching: 'Recherche dans Dataverse…',
     refineSearch: 'Affichage des 20 premiers résultats. Saisissez pour affiner.',
@@ -309,7 +311,6 @@ const copy = {
     pasteNotFound: 'Introuvables dans cette succursale',
     pasteAlreadySelected: 'Déjà sélectionnés',
     pasteOverLimit: 'Non ajoutés (limite de traitement atteinte)',
-    pasteTruncated: 'Seules les 50 premières valeurs collées ont été vérifiées.',
     pasteChecking: 'Vérification des numéros d’équipement collés…',
     noEquipment: 'Aucun équipement correspondant.',
     selectEquipment: 'Sélectionner',
@@ -448,7 +449,10 @@ function App() {
   const [referenceAttempt, setReferenceAttempt] = useState(0)
   const [equipmentTypeId, setEquipmentTypeId] = useState('')
   const [jobTypeId, setJobTypeId] = useState('')
-  const [requestInputs, setRequestInputs] = useState<RequestInputs>({})
+  const [editableRequestInputs, setRequestInputs] = useState<RequestInputs>({})
+  const requestInputs = useMemo<RequestInputs>(() => selectedPackages.some((p) => p.re_iscustompackage)
+    ? editableRequestInputs
+    : { ...editableRequestInputs, re_usetax: '5', re_freight: '14' }, [editableRequestInputs, selectedPackages])
   const [draftReferences, setDraftReferences] = useState<DraftReferences>()
   const [draftReferenceError, setDraftReferenceError] = useState('')
   const [stateId, setStateId] = useState('')
@@ -480,7 +484,7 @@ function App() {
   }), [branchId, stateId, estimateTitle, buildingName, customerName, customerEmail, customerPhone,
     equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages, laborLines, materialLines])
   const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || estimateTitle
-    || customerName || customerEmail || customerPhone || equipmentTypeId || jobTypeId || Object.values(requestInputs).some(Boolean))
+    || customerName || customerEmail || customerPhone || equipmentTypeId || jobTypeId || Object.values(editableRequestInputs).some(Boolean))
   const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty || masterDirty || masterBusy)
   const selectedBranch = branches.find((branch) => branch.re_branchid === branchId)
   const marketBranches = branches.filter((branch) => branch.re_market === market)
@@ -566,7 +570,8 @@ function App() {
     return () => { cancelled = true }
   }, [session?.canReadEstimates, referenceAttempt, referencesNeeded])
 
-  const equipmentSearchKey = branchId && step === 2 ? `${branchId}|${equipmentSearchNonce}|${equipmentQuery.trim()}` : ''
+  const equipmentSearchKey = branchId && step === 2 && !isEquipmentList(equipmentQuery)
+    ? `${branchId}|${equipmentSearchNonce}|${equipmentQuery.trim()}` : ''
 
   useEffect(() => {
     if (!equipmentSearchKey) return
@@ -627,9 +632,8 @@ function App() {
   }
 
   async function addEquipmentList(text: string) {
-    const parsed = parseEquipmentList(text)
-    if (!branchId || parsed.length === 0) return
-    const numbers = parsed.slice(0, MAX_PASTED_EQUIPMENT)
+    const numbers = parseEquipmentList(text)
+    if (!branchId || numbers.length === 0) return
     const request = ++equipmentPasteRequest.current
     const requestBranch = branchId
     setEquipmentQuery('')
@@ -637,7 +641,11 @@ function App() {
     setEquipmentBulkError('')
     setEquipmentBulkBusy(true)
     try {
-      const matches = await findEquipmentByNumbers(requestBranch, numbers)
+      const matches: Equipment[] = []
+      for (let offset = 0; offset < numbers.length; offset += EQUIPMENT_LOOKUP_BATCH_SIZE) {
+        matches.push(...await findEquipmentByNumbers(requestBranch, numbers.slice(offset, offset + EQUIPMENT_LOOKUP_BATCH_SIZE)))
+        if (request !== equipmentPasteRequest.current) return
+      }
       if (request !== equipmentPasteRequest.current) return
       const plan = planEquipmentAdd(selectedEquipment.map((item) => item.number), numbers, matches)
       setSelectedEquipment((current) => {
@@ -647,7 +655,6 @@ function App() {
       setEquipmentPasteResult({
         added: plan.add.map((item) => item.re_equipment), notFound: plan.notFound,
         alreadySelected: plan.alreadySelected, overLimit: plan.overLimit,
-        truncated: parsed.length > numbers.length,
       })
     } catch (error) {
       if (request === equipmentPasteRequest.current) setEquipmentBulkError(message(error))
@@ -662,6 +669,7 @@ function App() {
 
   function addUnlistedEquipment() {
     const number = equipmentQuery.trim()
+    if (isEquipmentList(number)) { void addEquipmentList(number); return }
     if (!number) return
     if (selectedEquipment.some((item) => item.number === number)) return
     setSelectedEquipment((current) => [
@@ -792,6 +800,10 @@ function App() {
       re_iscustompackage: item.isCustom ?? false, re_istimematerial: item.isTimeMaterial ?? false,
     }))
     const customIds = packages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid)
+    if (!customIds.length) {
+      inputs.re_usetax = '5'
+      inputs.re_freight = '14'
+    }
     const labor = (record.laborLines ?? []).map((line) => ({ ...line,
       packageId: line.packageId || (customIds.length === 1 ? customIds[0] : undefined) }))
     const materials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '',

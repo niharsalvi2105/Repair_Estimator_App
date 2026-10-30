@@ -24,6 +24,15 @@ test('each custom package requires assigned positive labor and material entries'
   assert.equal(customCostsError([], [], [], 'en'), undefined)
 })
 
+test('standard previews always use fixed 5% tax and 14% freight regardless of CSTM inputs', () => {
+  const p = { re_repairpackageid: 'standard', re_iscustompackage: false, re_mechanichours: 2, re_materialmisctaxcost: 50 }
+  const rates = [{ role: 126110000, time: 126110000, rate: 100 }]
+  for (const [tax, freight] of [[0, 0], [8, 20], [NaN, NaN]]) {
+    assert.deepEqual(calculatePackageCost(p, 3, rates, 126110000, tax, freight, [], []),
+      { hours: 6, labor: 600, material: 150, rate: 100, total: 778.5 })
+  }
+})
+
 test('custom previews isolate packages, use branch role/time rates and count entered costs once', () => {
   const rates = [{ role: 126110000, time: 126110000, rate: 100 }, { role: 126110001, time: 126110001, rate: 200 }]
   const p = { re_repairpackageid: 'a', re_iscustompackage: true, re_mechanichours: 0, re_materialmisctaxcost: 0 }
@@ -32,6 +41,8 @@ test('custom previews isolate packages, use branch role/time rates and count ent
   const materials = [{ id: 'm', packageId: 'a', description: 'Motor', quantity: 2, unitCost: 25 }]
   assert.deepEqual(calculatePackageCost(p, 3, rates, 126110000, 5, 10, labor, materials),
     { hours: 2, rate: 100, labor: 400, material: 50, total: 457.5 })
+  assert.equal(calculatePackageCost(p, 3, rates, 126110000, 8, 20, labor, materials).total, 464)
+  assert.throws(() => calculatePackageCost(p, 3, rates, 126110000, NaN, NaN, labor, materials), /invalid/)
   assert.throws(() => calculatePackageCost(p, 3, [], 126110000, 5, 10, labor, materials), /missing or ambiguous/)
   assert.throws(() => calculatePackageCost(p, 3, rates, 126110000, 5, 10, [], materials), /Complete the CSTM/)
   assert.throws(() => calculatePackageCost(p, 3, [...rates, rates[0]], 126110000, 5, 10, labor, materials), /ambiguous/)

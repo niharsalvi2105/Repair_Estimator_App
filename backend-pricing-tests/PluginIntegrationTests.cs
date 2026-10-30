@@ -159,14 +159,16 @@ namespace RepairEstimator.Tests
             Assert.Contains("\"pricingState\":\"" + PricingEngine.Version + "\"", result);
             Assert.Equal(1, db.Calculations);
             var header = db.Rows[db.EstimateId];
-            Assert.Equal(300m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
-            Assert.Equal(600m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPrice).Value);
+            Assert.Equal(319m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.Equal(638m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPrice).Value);
+            Assert.Equal(0.05m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
+            Assert.Equal(0.14m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
             db.Rows[db.PackageId]["re_mechanichours"] = 999m;
             db.Rows[db.PackageId]["re_materialmisctaxcost"] = new Money(999m);
             var version = header.RowVersion;
             db.Save(db.DraftJson(version));
             Assert.Equal(2, db.Calculations);
-            Assert.Equal(300m, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.Equal(319m, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
             Assert.Throws<InvalidPluginExecutionException>(() => db.Save(db.DraftJson(version)));
             Assert.Equal(2, db.Calculations);
         }
@@ -185,8 +187,8 @@ namespace RepairEstimator.Tests
             });
             var header = db.Rows[db.EstimateId];
             Assert.Equal(PricingEngine.Version, header.GetAttributeValue<string>(Names.Estimate.CalculationVersion));
-            Assert.Equal(600m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPrice).Value);
-            Assert.Equal(-11m, header.GetAttributeValue<decimal>(Names.Estimate.ActualCmii));
+            Assert.Equal(638m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPrice).Value);
+            Assert.Equal(-11.76m, header.GetAttributeValue<decimal>(Names.Estimate.ActualCmii));
             Assert.Equal(0m, header.GetAttributeValue<Money>(Names.Estimate.AmIncentive).Value);
             Assert.Equal(0m, header.GetAttributeValue<Money>(Names.Estimate.BdIncentive).Value);
         }
@@ -298,6 +300,32 @@ namespace RepairEstimator.Tests
             });
             Assert.Equal("unavailable", db.Rows[db.EstimateId].GetAttributeValue<string>(Names.Estimate.CalculationVersion));
             Assert.Contains(db.Traces, t => t.Contains("PACKAGE_SNAPSHOT_MISSING"));
+        }
+
+        [Fact]
+        public void Mixed_draft_save_and_reload_preserve_custom_rates_without_overriding_standard_rates()
+        {
+            var db = new Pipeline();
+            var custom = db.Add(Names.RepairPackage.Entity,
+                ("re_packagenumber", "CSTM"), ("re_packagenameen", "Custom"),
+                ("re_proposalscopeen", "Custom scope"), ("re_mechanichours", 0m),
+                ("re_materialmisctaxcost", new Money(50m)), ("re_iscustompackage", true),
+                ("re_currency", db.Rows[db.PackageId]["re_currency"]));
+            var json = db.DraftJson()
+                .Replace("\"key\":\"re_usetax\",\"value\":\"0\"", "\"key\":\"re_usetax\",\"value\":\"8\"")
+                .Replace("\"key\":\"re_freight\",\"value\":\"0\"", "\"key\":\"re_freight\",\"value\":\"20\"");
+            json = json.Substring(0, json.Length - 2) + ",{\"id\":\"" + custom.Id + "\"}]," +
+                "\"laborLines\":[{\"id\":\"l\",\"packageId\":\"" + custom.Id + "\",\"role\":126110000,\"time\":126110000,\"hours\":1}]," +
+                "\"materialLines\":[{\"id\":\"m\",\"packageId\":\"" + custom.Id + "\",\"description\":\"Motor\",\"quantity\":1,\"unitCost\":25}]}";
+            db.Save(json);
+            var header = db.Rows[db.EstimateId];
+            // 200 labor + 100 standard material * 1.19 + 50 CSTM snapshot * 1.28 + 100 custom labor + 25 * 1.28.
+            Assert.Equal(515m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.Equal(0.08m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
+            Assert.Equal(0.20m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
+            var reloaded = db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}");
+            Assert.Contains("\"key\":\"re_usetax\",\"value\":\"8", reloaded);
+            Assert.Contains("\"key\":\"re_freight\",\"value\":\"20", reloaded);
         }
 
         [Fact]

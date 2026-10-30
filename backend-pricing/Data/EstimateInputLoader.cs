@@ -46,10 +46,6 @@ namespace RepairEstimator.Plugins.Data
             input.SituationalRules.AddRange(data.SituationalRules);
             input.IncentiveRates.AddRange(data.IncentivesFor(countryId));
 
-            var taxes = TaxDefaults.Resolve(est, province, branch, input.Parameters);
-            input.UseTaxPct = taxes.UseTax;
-            input.FreightPct = taxes.Freight;
-
             input.SellPrice = Query.Money(est, Names.Estimate.SellPrice, 0m);
             input.StatedLaborRate = Query.Money(est, Names.Estimate.StatedLaborRate, 0m);
             input.AdditionalLaborHours = Query.Dec(est, Names.Estimate.AdditionalLaborHours) ?? 0m;
@@ -87,6 +83,18 @@ namespace RepairEstimator.Plugins.Data
                 input.IsCustomPath = loaded.IsCustomPath;
                 input.RedundancyCount = 1;
                 loaded.RedundancyCount = 1;
+            }
+
+            if (input.IsCustomPath)
+            {
+                var taxes = TaxDefaults.Resolve(est, province, branch, input.Parameters);
+                input.UseTaxPct = taxes.UseTax;
+                input.FreightPct = taxes.Freight;
+            }
+            else
+            {
+                input.UseTaxPct = EstimateInput.StandardUseTax;
+                input.FreightPct = EstimateInput.StandardFreight;
             }
 
             if (loaded.MarginGroup != null)
@@ -201,6 +209,7 @@ namespace RepairEstimator.Plugins.Data
                     throw new PricingException("RE-114", "PACKAGE_SNAPSHOT_MISSING");
                 input.Packages.Add(new PackageInput
                 {
+                    IsCustom = line.GetAttributeValue<bool>("re_iscustompackage"),
                     MechanicHoursPerUnit = Query.Dec(line, Names.EstimatePackage.Hours).Value,
                     MaterialCostPerUnit = Query.Money(line, Names.EstimatePackage.Material).Value
                 });

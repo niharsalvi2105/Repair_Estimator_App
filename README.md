@@ -253,6 +253,15 @@ The transcript adjusts the workbook: supervisor is optional and customer contact
 is entered on the first page and confirmed read-only at review. Building name has
 one editable input in Opportunity details. Proposal language is independent of the UI language.
 Equipment quantity is derived from selections, not a second conflicting input.
+Equipment search accepts pasted lists separated by commas, semicolons, spaces,
+or new lines. Each paste trims whitespace, removes duplicates, and checks all distinct values against active equipment
+in the selected branch, reports missing/already-selected values, and preserves
+input order. Lookups run in batches of 50 without truncating the pasted list.
+This does not impose a total selection cap. Matched equipment retains its existing details display.
+Typing after a paste refreshes branch-scoped results, and stale search results
+cannot be selected while the current query is loading.
+Typed lists display an explicit Add equipment list action and can also be added
+with Enter. A multi-number list is never offered as one unlisted equipment number.
 Inputs survive in-app navigation; leaving/reloading warns about unsaved changes.
 Non-integer request inputs display two decimal places when unfocused; focusing
 reveals the original editable value. Formatting does not round persisted values,
@@ -398,9 +407,12 @@ package totals are quantity extensions only, **not authoritative pricing**.
 The UI supports create, update, reopen and explicit New/Reload actions, saved/
 dirty state, busy controls, failures that retain inputs, and EN/FR labels.
 Branch and currency are fixed once saved. Proposal language is independent of
-UI language; French-required provinces are validated server-side. Tax/freight
-are entered as percentages (5 means 0.05 stored). Missing branch defaults remain
-blank and must be supplied explicitly; zero is valid. No operational data is
+UI language; French-required provinces are validated server-side. Standard
+packages always use locked 5% tax and 14% freight, including in mixed estimates.
+The existing tax/freight fields are editable only when CSTM is selected and apply
+to CSTM costs and estimate-level additions; values are percentages (5 means
+0.05 stored). Missing CSTM branch defaults remain blank and must be supplied
+explicitly; zero is valid for CSTM. No operational data is
 stored in browser localStorage.
 
 The client retains the same new-record GUID after failure. A timeout can mean
@@ -695,9 +707,13 @@ Business rules confirmed October 27, 2026:
 - Selecting CSTM opens Costs & scope. Enter its lines, tax and freight, then use
   **Calculate and return to packages** to continue selecting packages. Every
   selected package displays labor hours, branch mechanic cost rate, labor,
-  material and estimated cost. Desktop package cards place name and scope on
+  material, applied tax/freight percentages and estimated cost. Desktop package cards place name and scope on
   the left, with aligned cost details and a highlighted total on the right;
   narrower screens stack the pricing below the description.
+  Standard package material always uses 5% tax plus 14% freight. Selecting CSTM
+  exposes separate editable CSTM tax/freight percentages; changing those does
+  not change any standard package cost. CSTM percentages are shared by all
+  CSTM packages in the estimate and also apply to estimate-level additions.
   Pricing labels retain their own column width; missing tax/freight instructions
   span a separate row so they cannot squeeze labels into vertical text.
   Previews use labor = hours per unit x equipment
@@ -705,6 +721,15 @@ Business rules confirmed October 27, 2026:
   quantity; estimated cost = labor + material x (1 + tax fraction + freight
   fraction). Custom previews use their assigned lines once. These are cost
   previews, not suggested selling prices; saving still recalculates on the server.
+- Continuing from package selection shows a card for every selected package
+  and the combined package cost **before** additional details. The combined
+  amount includes each CSTM package's assigned lines once, but excludes separate
+  estimate-level additions. The same summary carries into pricing and review;
+  for large selections, cards are paged but the total includes all packages.
+  The CSTM line editor opens only when adding or explicitly editing CSTM, not
+  when continuing to additional details. Use **Edit CSTM costs** to change its
+  lines. Additional labor hours, material and miscellaneous inputs are read-only
+  without CSTM. Previously saved additions remain visible and are not discarded.
 - Custom lines persist a lookup to their estimate-package row. Legacy unlinked
   lines are assigned automatically only if exactly one CSTM package exists;
   otherwise the user must select a package for each line before saving.
@@ -716,8 +741,9 @@ Business rules confirmed October 27, 2026:
   rate snapshots; no browser rate override is accepted. Missing/ambiguous rates
   reject the transaction rather than silently produce zero labor cost.
 - Custom material tax/freight flags are server-set true for Excel parity; no
-  per-line exemption controls are exposed. Estimate tax/freight applies to
-  material and miscellaneous amounts, not labor. KONE classification uses the
+  per-line exemption controls are exposed. Tax/freight applies to material and
+  miscellaneous amounts, not labor. Standard-only estimates also use the fixed
+  rates for additional material/miscellaneous costs. KONE classification uses the
   existing vendor/part rules; VK13 sales price is available for CSTM. The special
   suggested price uses configured KONE tax/freight/markup parameters.
 - Equipment workflow/limits are unchanged; new free-form equipment requirements,
@@ -786,7 +812,11 @@ equipment requires explicitly removing those lines first.
 - Equipment/package/custom-line saves are transactional, preserve unchanged child
   identities and snapshots, and trigger one final calculation. Timeout recovery
   still requires reload before retry; there is no automatic retry of uncertain writes.
-- Pricing version `2026.2` combines package and custom costs in a linear pass.
+- Pricing version `2026.3` combines package and custom costs in a linear pass,
+  applying fixed standard rates separately from editable CSTM rates, including
+  stated-labor-rate pricing. Deploy both updated draft and pricing plug-in
+  assemblies before relying on live saved totals; no new tax/freight columns
+  are required. Existing saved pricing is refreshed on recalculation, not retroactively.
   Stated labor billing rate remains optional; blank or zero uses standard CMII
   pricing. Entered rates must be finite and nonnegative. Inline guidance and
   save-time validation apply even when saving from another stage. Positive

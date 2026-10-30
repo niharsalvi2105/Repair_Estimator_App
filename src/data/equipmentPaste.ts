@@ -1,4 +1,4 @@
-export const MAX_PASTED_EQUIPMENT = 50
+export const EQUIPMENT_LOOKUP_BATCH_SIZE = 50
 
 export function parseEquipmentList(text: string): string[] {
   return [...new Set(text.split(/[,;\s]+/).map((value) => value.trim()).filter(Boolean))]
@@ -6,7 +6,7 @@ export function parseEquipmentList(text: string): string[] {
 
 // Space-only input counts as a list only when every value looks like a number, so names like "Main lobby" still search.
 export function isEquipmentList(text: string): boolean {
-  const values = parseEquipmentList(text)
+  const values = text.trim().split(/[,;\s]+/).filter(Boolean)
   if (values.length < 2) return false
   return /[,;\r\n\t]/.test(text) || values.every((value) => /\d/.test(value))
 }

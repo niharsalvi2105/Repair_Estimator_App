@@ -113,10 +113,13 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
         const key = field.key
         const label = language === 'fr' ? field.fr : field.en
         const rateField = key === 're_statedlaborrate'
+        const taxOrFreight = key === 're_usetax' || key === 're_freight'
+        const fixedRate = taxOrFreight && !custom
+        const customAddition = key === 're_additionallaborhours' || key === 're_additionalmaterial' || key === 're_additionalmiscellaneous'
         const error = rateField ? statedRateError(value[key], language) : undefined
         return (
           <div className="field-label" key={key}>
-            <label htmlFor={id}>{label}</label>
+            <label htmlFor={id}>{label}{taxOrFreight && custom ? ' (CSTM)' : ''}</label>
             {field.choice ? <ChoiceSelect id={id} language={language} value={value[key] ?? ''}
               options={choices.choices?.[key]} onChange={(next) => onChange(key, next)} readOnly={readOnly} />
             : field.type === 'textarea' ? (
@@ -125,17 +128,27 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
             ) : (
               <input id={id} className="text-input" type={field.type ?? 'text'}
                 aria-invalid={error ? true : undefined}
-                aria-describedby={rateField ? `${id}-help${error ? ` ${id}-error` : ''}` : undefined}
+                aria-describedby={taxOrFreight ? `${id}-help` : rateField ? `${id}-help${error ? ` ${id}-error` : ''}` : undefined}
                 min={field.type === 'number' ? field.integer ? 1 : 0 : undefined}
                 max={field.percent ? 100 : field.max}
                 step={field.type === 'number' ? field.integer ? 1 : 'any' : undefined}
                 maxLength={field.maxLength ?? (field.type ? undefined : 100)}
-                readOnly={readOnly}
+                readOnly={readOnly || fixedRate || (customAddition && !custom)}
                 value={field.type === 'number' && !field.integer && focusedKey !== key
                   ? decimalInputDisplay(value[key] ?? '') : value[key] ?? ''}
                 onFocus={() => setFocusedKey(key)} onBlur={() => setFocusedKey(undefined)}
                 onChange={(event) => onChange(key, event.target.value)} />
             )}
+            {customAddition && !custom && <p className="field-help">
+              {fr ? 'Sélectionnez un forfait CSTM pour modifier les coûts supplémentaires.' : 'Select a CSTM package to edit additional costs.'}
+            </p>}
+            {taxOrFreight && <p className="field-help" id={`${id}-help`}>
+              {custom
+                ? (fr ? 'Taux modifiable pour CSTM et les coûts supplémentaires uniquement. Forfaits standard : taxe 5 %, fret 14 % (fixes).'
+                  : 'Editable for CSTM and additional costs only. Standard packages: fixed 5% tax and 14% freight.')
+                : (fr ? 'Forfaits standard : taxe 5 %, fret 14 % (fixes).'
+                  : 'Standard packages: fixed 5% tax and 14% freight.')}
+            </p>}
             {rateField && <p className="field-help" id={`${id}-help`}>{language === 'fr'
               ? 'Facultatif. Taux horaire de vente négocié, et non le prix total du devis. Laissez vide (ou zéro) pour le calcul standard du CMII. Un taux faible peut empêcher le calcul des prix; le serveur valide la marge lors de l’enregistrement.'
               : 'Optional. Negotiated hourly selling rate, not the total estimate price. Leave blank (or zero) for standard CMII pricing. A low rate may prevent pricing; the server validates the margin on save.'}</p>}

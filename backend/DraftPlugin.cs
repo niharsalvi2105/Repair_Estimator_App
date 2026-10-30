@@ -393,6 +393,11 @@ namespace RepairEstimator.Drafts
             var path = new UpdateRequest { Target = new Entity(Estimate, id) {
                 ["re_estimatepath"] = new OptionSetValue(custom ? 126110001 : 126110000)
             }};
+            if (!custom)
+            {
+                path.Target["re_usetax"] = 0.05m;
+                path.Target["re_freight"] = 0.14m;
+            }
             path["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
             service.Execute(path);
         }

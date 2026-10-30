@@ -174,6 +174,7 @@ namespace RepairEstimator.Plugins.Pricing
 
     public sealed class PackageInput
     {
+        public bool IsCustom { get; set; }
         public decimal MechanicHoursPerUnit { get; set; }
         /// <summary>Total material, misc and tax cost per unit (Quote sheet column G).</summary>
         public decimal MaterialCostPerUnit { get; set; }
@@ -181,6 +182,8 @@ namespace RepairEstimator.Plugins.Pricing
 
     public sealed class EstimateInput
     {
+        public const decimal StandardUseTax = 0.05m;
+        public const decimal StandardFreight = 0.14m;
         // Equipment
         public int EquipmentLineCount { get; set; }
         public int AdditionalEquipmentCount { get; set; }

@@ -89,6 +89,8 @@ static class DraftServiceTests
         Assert(result.number == "0000000042" && result.version != null, "Server number and version must return");
         Assert(decimal.Parse(result.fields.Single(f => f.key == "re_usetax").value,
             System.Globalization.CultureInfo.InvariantCulture) == 5m, "Percentage roundtrip");
+        Assert(decimal.Parse(result.fields.Single(f => f.key == "re_freight").value,
+            System.Globalization.CultureInfo.InvariantCulture) == 14m, "Standard freight overrides submitted zero");
         Assert(service.Rows.Values.Single(e => e.LogicalName == "re_estimateequipment").GetAttributeValue<bool>("re_isprimary"),
             "First equipment must be primary");
         Assert(service.Rows.Values.Single(e => e.LogicalName == "re_estimatepackage").GetAttributeValue<int>("re_quantity") == 1,

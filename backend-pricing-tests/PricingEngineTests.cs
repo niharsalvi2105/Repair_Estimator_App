@@ -307,6 +307,52 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
+        public void Standard_rates_cannot_be_overridden_by_estimate_inputs()
+        {
+            var i = Baseline();
+            i.UseTaxPct = 0m;
+            i.FreightPct = 0m;
+            var r = PricingEngine.Calculate(i);
+            Assert.Equal(1496.55m, r.PackageEstimatedCost);
+            Assert.Equal(5.42m, r.UseTaxAmount);
+            Assert.Equal(15.17m, r.FreightAmount);
+        }
+
+        [Fact]
+        public void Standard_stated_rate_margin_is_unchanged_by_custom_rates_in_a_mixed_estimate()
+        {
+            var i = Baseline();
+            i.StatedLaborRate = 220m;
+            var standard = PricingEngine.Calculate(i);
+            i.IsCustomPath = true;
+            i.Packages.Add(new PackageInput { IsCustom = true });
+            i.UseTaxPct = 0.08m;
+            i.FreightPct = 0.20m;
+            var mixed = PricingEngine.Calculate(i);
+            Assert.Equal(standard.StatedRateMargin, mixed.StatedRateMargin);
+            Assert.Equal(standard.PackageEstimatedCost, mixed.PackageEstimatedCost);
+        }
+
+        [Fact]
+        public void Mixed_rates_apply_fixed_standard_and_editable_custom_rates_separately()
+        {
+            var i = Baseline();
+            i.IsCustomPath = true;
+            i.EquipmentLineCount = 2;
+            i.UseTaxPct = 0.08m;
+            i.FreightPct = 0.20m;
+            i.Packages.Clear();
+            i.Packages.Add(new PackageInput { MaterialCostPerUnit = 100m });
+            i.Packages.Add(new PackageInput { IsCustom = true, MaterialCostPerUnit = 50m });
+            i.MaterialLines.Add(new MaterialLineInput { Quantity = 1m, UnitCost = 25m, TaxApplicable = true, FreightApplicable = true });
+            var r = PricingEngine.Calculate(i);
+            Assert.Equal(366m, r.PackageEstimatedCost); // 200 * 1.19 + 100 * 1.28
+            Assert.Equal(20m, r.UseTaxAmount);
+            Assert.Equal(53m, r.FreightAmount);
+            Assert.Equal(398m, r.TotalTrueCost);
+        }
+
+        [Fact]
         public void Mixed_packages_scale_by_equipment_but_custom_lines_and_additions_count_once()
         {
             var i = Baseline();

@@ -162,6 +162,8 @@ async function mockData(page, language, theme, state = 'records') {
         re_oem:'Test OEM', re_equipmentage:20
       }] }
       export async function findEquipmentByNumbers(branchId, numbers) {
+        window.__equipmentLookups ??= [];
+        window.__equipmentLookups.push({ branchId, numbers });
         if (window.__equipmentResults) return window.__equipmentResults.filter((item) => numbers.includes(item.re_equipment));
         return numbers.filter((n) => n === 'TEST123').map(() => ({
           re_equipmentid:'test-equipment', re_equipment:'TEST123', re_equipmentname:'Equipment with a long descriptive name / Équipement avec un nom long',
@@ -341,8 +343,8 @@ for (const viewport of viewports) {
       await checkLayout(page, viewport, 'equipment and packages selected')
       await next(page)
 
-      await page.locator('#request-re_additionallaborhours').fill('2.5')
-      await page.locator('#request-re_additionalmaterial').fill('125')
+      await expect(page.locator('#request-re_additionallaborhours')).not.toBeEditable()
+      await expect(page.locator('#request-re_additionalmaterial')).not.toBeEditable()
       await checkLayout(page, viewport, 'cost inputs')
       await next(page)
       await page.locator('#request-re_sellprice').fill('1500')
@@ -637,6 +639,50 @@ async function mockMasterData(page) {
       }
     `,
   }))
+}
+
+for (const [format, text] of [
+  ['comma', '20000711,20000712,20000713'],
+  ['semicolon', '20000711;20000712;20000713'],
+  ['space', '20000711 20000712 20000713'],
+  ['newline', '20000711\n20000712\n20000713'],
+  ['mixed and duplicates', ' 20000711, ;20000712\r\n20000711 20000713; '],
+  ['duplicates only', ' 20000711\n20000711 '],
+  ['over fifty', Array.from({ length: 60 }, (_, i) => String(20000711 + i)).join('\n')],
+]) {
+  test(`equipment paste automatically matches ${format} input and preserves details`, async ({ page }) => {
+    await completeDraft(page, { width: 1366, height: 768 }, 'en')
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    const numbers = [...new Set(text.trim().split(/[,;\s]+/).filter(Boolean))]
+    await page.evaluate((values) => {
+      window.__equipmentLookups = []
+      window.__equipmentResults = values.map((number) => ({
+        re_equipmentid: `equipment-${number}`, re_equipment: number,
+        re_equipmentname: `Catalog ${number}`, re_functionallocation: `Location ${number}`,
+        re_soldtoname: `Customer ${number}`, re_oem: 'Test OEM', re_equipmentage: 20,
+      }))
+    }, numbers)
+    await page.locator('#equipment-search').focus()
+    await page.evaluate((value) => {
+      const data = new DataTransfer()
+      data.setData('text', value)
+      document.querySelector('#equipment-search').dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, text)
+    const cards = page.locator('.selected-card').first().locator('.equipment-card')
+    await expect(cards).toHaveCount(numbers.length + 1)
+    for (const number of numbers) {
+      const card = cards.filter({ hasText: `Catalog ${number}` })
+      await expect(card).toHaveCount(1)
+      await expect(card).toContainText(`Location ${number}`)
+      await expect(card).toContainText(`Customer ${number}`)
+    }
+    await expect(cards.locator('.unbound-tag')).toHaveCount(0)
+    await expect(page.locator('#equipment-search')).toHaveValue('')
+    const lookups = await page.evaluate(() => window.__equipmentLookups)
+    expect(lookups.flatMap((lookup) => lookup.numbers)).toEqual(numbers)
+    expect(lookups.every((lookup) => lookup.branchId === 'test-branch' && lookup.numbers.length <= 50)).toBe(true)
+  })
 }
 
 for (const width of [320, 768, 1440]) {
@@ -964,12 +1010,11 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await next(page)
   await pickEquipmentAndPackage(page)
   await next(page)
-  // Missing branch defaults must remain blank, not silently become zero.
-  await expect(page.locator('#request-re_usetax')).toHaveValue('')
-  await expect(page.locator('#request-re_freight')).toHaveValue('')
-  await page.locator('#request-re_usetax').fill('5')
-  await page.locator('#request-re_freight').fill('0')
-  await page.locator('#request-re_additionallaborhours').fill('2.5')
+  await expect(page.locator('#request-re_usetax')).toHaveValue('5.00')
+  await expect(page.locator('#request-re_freight')).toHaveValue('14.00')
+  await expect(page.locator('#request-re_usetax')).not.toBeEditable()
+  await expect(page.locator('#request-re_freight')).not.toBeEditable()
+  await expect(page.locator('#request-re_additionallaborhours')).not.toBeEditable()
   await next(page)
   await page.locator('#request-re_sellprice').fill('1500')
   await next(page)
@@ -982,6 +1027,8 @@ for (const width of [320, 768, 1366]) {
       for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
       const card = page.locator('.selected-package-card').first()
       await expect(card.locator('.package-cost-details')).toBeVisible()
+      await expect(card.locator('dt').filter({ hasText: /^(Tax|Taxe) \(%\)$/ }).locator('+ dd')).toHaveText(language === 'fr' ? '5,00%' : '5.00%')
+      await expect(card.locator('dt').filter({ hasText: /^(Freight|Fret) \(%\)$/ }).locator('+ dd')).toHaveText(language === 'fr' ? '14,00%' : '14.00%')
       const description = await card.locator('.selected-package-description').boundingBox()
       const pricing = await card.locator('.selected-package-pricing').boundingBox()
       const remove = await card.locator('.selected-package-remove').boundingBox()
@@ -1002,25 +1049,19 @@ for (const width of [320, 768, 1366]) {
 }
 
 for (const language of ['en', 'fr']) {
-  test(`package pricing stays readable with missing tax and large amounts in ${language}`, async ({ page }, testInfo) => {
+  test(`package pricing stays readable with fixed standard rates and large amounts in ${language}`, async ({ page }, testInfo) => {
     await page.addInitScript(() => { window.__largeRates = true })
     await completeDraft(page, { width: 1366, height: 900 }, language)
     for (let i = 0; i < 2; i++) await page.locator('.form-footer > button').click()
-    await page.locator('#request-re_usetax').click()
-    await page.locator('#request-re_usetax').press('ControlOrMeta+A')
-    await page.locator('#request-re_usetax').press('Backspace')
-    await expect(page.locator('#request-re_usetax')).toHaveValue('')
+    await expect(page.locator('#request-re_usetax')).not.toBeEditable()
     await page.locator('.form-footer > button').click()
     const card = page.locator('.selected-package-card').first()
-    await expect(card.locator('.package-cost-pending')).toBeVisible()
+    await expect(card.locator('.package-cost-pending')).toHaveCount(0)
     const labels = await card.locator('.package-cost-details dt').evaluateAll((elements) =>
       elements.map((el) => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height })))
     expect(labels.every((label) => label.width >= 100 && label.height < 80)).toBe(true)
     expect((await card.boundingBox()).height).toBeLessThan(400)
-    await card.screenshot({ path: testInfo.outputPath('package-missing-tax.png') })
-    await next(page)
-    await page.locator('#request-re_usetax').fill('5')
-    await page.locator('.form-footer > button').click()
+    await card.screenshot({ path: testInfo.outputPath('package-fixed-rates.png') })
     await expect(card.locator('.package-cost-pending')).toHaveCount(0)
     const widths = await card.locator('.package-cost-details dt').evaluateAll((elements) =>
       elements.map((el) => el.getBoundingClientRect().width))
@@ -1060,11 +1101,13 @@ test('package costs show immediately and each CSTM requires separate positive en
   })
   await completeDraft(page)
   for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
-  await expect(page.locator('.package-cost-details')).toContainText('252.50 USD')
+  await expect(page.locator('.package-cost-details')).toContainText('259.50 USD')
   for (const [index, code] of ['CSTM-A', 'CSTM-B'].entries()) {
     await page.locator('#package-search').fill(code)
     await page.locator('#package-options button').first().click()
     await expect(page.locator('.custom-cost-lines')).toBeVisible()
+    await expect(page.locator('.package-cost-details').first()).toContainText('Tax (%)')
+    await expect(page.locator('.package-cost-details').first()).toContainText('Freight (%)')
     await expect(page.locator('.draft-save-action')).toBeDisabled()
     const calculate = page.getByRole('button', { name: 'Calculate and return to packages', exact: true })
     await calculate.click()
@@ -1080,17 +1123,109 @@ test('package costs show immediately and each CSTM requires separate positive en
     await expect(page.locator('.custom-cost-lines')).toBeVisible()
     await expect(page.locator('.draft-save-action')).toBeDisabled()
     await material.locator('input').nth(3).fill('25')
+    if (index === 0) {
+      await expect(page.locator('.package-cost-pending')).toBeVisible()
+      const labels = await page.locator('.package-cost-details dt').evaluateAll((elements) =>
+        elements.map((el) => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height })))
+      expect(labels.every((label) => label.width >= 100 && label.height < 80)).toBe(true)
+    }
+    await expect(page.locator('#request-re_usetax')).toBeEditable()
+    await expect(page.locator('#request-re_freight')).toBeEditable()
+    for (const [key, value] of [['re_usetax', '8'], ['re_freight', '20']]) {
+      const input = page.locator(`#request-${key}`)
+      await input.click()
+      await input.press('ControlOrMeta+A')
+      await input.pressSequentially(value)
+    }
     await calculate.click()
     await expect(page.locator('#package-search')).toBeVisible()
+    await expect(page.locator('.selected-package-card').first()).toContainText('259.50 USD')
+    await expect(page.locator('.selected-package-card').nth(index + 1)).toContainText(`${(index + 2) * 100 + 64}.00 USD`)
+    const customCard = page.locator('.selected-package-card').nth(index + 1)
+    await expect(customCard.locator('dt').filter({ hasText: /^Tax \(%\)$/ }).locator('+ dd')).toHaveText('8.00%')
+    await expect(customCard.locator('dt').filter({ hasText: /^Freight \(%\)$/ }).locator('+ dd')).toHaveText('20.00%')
   }
   await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toBeVisible()
   expect(await page.evaluate(() => window.__draftSaved.laborLines.map((l) => l.packageId))).toEqual(['custom-0', 'custom-1'])
   expect(await page.evaluate(() => window.__draftSaved.materialLines.map((m) => m.packageId))).toEqual(['custom-0', 'custom-1'])
+  const fields = await page.evaluate(() => window.__draftSaved.fields)
+  expect(fields).toContainEqual({ key: 're_usetax', value: '8' })
+  expect(fields).toContainEqual({ key: 're_freight', value: '20' })
   await page.locator('.draft-secondary-actions button').nth(1).click()
   await next(page)
   await expect(page.locator('.package-cost-details')).toHaveCount(3)
 })
+
+for (const width of [320, 1366]) {
+  test(`all three package costs carry forward before additions without reopening CSTM at ${width}px`, async ({ page }, testInfo) => {
+    await page.addInitScript(() => {
+      window.__extraPackages = [
+        { re_repairpackageid: 'custom', re_packagenumber: 'CSTM', re_packagenameen: 'Custom',
+          re_iscustompackage: true, re_mechanichours: 0, re_materialmisctaxcost: 0, re_effectivefrom: '2020-01-01' },
+        { re_repairpackageid: 'pit', re_packagenumber: 'PIT', re_packagenameen: 'Pit work',
+          re_mechanichours: 1, re_materialmisctaxcost: 100, re_effectivefrom: '2020-01-01' },
+      ]
+    })
+    await completeDraft(page, { width, height: 900 })
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    await next(page)
+    for (const key of ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous'])
+      await expect(page.locator(`#request-${key}`)).not.toBeEditable()
+    await expect(page.getByRole('button', { name: 'Add labor', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Add material', exact: true })).toHaveCount(0)
+    await page.locator('.form-footer > button').click()
+    await page.locator('#package-search').fill('CSTM')
+    await page.locator('#package-options button').first().click()
+    const editor = page.locator('.custom-cost-lines')
+    await editor.getByRole('button', { name: 'Add labor', exact: true }).click()
+    await editor.locator('fieldset').first().locator('input').fill('2')
+    await editor.getByRole('button', { name: 'Add material', exact: true }).click()
+    const material = editor.locator('fieldset').nth(1)
+    await material.locator('textarea').fill('Motor')
+    await material.locator('input').nth(2).fill('2')
+    await material.locator('input').nth(3).fill('25')
+    await page.locator('#request-re_usetax').fill('8')
+    await page.locator('#request-re_freight').fill('20')
+    await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
+    await page.locator('#package-search').fill('PIT')
+    await page.locator('#package-options button').first().click()
+    await page.locator('#package-search').press('Escape')
+    await next(page)
+    const summary = page.locator('.package-cost-summary')
+    await expect(summary.locator('.package-overview-card')).toHaveCount(3)
+    for (const [index, amount] of ['259.50 USD', '264.00 USD', '219.00 USD'].entries())
+      await expect(summary.locator('.package-overview-card').nth(index).locator('dd.package-cost-total')).toHaveText(amount)
+    await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
+    await expect(editor).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Add labor', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Add material', exact: true })).toHaveCount(0)
+    const order = await summary.evaluate((element) => element.getBoundingClientRect().bottom
+      <= document.querySelector('#request-re_additionallaborhours').getBoundingClientRect().top)
+    expect(order).toBe(true)
+    await page.locator('#request-re_additionallaborhours').fill('1')
+    await page.locator('#request-re_additionalmaterial').fill('10')
+    await page.locator('#request-re_additionalmiscellaneous').fill('5')
+    await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
+    await checkLayout(page, { width, height: 900 }, 'all package costs before additions')
+    await summary.screenshot({ path: testInfo.outputPath('all-package-costs.png') })
+    await next(page)
+    await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
+    await next(page)
+    await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    const saved = await page.evaluate(() => window.__draftCalls.at(-1))
+    expect(saved.packages.map((p) => p.id)).toEqual(['test-package', 'custom', 'pit'])
+    expect(saved.laborLines).toHaveLength(1)
+    expect(saved.materialLines).toHaveLength(1)
+    expect(saved.fields).toEqual(expect.arrayContaining([
+      { key: 're_additionallaborhours', value: '1' },
+      { key: 're_additionalmaterial', value: '10' },
+      { key: 're_additionalmiscellaneous', value: '5' },
+    ]))
+  })
+}
 
 test('equipment selection exceeds fourteen for catalog and unlisted units and survives save and reload', async ({ page }) => {
   await completeDraft(page)
@@ -1115,7 +1250,8 @@ test('equipment selection exceeds fourteen for catalog and unlisted units and su
   await expect(page.locator('.draft-saved')).toBeVisible()
   const saved = await page.evaluate(() => window.__draftSaved.equipment)
   expect(saved).toHaveLength(22)
-  expect(saved.filter((item) => item.matched)).toHaveLength(20)
+  expect(saved.filter((item) => item.matched)).toHaveLength(21)
+  expect(saved.find((item) => item.number === 'TEST123').matched).toBe(true)
   expect(saved.find((item) => item.number === 'UNLISTED-EXTRA').matched).toBe(false)
   await page.locator('.draft-secondary-actions button').nth(1).click()
   await next(page)
@@ -1136,6 +1272,19 @@ test('customer email is required before continuing or saving a draft', async ({ 
   const email = page.locator('#customer-email')
   await expect(email).toHaveAttribute('required', '')
   await expect(email).toHaveAttribute('aria-required', 'true')
+  for (const width of [320, 1366]) {
+    await page.setViewportSize({ width, height: 900 })
+    const label = page.locator('label[for="customer-email"]')
+    const alignment = await label.evaluate((element) => {
+      const text = document.createRange()
+      text.selectNodeContents(element.firstChild)
+      const caption = text.getBoundingClientRect()
+      const star = element.querySelector('.required').getBoundingClientRect()
+      return { captionTop: caption.top, starTop: star.top, captionRight: caption.right, starLeft: star.left }
+    })
+    expect(Math.abs(alignment.captionTop - alignment.starTop)).toBeLessThan(2)
+    expect(alignment.starLeft).toBeGreaterThanOrEqual(alignment.captionRight)
+  }
   await expect(page.locator('.footer-actions .button')).toBeDisabled()
   await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
 
@@ -1222,6 +1371,7 @@ test('customer combobox exposes loading errors, retries and searches beyond the 
 
 test('bulk equipment paste can select more than fourteen matched units', async ({ page }) => {
   await completeDraft(page, { width: 1366, height: 768 }, 'en')
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
   await page.evaluate(() => {
     window.__equipmentResults = Array.from({ length: 20 }, (_, i) => ({
       re_equipmentid: `bulk-${i}`, re_equipment: `20000${String(i).padStart(3, '0')}`,
@@ -1238,7 +1388,44 @@ test('bulk equipment paste can select more than fourteen matched units', async (
   })
   await expect(page.locator('.selected-card').first().locator('.equipment-card')).toHaveCount(21)
   await expect(page.locator('.paste-summary')).toContainText('20')
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  const saved = await page.evaluate(() => window.__draftSaved.equipment)
+  expect(saved).toHaveLength(21)
+  expect(saved.every((item) => item.matched)).toBe(true)
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await next(page)
+  await expect(page.locator('.selected-card').first().locator('.equipment-card')).toHaveCount(21)
 })
+
+for (const language of ['en', 'fr']) {
+  for (const action of ['click', 'Enter']) {
+    test(`typed equipment list adds separate matched units using ${action} in ${language}`, async ({ page }) => {
+      await completeDraft(page, { width: 1366, height: 768 }, language)
+      for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+      await page.evaluate(() => {
+        window.__equipmentResults = ['20000364', '20000372'].map((number) => ({
+          re_equipmentid: `equipment-${number}`, re_equipment: number,
+          re_equipmentname: `Catalog ${number}`, re_functionallocation: 'Test location',
+        }))
+      })
+      const input = page.locator('#equipment-search')
+      await input.fill('20000364,20000372')
+      const option = page.locator('#equipment-options button')
+      await expect(option).toHaveCount(1)
+      await expect(option).toContainText(language === 'fr' ? 'Ajouter la liste des équipements' : 'Add equipment list')
+      await expect(page.locator('#equipment-options')).not.toContainText('Add as unlisted equipment')
+      if (action === 'click') await option.click()
+      else await input.press('Enter')
+      const cards = page.locator('.selected-card').first().locator('.equipment-card')
+      await expect(cards).toHaveCount(3)
+      await expect(cards.filter({ hasText: '20000364' })).toHaveCount(1)
+      await expect(cards.filter({ hasText: '20000372' })).toHaveCount(1)
+      await expect(cards.locator('.unbound-tag')).toHaveCount(0)
+      await expect(input).toHaveValue('')
+    })
+  }
+}
 
 test('bulk equipment paste warns about missing numbers and typed search still works afterwards', async ({ page }) => {
   await mockData(page, 'en', 'light')
@@ -1584,6 +1771,8 @@ for (const { language, theme } of modes) {
     await material.locator('input').nth(1).fill('KM123')
     await material.locator('input').nth(2).fill('2')
     await material.locator('input').nth(3).fill('25.50')
+    await page.locator('#request-re_usetax').fill('5')
+    await page.locator('#request-re_freight').fill('14')
     await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 320)
     await checkLayout(page, { width: 320, height: 700 }, 'custom cost entry')
     await page.locator('.footer-actions .button').click()
@@ -1599,7 +1788,8 @@ for (const { language, theme } of modes) {
     expect(saved.laborLines[0]).toMatchObject({ role: 126110001, time: 126110001, hours: 3.25 })
     expect(saved.materialLines[0]).toMatchObject({ description: 'Custom motor', vendor: 'KONE', quantity: 2, unitCost: 25.5 })
     await page.locator('.draft-toolbar .draft-secondary-actions button').nth(1).click()
-    await next(page); await next(page)
+    await next(page)
+    await page.getByRole('button', { name: language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs', exact: true }).click()
     await expect(page.locator('.custom-cost-lines fieldset').first().locator('input')).toHaveValue('3.25')
     await expect(page.locator('.custom-cost-lines fieldset').nth(1).locator('textarea')).toHaveValue('Custom motor')
     await page.locator('.draft-toolbar .draft-secondary-actions button').first().click()
@@ -1631,6 +1821,9 @@ test('large saved package selections are paged in the browser without losing rec
   await page.locator('.selected-card').last().getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.locator('.selected-card').last().locator('.equipment-card')).toHaveCount(20)
   await expect(page.locator('.selected-card').last().locator('.equipment-card').first()).toContainText('P021')
+  await next(page)
+  await expect(page.locator('.package-cost-summary .package-overview-card')).toHaveCount(20)
+  await expect(page.locator('.package-combined-total dd')).toHaveText('49,843.75 USD')
   await page.locator('.draft-toolbar .primary').click()
   await expect(page.locator('.draft-saved')).toContainText('0000000042')
   expect(await page.evaluate(() => window.__draftCalls.at(-1).packages.length)).toBe(125)
@@ -1650,7 +1843,8 @@ test('custom line paging bounds rendered controls without dropping saved rows', 
     }))
   })
   await page.locator('.draft-toolbar .draft-secondary-actions button').nth(1).click()
-  await next(page); await next(page)
+  await next(page)
+  await page.getByRole('button', { name: 'Edit CSTM costs', exact: true }).click()
   const custom = page.locator('.custom-cost-lines')
   await expect(custom.locator('fieldset')).toHaveCount(20)
   await custom.locator('.custom-line-actions').first().getByRole('button', { name: 'Next', exact: true }).click()
@@ -1755,7 +1949,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 
     expect(first.version).toBeNull()
     expect(first.id).toMatch(/^[a-f0-9-]{36}$/)
     expect(first.fields).toEqual(expect.arrayContaining([
-      { key: 're_usetax', value: '5' }, { key: 're_freight', value: '0' },
+      { key: 're_usetax', value: '5' }, { key: 're_freight', value: '14' },
       { key: 're_sellprice', value: '1500' },
     ]))
     expect(first.equipment).toHaveLength(1)
@@ -1782,12 +1976,33 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 
     await expect(page.locator('.selected-card').last()).toContainText('Persisted package snapshot')
     await next(page)
     await expect(page.locator('#request-re_usetax')).toHaveValue('5.00')
-    await expect(page.locator('#request-re_freight')).toHaveValue('0.00')
-    await expect(page.locator('#request-re_additionallaborhours')).toHaveValue('2.50')
+    await expect(page.locator('#request-re_freight')).toHaveValue('14.00')
+    await expect(page.locator('#request-re_additionallaborhours')).toHaveValue('')
   })
 }
 
 for (const width of [320, 1366]) {
+  test(`standard rates stay locked after saving and reloading at ${width}px`, async ({ page }) => {
+    await completeDraft(page, { width, height: 900 })
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    await page.evaluate(() => {
+      for (const field of window.__draftSaved.fields) {
+        if (field.key === 're_usetax') field.value = '5.0000000000'
+        if (field.key === 're_freight') field.value = '14.0000000000'
+      }
+    })
+    await page.locator('.draft-toolbar').getByRole('button', { name: 'Reload draft', exact: true }).click()
+    await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
+    await next(page)
+    await next(page)
+    await expect(page.locator('#request-re_usetax')).toHaveValue('5.00')
+    await expect(page.locator('#request-re_freight')).toHaveValue('14.00')
+    await expect(page.locator('#request-re_usetax')).not.toBeEditable()
+    await expect(page.locator('#request-re_freight')).not.toBeEditable()
+    await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
+  })
+
   for (const entry of ['dashboard', 'sidebar']) {
     test(`new request clears the previous saved draft via ${entry} at ${width}px`, async ({ page }) => {
       await completeDraft(page, { width, height: 900 })
@@ -1827,10 +2042,9 @@ for (const width of [320, 1366]) {
       await expect(page.locator('.selected-card')).toHaveCount(0)
       await pickEquipmentAndPackage(page)
       await next(page)
-      await expect(page.locator('#request-re_usetax')).toHaveValue('')
+      await expect(page.locator('#request-re_usetax')).toHaveValue('5.00')
       await expect(page.locator('#request-re_additionallaborhours')).toHaveValue('')
-      await page.locator('#request-re_usetax').fill('5')
-      await page.locator('#request-re_freight').fill('0')
+      await expect(page.locator('#request-re_freight')).toHaveValue('14.00')
       await next(page)
       await expect(page.locator('#request-re_sellprice')).toHaveValue('')
       await page.locator('#request-re_sellprice').fill('2000')
@@ -1852,23 +2066,24 @@ test('decimal inputs display two places while preserving saved precision and edi
   await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toBeVisible()
   await page.evaluate(() => {
-    for (const field of window.__draftSaved.fields) {
-      if (field.key === 're_additionallaborhours') field.value = '30.0000000000'
-      if (field.key === 're_usetax') field.value = '25.1234567890'
-    }
+    window.__draftSaved.packages[0].isCustom = true
+    window.__draftSaved.laborLines = [{ id: 'labor', packageId: 'test-package', role: 126110000, time: 126110000, hours: 1, rate: 100 }]
+    window.__draftSaved.materialLines = [{ id: 'material', packageId: 'test-package', description: 'Part', vendor: '', part: '', quantity: 1, unitCost: 10 }]
+    window.__draftSaved.fields.push({ key: 're_additionallaborhours', value: '30.0000000000' })
+    window.__draftSaved.fields.push({ key: 're_additionalmaterial', value: '25.1234567890' })
   })
   await page.locator('.draft-toolbar').getByRole('button', { name: 'Reload draft', exact: true }).click()
   await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
   await next(page)
   await next(page)
   const hours = page.locator('#request-re_additionallaborhours')
-  const tax = page.locator('#request-re_usetax')
+  const material = page.locator('#request-re_additionalmaterial')
   await expect(hours).toHaveValue('30.00')
-  await expect(tax).toHaveValue('25.12')
-  await tax.focus()
-  await expect(tax).toHaveValue('25.1234567890')
-  await tax.blur()
-  await expect(tax).toHaveValue('25.12')
+  await expect(material).toHaveValue('25.12')
+  await material.focus()
+  await expect(material).toHaveValue('25.1234567890')
+  await material.blur()
+  await expect(material).toHaveValue('25.12')
   await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
   await hours.focus()
   await expect(hours).toHaveValue('30.0000000000')
@@ -1882,7 +2097,7 @@ test('decimal inputs display two places while preserving saved precision and edi
   await expect(page.locator('.draft-saved')).toBeVisible()
   const fields = await page.evaluate(() => window.__draftCalls.at(-1).fields)
   expect(fields).toContainEqual({ key: 're_additionallaborhours', value: '1.2367' })
-  expect(fields).toContainEqual({ key: 're_usetax', value: '25.1234567890' })
+  expect(fields).toContainEqual({ key: 're_additionalmaterial', value: '25.1234567890' })
 })
 
 for (const width of [320, 768, 1366, 1920]) {
@@ -2080,15 +2295,13 @@ test('calculate preserves edits on save failure and requires mandatory inputs', 
   await page.locator('.form-footer > button').click()
   const calculate = page.locator('.pricing-summary').getByRole('button', { name: 'Calculate', exact: true })
   await page.locator('.form-footer > button').click()
-  await page.locator('#request-re_usetax').focus()
-  await page.keyboard.press('ControlOrMeta+A')
-  await page.keyboard.press('Backspace')
-  await expect(page.locator('#request-re_usetax')).toHaveValue('')
+  await page.locator('#request-re_timecategory').selectOption('')
+  await expect(page.locator('#request-re_timecategory')).toHaveValue('')
   await next(page)
   await expect(calculate).toBeDisabled()
   await expect(page.locator('.pricing-summary')).toContainText('Complete the required fields before calculating.')
   await page.locator('.form-footer > button').click()
-  await page.locator('#request-re_usetax').fill('5')
+  await page.locator('#request-re_timecategory').selectOption('126110000')
   await next(page)
   await page.evaluate(() => { window.__draftFailure = '403: Write permission denied' })
   await calculate.click()

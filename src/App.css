@@ -2168,6 +2168,41 @@
   overflow-wrap: anywhere;
 }
 
+.package-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+}
+
+.package-overview-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.package-overview-card h3 {
+  margin: 0 0 8px;
+}
+
+.package-overview-card > p {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.package-overview-card > .button {
+  margin-top: 16px;
+}
+
+.package-combined-total {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 750;
+}
+
 @media (max-width: 1250px) {
   .selected-package-card {
     grid-template-columns: 36px minmax(0, 1fr) 44px;

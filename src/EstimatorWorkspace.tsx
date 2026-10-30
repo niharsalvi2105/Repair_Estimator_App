@@ -161,6 +161,14 @@ export default function EstimatorWorkspace({
   const hasCustom = selectedPackages.some((p) => p.re_iscustompackage)
   const selectedEquipmentNumbers = useMemo(() => new Set(selectedEquipment.map((item) => item.number)), [selectedEquipment])
   const canAdd = selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length < MAX_DRAFT_CHILD_OPERATIONS
+  let packageTotal: number | undefined
+  let packageTotalError = ''
+  if (step >= 3 && !activeCustom) {
+    try {
+      packageTotal = selectedPackages.reduce((total, p) => total + calculatePackageCost(p,
+        costInputs.quantity, rates, costInputs.time, costInputs.tax, costInputs.freight, laborLines, materialLines).total, 0)
+    } catch (reason) { packageTotalError = reason instanceof Error ? reason.message : String(reason) }
+  }
   const packagePaging = selectedPackages.length > pageSize && <div className="custom-line-actions">
     <button type="button" className="button secondary" disabled={currentPackagePage === 0}
       onClick={() => setPackagePage(currentPackagePage - 1)}>{language === 'fr' ? 'Précédent' : 'Previous'}</button>
@@ -168,6 +176,31 @@ export default function EstimatorWorkspace({
     <button type="button" className="button secondary" disabled={(currentPackagePage + 1) * pageSize >= selectedPackages.length}
       onClick={() => setPackagePage(currentPackagePage + 1)}>{language === 'fr' ? 'Suivant' : 'Next'}</button>
   </div>
+  const packageCostSummary = !activeCustom && <section className="form-card package-cost-summary">
+    <h2>{language === 'fr' ? 'Coûts des forfaits sélectionnés' : 'Selected package costs'}</h2>
+    <div className="package-overview-grid">
+      {selectedPackages.slice(currentPackagePage * pageSize, (currentPackagePage + 1) * pageSize).map((p) => (
+        <article className="package-overview-card" key={p.re_repairpackageid}>
+          <h3>{p.re_packagenumber}</h3>
+          <p>{localizePackage(p, language)}</p>
+          <PackageCostDetails repairPackage={p} {...costInputs} />
+          {step === 3 && p.re_iscustompackage && <button className="button secondary small" onClick={() => {
+            setActiveCustom(p.re_repairpackageid); setCustomError('')
+          }}>{language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs'}</button>}
+        </article>
+      ))}
+    </div>
+    {packagePaging}
+    <dl className="package-cost-details package-combined-total">
+      <dt>{language === 'fr' ? 'Coût total des forfaits' : 'Total package cost'}</dt>
+      <dd>{packageTotal === undefined ? '—' : `${packageTotal.toLocaleString(language === 'fr' ? 'fr-CA' : 'en-US',
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${currency ? ` ${currency}` : ''}`}</dd>
+    </dl>
+    {packageTotalError && <p className="error-box" role="alert">{packageTotalError}</p>}
+    <p className="field-help">{language === 'fr'
+      ? 'Tous les forfaits sélectionnés, taxe et fret inclus. Les ajouts sont comptés séparément, une seule fois.'
+      : 'All selected packages, including tax and freight. Additions are counted separately, once.'}</p>
+  </section>
   useEffect(() => {
     requestSection.current?.querySelector<HTMLElement>('[aria-current="step"]')?.focus()
   }, [step, requestSection])
@@ -339,12 +372,12 @@ export default function EstimatorWorkspace({
                   <CustomerNameSelect key={`${draftId}:${branchId}`} branchId={branchId} value={customerName}
                     onChange={setCustomerName} language={language} />
                 </div>
-                <label className="field-label" htmlFor="customer-email">
-                  {t.customerEmail}<span className="required" aria-hidden="true">*</span>
+                <div className="field-label">
+                  <label htmlFor="customer-email">{t.customerEmail}<span className="required" aria-hidden="true">*</span></label>
                   <input id="customer-email" type="email" className="text-input" maxLength={100}
                     required aria-required="true"
                     value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
-                </label>
+                </div>
                 <label className="field-label" htmlFor="customer-phone">
                   {t.customerPhone}
                   <input id="customer-phone" type="tel" className="text-input" maxLength={100}
@@ -369,7 +402,7 @@ export default function EstimatorWorkspace({
               {equipmentBulkBusy && <p className="field-help" role="status">{t.pasteChecking}</p>}
               {equipmentPasteResult && (
                 <div className={equipmentPasteResult.notFound.length || equipmentPasteResult.overLimit.length
-                  || equipmentPasteResult.truncated ? 'warning-box' : 'paste-summary'} role="status">
+                  ? 'warning-box' : 'paste-summary'} role="status">
                   <p><strong>{t.pasteAdded}:</strong> {equipmentPasteResult.added.length}</p>
                   {([
                     [t.pasteNotFound, equipmentPasteResult.notFound],
@@ -378,7 +411,6 @@ export default function EstimatorWorkspace({
                   ] as const).filter(([, values]) => values.length > 0).map(([label, values]) => (
                     <p key={label}><strong>{label}:</strong> {values.join(', ')}</p>
                   ))}
-                  {equipmentPasteResult.truncated && <p>{t.pasteTruncated}</p>}
                 </div>
               )}
 
@@ -548,6 +580,7 @@ export default function EstimatorWorkspace({
       {(step === 3 || step === 4) && (
         <div className="form-layout single-column">
           <div className="form-main">
+            {packageCostSummary}
             <section className="form-card">
               <div className="section-heading">
                 <span className="section-icon">{step === 3 ? '03' : '04'}</span>
@@ -557,19 +590,20 @@ export default function EstimatorWorkspace({
                 </div>
               </div>
               <RequestFields stage={step === 3 ? 'cost' : 'pricing'} language={language}
-                value={requestInputs} onChange={updateRequestInput} custom={hasCustom || Number(requestInputs.re_konesparessalespricevk13) > 0} />
+                value={requestInputs} onChange={updateRequestInput}
+                custom={hasCustom || (step !== 3 && Number(requestInputs.re_konesparessalespricevk13) > 0)} />
               <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
               {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
                 {rateResult.error}<button className="button secondary" onClick={() => setRateAttempt((n) => n + 1)}>{t.retry}</button>
               </div>}
             </section>
-            {step === 3 && (hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
+            {step === 3 && ((activeCustom && hasCustom) || (!hasCustom && (laborLines.length > 0 || materialLines.length > 0))) &&
               <CustomCostLines language={language} labor={laborLines} materials={materialLines}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd} readOnly={draftBusy}
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber }))}
                 activePackageId={activeCustom} />}
             {step === 3 && customValidation && <p role="alert" className="error-box">{customValidation}</p>}
-            {step === 3 && customPackages.map((p) => <section className="form-card" key={p.re_repairpackageid}>
+            {step === 3 && activeCustom && customPackages.filter((p) => p.re_repairpackageid === activeCustom).map((p) => <section className="form-card" key={p.re_repairpackageid}>
               <h3>{p.re_packagenumber}</h3><PackageCostDetails repairPackage={p} {...costInputs} />
             </section>)}
             {step === 3 && customError && <p role="alert" className="error-box">{customError}</p>}
@@ -585,6 +619,7 @@ export default function EstimatorWorkspace({
       {step === 5 && (
         <div className="form-layout">
           <div className="form-main">
+            {packageCostSummary}
             <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
               language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted}
               calculate={saveDraft} calculating={draftBusy} canCalculate={canWork && draftComplete} />
@@ -644,7 +679,7 @@ export default function EstimatorWorkspace({
                 <details key={stage}>
                   <summary>{stage === 'request' ? t.requestDetails : stage === 'cost' ? t.stepCosts : t.stepPricing}</summary>
                   <RequestFields stage={stage} language={language} value={requestInputs} onChange={updateRequestInput}
-                    custom={hasCustom || Number(requestInputs.re_konesparessalespricevk13) > 0} readOnly />
+                    custom={hasCustom || (stage !== 'cost' && Number(requestInputs.re_konesparessalespricevk13) > 0)} readOnly />
                 </details>
               ))}
               <p className="draft-notice">{dt.note}</p>
@@ -661,7 +696,11 @@ export default function EstimatorWorkspace({
       )}
 
       <div className="form-footer">
-        <button className="button tertiary" onClick={() => (step === 1 ? onDashboard() : setStep((current) => current - 1))}>
+        <button className="button tertiary" onClick={() => {
+          setActiveCustom(undefined); setCustomError('')
+          if (step === 1) onDashboard()
+          else setStep((current) => current - 1)
+        }}>
           {t.back}
         </button>
         <div className="footer-actions">
@@ -673,6 +712,7 @@ export default function EstimatorWorkspace({
                 if (step === 3 && customValidation) { setCustomError(customValidation); return }
                 const inputs = requestSection.current?.querySelectorAll<HTMLInputElement>('input')
                 if (inputs && !Array.from(inputs).every((input) => input.reportValidity())) return
+                setActiveCustom(undefined); setCustomError('')
                 setStep((current) => current + 1)
               }}
               disabled={step === 1 ? !branchId || !buildingName.trim() || !equipmentTypeId || !customerEmail.trim() : step === 2 ? selectedEquipment.length === 0 || selectedPackages.length === 0 : false}

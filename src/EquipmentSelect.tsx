@@ -5,7 +5,7 @@ import { isEquipmentList } from './data/equipmentPaste'
 
 const RESULT_LIMIT = 20
 
-type Option = { kind: 'equipment'; equipment: Equipment } | { kind: 'unlisted' }
+type Option = { kind: 'equipment'; equipment: Equipment } | { kind: 'unlisted' } | { kind: 'list' }
 
 export function EquipmentSelect({
   results, selectedNumbers, onToggle, query, onQueryChange, loading, disabled = false, t,
@@ -28,8 +28,10 @@ export function EquipmentSelect({
   const list = useRef<HTMLUListElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const typed = query.trim()
-  const options: Option[] = loading ? [] : results.map((equipment) => ({ kind: 'equipment', equipment }))
-  if (!loading && typed.length >= 3 && !selectedNumbers.has(typed)) options.push({ kind: 'unlisted' })
+  const typedList = isEquipmentList(typed)
+  const options: Option[] = typedList ? [{ kind: 'list' }]
+    : loading ? [] : results.map((equipment) => ({ kind: 'equipment', equipment }))
+  if (!typedList && !loading && typed.length >= 3 && !selectedNumbers.has(typed)) options.push({ kind: 'unlisted' })
   const activeOption = options[active]
 
   useEffect(() => {
@@ -41,7 +43,10 @@ export function EquipmentSelect({
     setOpen(true)
   }
   function choose(option: Option) {
-    if (option.kind === 'unlisted') {
+    if (option.kind === 'list') {
+      setOpen(false)
+      onPasteList(query)
+    } else if (option.kind === 'unlisted') {
       onAddUnlisted()
       setActive(0)
     } else onToggle(option.equipment)
@@ -96,13 +101,25 @@ export function EquipmentSelect({
       </div>
       {open && <div className="branch-popup">
         <p className="field-help" role="status">
-          {loading ? t.searching
+          {typedList ? t.equipmentListHelp : loading ? t.searching
             : results.length === 0 ? t.noEquipment
               : results.length >= RESULT_LIMIT ? t.refineSearch : `${results.length}`}
           {' · '}{selectedNumbers.size} {t.equipmentCount}
         </p>
         <ul id="equipment-options" ref={list} role="listbox" aria-multiselectable="true" aria-label={t.equipment}>
           {options.map((option, index) => {
+            if (option.kind === 'list') {
+              return (
+                <li key="list" id={`equipment-option-${index}`} role="option" aria-selected={false}
+                  data-active={index === active}>
+                  <button type="button" tabIndex={-1} className="package-option"
+                    onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}>
+                    <span className="package-check" aria-hidden="true">+</span>
+                    <span className="package-option-body">{t.addEquipmentList}<strong>{typed}</strong></span>
+                  </button>
+                </li>
+              )
+            }
             if (option.kind === 'unlisted') {
               return (
                 <li key="unlisted" id={`equipment-option-${index}`} role="option" aria-selected={false}

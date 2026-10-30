@@ -22,7 +22,7 @@ export function calculatePackageCost(p: Pick<RepairPackage, 're_mechanichours' |
   }
   const rate = rateFor(126110000, time)
   if (!p.re_iscustompackage)
-    return { ...packageCost(p.re_mechanichours ?? NaN, p.re_materialmisctaxcost ?? NaN, quantity, rate, tax, freight), rate }
+    return { ...packageCost(p.re_mechanichours ?? NaN, p.re_materialmisctaxcost ?? NaN, quantity, rate, 5, 14), rate }
   const lines = labor.filter((l) => l.packageId === p.re_repairpackageid)
   const parts = materials.filter((m) => m.packageId === p.re_repairpackageid)
   if (!lines.length || !parts.length || lines.some((l) => !(l.hours > 0) || !Number.isFinite(l.hours))

@@ -78,7 +78,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       </fieldset>
     })}
     {pageControls(labor.length, laborPage, setLaborPage)}
-    {!readOnly && <button type="button" className="button secondary" disabled={!enabled || !canAdd}
+    {!readOnly && enabled && <button type="button" className="button secondary" disabled={!canAdd}
       onClick={() => { setLaborPage(Math.floor(labor.length / size)); setLabor((rows) => [...rows, {
         id: crypto.randomUUID(), packageId: activePackageId ?? (packages.length === 1 ? packages[0].id : undefined),
         role: 126110000, time: 126110000, hours: 0,
@@ -122,7 +122,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       </fieldset>
     })}
     {pageControls(materials.length, materialPage, setMaterialPage)}
-    {!readOnly && <button type="button" className="button secondary" disabled={!enabled || !canAdd}
+    {!readOnly && enabled && <button type="button" className="button secondary" disabled={!canAdd}
       onClick={() => { setMaterialPage(Math.floor(materials.length / size)); setMaterials((rows) => [...rows, {
         id: crypto.randomUUID(), packageId: activePackageId ?? (packages.length === 1 ? packages[0].id : undefined),
         description: '', vendor: '', part: '', quantity: 1, unitCost: 0,
