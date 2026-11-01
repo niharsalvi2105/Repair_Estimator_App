@@ -25,6 +25,11 @@ backend-pricing-tests/bin
 backend-pricing-tests/obj
 *.local
 
+# Local business-data extracts and generated audit workbooks
+Audit_Track/CSTM_Material_Import_2026-11-01/
+Audit_Track/Contract_Equipment_Import_2026-11-01/
+Audit_Track/Repair_Estimator_Detailed_Checklist.xlsx
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

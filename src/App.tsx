@@ -33,6 +33,9 @@ import { getDraftChoices } from './data/draftChoiceRepository'
 import { CloneRequestWorkspace } from './CloneRequestWorkspace'
 import { CloneRequestDialog } from './CloneRequestDialog'
 import { requestReuseErrorMessage } from './data/dataverseOperation'
+import { getContractEquipment } from './data/contractEquipmentRepository'
+import { contractEquipmentRecords } from './data/contractEquipment'
+import type { ContractAddSummary } from './ContractEquipmentCard'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -726,6 +729,45 @@ function App() {
     setEquipmentQuery('')
   }
 
+  async function addContractEquipment(numbers: string[], file?: File): Promise<ContractAddSummary | undefined> {
+    if (!branchId || draftInFlight.current || submitted || equipmentBulkBusy) return
+    const request = ++equipmentPasteRequest.current
+    const requestBranch = branchId
+    setEquipmentPasteResult(undefined); setEquipmentBulkError(''); setEquipmentBulkBusy(true)
+    try {
+      let duplicates: string[] = []
+      if (file) {
+        const { readContractExcel, MAX_CONTRACT_EXCEL_BYTES } = await import('./data/contractExcel')
+        if (!/\.xlsx$/i.test(file.name)) throw new Error('Upload a contract Excel .xlsx file.')
+        if (file.size > MAX_CONTRACT_EXCEL_BYTES) throw new Error('Contract Excel files must be no larger than 5 MB.')
+        const upload = await readContractExcel(await file.arrayBuffer())
+        numbers = upload.numbers; duplicates = upload.duplicates
+      }
+      const matches: Equipment[] = []
+      const notFound: string[] = []
+      for (let offset = 0; offset < numbers.length; offset += 50) {
+        if (request !== equipmentPasteRequest.current) return
+        const result = await getContractEquipment(requestBranch, market, 'contractresolve', numbers.slice(offset, offset + 50))
+        if (result.more) throw new Error('Contract equipment returned incomplete results. Nothing was added.')
+        matches.push(...contractEquipmentRecords(result)); notFound.push(...result.notFound)
+        if (matches.length > MAX_DRAFT_CHILD_OPERATIONS) throw new Error('Contract equipment exceeds the estimate processing budget. Split the request.')
+      }
+      if (request !== equipmentPasteRequest.current) return
+      const identifiers = [...new Set(matches.map((e) => e.re_equipment.toLowerCase()))]
+      const plan = planEquipmentAdd(selectedEquipment.map((e) => e.number), identifiers, matches)
+      if (selectedEquipment.length + plan.add.length + selectedPackages.length + laborLines.length +
+        materialLines.length > MAX_DRAFT_CHILD_OPERATIONS)
+        throw new Error('Contract equipment would exceed the estimate processing budget. Nothing was added; split the request.')
+      setSelectedEquipment((current) => {
+        const selected = new Set(current.map((e) => e.number.toLowerCase()))
+        return [...current, ...plan.add.filter((e) => !selected.has(e.re_equipment.toLowerCase())).map(toSelectedEquipment)]
+      })
+      return { added: plan.add.length, alreadySelected: plan.alreadySelected.length, notFound, duplicates }
+    } finally {
+      if (request === equipmentPasteRequest.current) setEquipmentBulkBusy(false)
+    }
+  }
+
   function resetBranch(nextBranchId: string) {
     equipmentPasteRequest.current++
     setEquipmentPasteResult(undefined)
@@ -1267,6 +1309,7 @@ function App() {
               addUnlistedEquipment,
               addEquipmentList,
               uploadEquipmentExcel: (file: File) => addEquipmentList('', file),
+              addContractEquipment,
               equipmentPasteResult,
               setSelectedEquipment,
               selectedPackages,

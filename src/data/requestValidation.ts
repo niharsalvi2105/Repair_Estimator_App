@@ -1,6 +1,11 @@
 import type { DraftLabor, DraftMaterial } from './draftContract'
+import { materialEntryError } from './customMaterialCosts.ts'
 
 export function customCostsError(packageIds: string[], labor: DraftLabor[], materials: DraftMaterial[], language: 'en' | 'fr'): string | undefined {
+  for (const line of materials) {
+    const error = materialEntryError(line, language)
+    if (error) return error
+  }
   if (materials.some((line) => (line.pricingSource != null && (
     !['package', 'manual'].includes(line.pricingSource) || line.catalogPartId || line.markupPercent != null ||
     line.unitPrice != null || line.refreshPart ||

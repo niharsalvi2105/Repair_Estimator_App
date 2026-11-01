@@ -2110,7 +2110,8 @@
   border-left: 1px solid var(--border);
 }
 
-.package-cost-details {
+.package-cost-details,
+.equipment-package-breakdown {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   align-items: baseline;
@@ -2120,14 +2121,16 @@
   line-height: 1.5;
 }
 
-.package-cost-details dt {
+.package-cost-details dt,
+.equipment-package-breakdown dt {
   min-width: 0;
   color: var(--muted);
   overflow-wrap: break-word;
   word-break: normal;
 }
 
-.package-cost-details dd {
+.package-cost-details dd,
+.equipment-package-breakdown dd {
   min-width: 0;
   margin: 0;
   text-align: right;
@@ -2172,6 +2175,115 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 16px;
+}
+
+.equipment-package-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+}
+
+.selected-package-group {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.equipment-package-costs {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.equipment-package-costs > .section-heading h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.equipment-package-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.equipment-package-card h4 {
+  margin: 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.equipment-package-card > p {
+  margin: 8px 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.equipment-package-amounts {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 0;
+}
+
+.equipment-package-amounts > div {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.equipment-package-amounts > div > dt {
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.equipment-package-amounts > div > dt span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.equipment-package-amounts dd {
+  margin: 0;
+}
+
+.equipment-package-breakdown {
+  margin-top: 8px;
+}
+
+.equipment-package-total-label {
+  margin: 12px 0 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.equipment-package-price {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #eaf1ff;
+  color: #1450f5;
+  font-size: 18px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.custom-material-total {
+  color: #1450f5;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme='dark'] .custom-material-total {
+  color: #91b6ff;
+}
+
+:root[data-theme='dark'] .equipment-package-price {
+  background: #172e50;
+  color: #91b6ff;
 }
 
 .package-overview-card {

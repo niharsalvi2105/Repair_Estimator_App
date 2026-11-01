@@ -316,7 +316,7 @@ namespace RepairEstimator.Tests
                 .Replace("\"key\":\"re_freight\",\"value\":\"0\"", "\"key\":\"re_freight\",\"value\":\"20\"");
             json = json.Substring(0, json.Length - 2) + ",{\"id\":\"" + custom.Id + "\"}]," +
                 "\"laborLines\":[{\"id\":\"l\",\"packageId\":\"" + custom.Id + "\",\"role\":126110000,\"time\":126110000,\"hours\":1}]," +
-                "\"materialLines\":[{\"id\":\"m\",\"packageId\":\"" + custom.Id + "\",\"description\":\"Motor\",\"quantity\":1,\"unitCost\":25}]}";
+                "\"materialLines\":[{\"id\":\"m\",\"packageId\":\"" + custom.Id + "\",\"description\":\"Motor\",\"part\":\"MOTOR-1\",\"quantity\":1,\"unitCost\":25}]}";
             db.Save(json);
             var header = db.Rows[db.EstimateId];
             // 200 labor + 100 standard material * 1.19 + 50 CSTM snapshot * 1.28 + 100 custom labor + 25 * 1.28.
@@ -343,7 +343,7 @@ namespace RepairEstimator.Tests
                 "\"materialLines\":[{\"packageId\":\"" + db.PackageId +
                 "\",\"description\":\"Motor\",\"part\":\"KM1\",\"quantity\":50,\"unitCost\":0,\"partType\":\"kone\",\"pricingSource\":\"package\"}," +
                 "{\"packageId\":\"" + db.PackageId +
-                "\",\"description\":\"Bracket\",\"quantity\":2,\"unitCost\":10,\"partType\":\"non-kone\",\"pricingSource\":\"manual\"}]}";
+                "\",\"description\":\"Bracket\",\"part\":\"BRACKET-1\",\"quantity\":2,\"unitCost\":10,\"partType\":\"non-kone\",\"pricingSource\":\"manual\"}]}";
             var response = db.Save(json);
             Assert.Contains("\"materialBeforeMarkup\":617.45", response);
             Assert.Contains("\"pricingSource\":\"package\"", response);

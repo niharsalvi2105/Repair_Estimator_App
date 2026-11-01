@@ -1,0 +1,25 @@
+{
+  "status": "design-only-not-deployed",
+  "productionImportEnabled": false,
+  "extendTable": "re_equipment",
+  "columns": {
+    "re_contractnumber": { "type": "String", "maxLength": 100, "source": "Contract__c" },
+    "re_contractstatus": { "type": "String", "maxLength": 100, "source": "CS_Service_Contract_Status__c" }
+  },
+  "mapping": {
+    "equipmentNumber": "Name",
+    "branchNumber": "Plant_Section__c",
+    "market": "Sales_Organization__c",
+    "marketAliases": { "MKOF": "MKO", "MKOM": "MKO" },
+    "equipmentEligibility": "Status = VALID; existing Dataverse equipment must also be active",
+    "contractEligibility": "CS_Service_Contract_Status__c = Active"
+  },
+  "deployment": [
+    "Review and deploy columns on the existing Equipment table; regenerate SDK only through tooling if needed.",
+    "Match existing equipment by market, branch number and equipment number. Never update by equipment number alone.",
+    "Reject unmatched/ambiguous equipment; do not create Equipment or Branch records.",
+    "Clear or expire obsolete mappings during an approved refresh; do not leave old contracts attached.",
+    "Deploy updated draft backend and frontend; verify using non-admin reader permissions.",
+    "The preparation script does not import data, deploy columns or change live records."
+  ]
+}

@@ -77,6 +77,7 @@ static class DraftServiceTests
         TestUnlistedEquipmentDetails();
         TestPresets();
         TestPackageMaterialPricing();
+        TestContractEquipment();
         var service = Setup(); var input = Input(); input.email = null;
         Reject(() => Run(service, input), "Customer email is required");
         Assert(!service.Rows.ContainsKey(Guid.Parse(input.id)), "Missing customer email must fail before creating the estimate");
@@ -253,6 +254,9 @@ static class DraftServiceTests
             new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "00" } });
         Assert(found.available && found.parts.Single().unitCost == 7.73178m &&
             found.parts.Single().unitPrice == 40.376m, "Catalog query must return exact CAD formulas.");
+        var descriptionMatch = (CatalogResult)search.Invoke(null, new object[] { service,
+            new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "log mo" } });
+        Assert(descriptionMatch.parts.Single().number == "0001", "Part search must match inside descriptions, not just their prefix.");
         service.Rows[configId]["re_market"] = new OptionSetValue(126110002);
         Assert(((CatalogResult)search.Invoke(null, new object[] { service,
             new Draft { mode = "partcatalog", market = 126110002, partType = "kone", search = "00" } }))
@@ -292,6 +296,16 @@ static class DraftServiceTests
             "Server must ignore spoofed catalog costs/prices/description and preserve exact snapshots.");
         var stored = service.Rows[Guid.Parse(material.id)];
         Assert(stored.GetAttributeValue<Money>("re_extendedcost").Value == 23.20m, "Round only extended/display amounts.");
+        input = loaded; input.materialLines[0].quantity = 1.5m;
+        Reject(() => Run(service, input), "whole number");
+        input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+        input.materialLines[0].quantity = 3;
+        input.materialLines[0].part = "";
+        Reject(() => Run(service, input), "part number");
+        input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+        input.materialLines[0].part = "0001";
+        Run(service, input);
+        loaded = Load(service, input);
         input = loaded; input.mode = "save";
         service.Rows[partId]["re_usdcost"] = 100m;
         service.Rows[partId]["re_usdprice"] = 200m;
@@ -514,7 +528,7 @@ static class DraftServiceTests
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
         input.laborLines[0].hours = 2;
         input.materialLines[0].quantity = -1;
-        Reject(() => Run(service, input), "Invalid material");
+        Reject(() => Run(service, input), "whole number");
     }
 
     static void TestAllLaborCombinations()
@@ -523,7 +537,7 @@ static class DraftServiceTests
         service.Rows[MasterPackage]["re_iscustompackage"] = true;
         input.laborLines = new List<LaborInput>();
         input.materialLines = new List<MaterialInput> {
-            new MaterialInput { description = "Material", quantity = 1, unitCost = 1 }
+            new MaterialInput { description = "Material", part = "MANUAL-1", quantity = 1, unitCost = 1 }
         };
         for (int role = 0; role < 3; role++)
         for (int time = 0; time < 2; time++)
@@ -558,7 +572,7 @@ static class DraftServiceTests
             });
             input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
             input.laborLines = new List<LaborInput> { new LaborInput { role = 126110000, time = 126110000, hours = 0 } };
-            input.materialLines = new List<MaterialInput> { new MaterialInput { description = "Material", quantity = 1, unitCost = 10 } };
+            input.materialLines = new List<MaterialInput> { new MaterialInput { description = "Material", part = "MANUAL-1", quantity = 1, unitCost = 10 } };
             Reject(() => Run(service, input), "Invalid labor");
             input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
             input.laborLines[0].hours = 2;
@@ -591,7 +605,7 @@ static class DraftServiceTests
             Reject(() => Run(service, input), "at least one labor line and one material line");
             input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
             input.laborLines.Add(new LaborInput { packageId = second.Id.ToString(), role = 126110000, time = 126110000, hours = 3 });
-            input.materialLines.Add(new MaterialInput { packageId = second.Id.ToString(), description = "Second", quantity = 2, unitCost = 20 });
+            input.materialLines.Add(new MaterialInput { packageId = second.Id.ToString(), description = "Second", part = "MANUAL-2", quantity = 2, unitCost = 20 });
             Run(service, input);
             loaded = Load(service, input);
             Assert(loaded.laborLines.Select(l => l.packageId).Distinct().Count() == 2
@@ -667,6 +681,56 @@ static class DraftServiceTests
         Console.WriteLine("Private Opportunity preset ownership, validation, paging and pending clone cases passed.");
     }
 
+    static void TestContractEquipment()
+    {
+        var read = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.ContractEquipment")
+            .GetMethod("Read", BindingFlags.Static | BindingFlags.NonPublic);
+        var service = Setup();
+        var input = new Draft { mode = "contractcapabilities", branchId = Branch.ToString(), market = 126110000 };
+        Func<ContractEquipmentResult> call = () => (ContractEquipmentResult)read.Invoke(null, new object[] { service, input });
+        Assert(!call().available, "Missing contract schema must disable lookup explicitly.");
+        service.ContractSchema = true;
+        Assert(call().available, "Approved contract columns enable lookup.");
+        input.mode = "contractsearch"; input.search = "001";
+        service.Rows[MasterEquipment]["re_contractnumber"] = "C001";
+        service.Rows[MasterEquipment]["re_contractstatus"] = "Active";
+        var second = new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_equipment"] = "E2",
+            ["re_contractnumber"] = "C001", ["re_contractstatus"] = "Active"
+        };
+        service.Add(second);
+        var otherBranch = new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_branch"] = new EntityReference("re_branch", Guid.NewGuid()), ["re_equipment"] = "OUT",
+            ["re_contractnumber"] = "C001", ["re_contractstatus"] = "Active"
+        };
+        service.Add(otherBranch);
+        var inactive = new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_equipment"] = "INACTIVE",
+            ["re_contractnumber"] = "C001", ["re_contractstatus"] = "Cancelled"
+        };
+        service.Add(inactive);
+        Assert(call().contracts.SequenceEqual(new[] { "C001" }), "Search returns distinct branch-scoped Active contracts.");
+        input.mode = "contractresolve"; input.contractNumbers = new List<string> { "C001", "MISSING" };
+        var resolved = call();
+        Assert(resolved.equipment.Count == 2 && resolved.equipment.All(e => e.matched) &&
+            resolved.notFound.SequenceEqual(new[] { "MISSING" }), "Resolve all matching units, report missing contracts, never use another branch or cancelled contracts.");
+        second["statecode"] = new OptionSetValue(1);
+        Assert(call().equipment.Count == 1, "Inactive equipment must not be selected.");
+        input.market = 126110001;
+        Reject(() => call(), "selected market");
+        input.market = 126110000;
+        input.contractNumbers = new List<string> { "C%" };
+        Reject(() => call(), "valid contract");
+        input.contractNumbers = new List<string> { "C001" };
+        for (var index = 0; index < 1000; index++)
+            service.Add(new Entity("re_equipment", Guid.NewGuid()) {
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_equipment"] = "P" + index,
+                ["re_contractnumber"] = "C001", ["re_contractstatus"] = "Active"
+            });
+        Reject(() => call(), "processing budget");
+        Console.WriteLine("Contract equipment cases passed: schema gate, branch/market scope, Active status, distinct search, all units, paging and budget rejection.");
+    }
+
     sealed class FakeService : IOrganizationService
     {
         public readonly Dictionary<Guid, Entity> Rows = new Dictionary<Guid, Entity>();
@@ -675,6 +739,7 @@ static class DraftServiceTests
         public bool CatalogSchema;
         public bool PackagePricingSchema;
         public bool PresetSchema;
+        public bool ContractSchema;
         public int SnapshotPrecision = 10;
         public readonly Dictionary<string, int[]> ChoiceValues = new Dictionary<string, int[]> {
             {"re_papertype", new[] { 126110000, 126110001, 126110002, 727000042 }},
@@ -705,12 +770,14 @@ static class DraftServiceTests
             if (q.EntityName == "re_laborrate") RateQueries++;
             var rows = Rows.Values.Where(r => r.LogicalName == q.EntityName && Matches(r, q.Criteria));
             var all = rows.ToList();
+            if (q.Distinct) all = all.GroupBy(r => string.Join("|", q.ColumnSet.Columns.Select(c =>
+                r.GetAttributeValue<string>(c)))).Select(g => g.First()).ToList();
             if (q.TopCount.HasValue) return new EntityCollection(all.Take(q.TopCount.Value).Select(Clone).ToList());
             var count = q.PageInfo?.Count ?? 0;
             if (count == 0) return new EntityCollection(all.Select(Clone).ToList());
             var offset = (q.PageInfo.PageNumber - 1) * count;
             return new EntityCollection(all.Skip(offset).Take(count).Select(Clone).ToList()) {
-                MoreRecords = offset + count < all.Count, PagingCookie = "page"
+                MoreRecords = offset + count < all.Count, PagingCookie = "page" + q.PageInfo.PageNumber
             };
         }
         static object Scalar(object value) => value is EntityReference r ? (object)r.Id : value is OptionSetValue o ? o.Value : value;
@@ -718,9 +785,13 @@ static class DraftServiceTests
             var results = filter.Conditions.Select(c => {
                 row.Attributes.TryGetValue(c.AttributeName, out var value); value = Scalar(value);
                 if (c.Operator == ConditionOperator.Null) return value == null;
+                if (c.Operator == ConditionOperator.NotNull) return value != null;
                 if (c.Operator == ConditionOperator.Equal) return Equals(value, Scalar(c.Values[0]));
+                if (c.Operator == ConditionOperator.In) return c.Values.Any(v => Equals(value, Scalar(v)));
                 if (c.Operator == ConditionOperator.BeginsWith)
                     return value is string text && text.StartsWith((string)c.Values[0], StringComparison.OrdinalIgnoreCase);
+                if (c.Operator == ConditionOperator.Like)
+                    return value is string match && match.IndexOf(((string)c.Values[0]).Trim('%'), StringComparison.OrdinalIgnoreCase) >= 0;
                 if (value == null) return false;
                 var comparison = ((IComparable)value).CompareTo(c.Values[0]);
                 return c.Operator == ConditionOperator.LessEqual ? comparison <= 0 : comparison >= 0;
@@ -747,6 +818,17 @@ static class DraftServiceTests
                 return response;
             }
             if (request is RetrieveEntityRequest entity) {
+                if (entity.LogicalName == "re_equipment") {
+                    var equipment = new EntityMetadata { LogicalName = entity.LogicalName };
+                    typeof(EntityMetadata).GetProperty("Attributes").SetValue(equipment, ContractSchema
+                        ? new AttributeMetadata[] {
+                            new StringAttributeMetadata { LogicalName = "re_contractnumber", MaxLength = 100 },
+                            new StringAttributeMetadata { LogicalName = "re_contractstatus", MaxLength = 100 }
+                        } : new AttributeMetadata[0]);
+                    var equipmentResponse = new RetrieveEntityResponse();
+                    equipmentResponse.Results["EntityMetadata"] = equipment;
+                    return equipmentResponse;
+                }
                 if (entity.LogicalName == "re_estimatepackage") {
                     var package = new EntityMetadata { LogicalName = entity.LogicalName };
                     typeof(EntityMetadata).GetProperty("Attributes").SetValue(package, PackagePricingSchema

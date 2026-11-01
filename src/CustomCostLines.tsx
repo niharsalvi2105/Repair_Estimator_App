@@ -3,6 +3,7 @@ import type { DraftLabor, DraftMaterial } from './data/draftContract'
 import type { Market } from './data/estimateQuery'
 import { getPartCatalog, type CatalogResult } from './data/partCatalogRepository'
 import { MaterialPartSelect } from './MaterialPartSelect'
+import { calculateCustomMaterialTotal, materialEntryError } from './data/customMaterialCosts'
 
 type Props = {
   language: 'en' | 'fr'
@@ -16,10 +17,11 @@ type Props = {
   packages?: { id: string; name: string; materialBeforeMarkup?: number; material?: number }[]
   activePackageId?: string
   market: Market
+  currency?: string
 }
 
 export function CustomCostLines({ language, labor, materials, setLabor, setMaterials, canAdd, enabled, readOnly = false,
-  packages = [], activePackageId, market }: Props) {
+  packages = [], activePackageId, market, currency }: Props) {
   const fr = language === 'fr'
   const [laborPage, setLaborPage] = useState(0)
   const [materialPage, setMaterialPage] = useState(0)
@@ -48,17 +50,37 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         onClick={() => setPage(current + 1)}>{fr ? 'Suivant' : 'Next'}</button>
     </div>
   }
-  const laborStart = Math.min(laborPage, Math.max(0, Math.ceil(labor.length / size) - 1)) * size
-  const materialStart = Math.min(materialPage, Math.max(0, Math.ceil(materials.length / size) - 1)) * size
+  const visibleLabor = activePackageId ? labor.filter((line) => line.packageId === activePackageId) : labor
+  const visibleMaterials = activePackageId ? materials.filter((line) => line.packageId === activePackageId) : materials
+  const laborStart = Math.min(laborPage, Math.max(0, Math.ceil(visibleLabor.length / size) - 1)) * size
+  const materialStart = Math.min(materialPage, Math.max(0, Math.ceil(visibleMaterials.length / size) - 1)) * size
+  const money = (amount: number) => `${amount.toLocaleString(fr ? 'fr-CA' : 'en-US',
+    { minimumFractionDigits: 2, maximumFractionDigits: 10 })}${currency ? ` ${currency}` : ''}`
+  let materialTotal: number | undefined
+  let materialTotalError = ''
+  try {
+    materialTotal = calculateCustomMaterialTotal(visibleMaterials)
+  } catch (reason) {
+    materialTotalError = fr ? 'Complétez les matériaux pour calculer le total. Les références KONE historiques restent tarifées au niveau du forfait.'
+      : reason instanceof Error ? reason.message : String(reason)
+  }
   return <section className="form-card custom-cost-lines">
     <h2>{fr ? 'Coûts personnalisés (CSTM)' : 'Custom costs (CSTM)'}</h2>
-    <p>{fr ? 'Main-d’œuvre et matériaux non-KONE ajoutés une seule fois au devis. Les pièces KONE utilisent les montants du forfait une fois par équipement, sans majoration, taxe ou fret supplémentaires. Les taux sont déterminés par le serveur.'
-      : 'Labor and non-KONE materials are added once per estimate. KONE parts use the package amounts once per equipment, with no extra markup, tax or freight. Labor rates are resolved by the server.'}</p>
+    {activePackageId && <h3>{packages.find((p) => p.id === activePackageId)?.name}</h3>}
+    <p>{fr ? 'Main-d’œuvre et matériaux ajoutés une seule fois au devis. Matériau = somme des coûts unitaires × quantités, avant taxe et fret. Les pièces KONE proviennent du catalogue approuvé. Les taux sont déterminés par le serveur.'
+      : 'Labor and materials are added once per estimate. Material = sum of unit cost × quantity, before tax and freight. KONE parts come from the approved catalog. Labor rates are resolved by the server.'}</p>
+    <p className="field-help">{fr ? 'La taxe, le fret et les ajouts au devis sont définis dans l’écran Coûts après la sélection des forfaits.'
+      : 'Tax, freight and estimate-wide additions are configured on the Costs screen after package selection.'}</p>
+    <label className="field-label">{fr ? 'Matériau' : 'Material'}
+      <input className="text-input custom-material-total" readOnly aria-live="polite"
+        value={materialTotal == null ? (fr ? 'Indisponible' : 'Unavailable') : money(materialTotal)} />
+    </label>
+    {materialTotalError && <p className="field-help" role="status">{materialTotalError}</p>}
     {!enabled && <p className="error-box" role="alert">{fr
       ? 'Ajoutez un forfait CSTM ou supprimez explicitement toutes les lignes personnalisées et le prix VK13 avant d’enregistrer.'
       : 'Add a CSTM package or explicitly remove all custom lines and the VK13 price before saving.'}</p>}
-    <h3>{fr ? 'Main-d’œuvre' : 'Labor'} ({labor.length})</h3>
-    {labor.slice(laborStart, laborStart + size).map((line, index) => {
+    <h3>{fr ? 'Main-d’œuvre' : 'Labor'} ({visibleLabor.length})</h3>
+    {visibleLabor.slice(laborStart, laborStart + size).map((line, index) => {
       const number = laborStart + index + 1
       return <fieldset className="custom-cost-line" key={line.id} disabled={readOnly}>
         <legend>{fr ? 'Main-d’œuvre' : 'Labor'} {number}</legend>
@@ -95,13 +117,13 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
           {fr ? 'Supprimer la main-d’œuvre' : 'Remove labor'} {number}</button>}
       </fieldset>
     })}
-    {pageControls(labor.length, laborPage, setLaborPage)}
+    {pageControls(visibleLabor.length, laborPage, setLaborPage)}
     {!readOnly && enabled && <button type="button" className="button secondary" disabled={!canAdd}
-      onClick={() => { setLaborPage(Math.floor(labor.length / size)); setLabor((rows) => [...rows, {
+      onClick={() => { setLaborPage(Math.floor(visibleLabor.length / size)); setLabor((rows) => [...rows, {
         id: crypto.randomUUID(), packageId: activePackageId ?? (packages.length === 1 ? packages[0].id : undefined),
         role: 126110000, time: 126110000, hours: 0,
       }]) }}>{fr ? 'Ajouter main-d’œuvre' : 'Add labor'}</button>}
-    <h3>{fr ? 'Matériaux' : 'Materials'} ({materials.length})</h3>
+    <h3>{fr ? 'Matériaux' : 'Materials'} ({visibleMaterials.length})</h3>
     {enabled && hasCatalogLines && !capability?.available && <div className="draft-notice" role="status">
       <p>{!catalogState ? (fr ? 'Vérification du catalogue de pièces…' : 'Checking spare-parts catalog…')
         : (fr ? 'Catalogue indisponible : le schéma, le serveur et les données approuvées doivent être déployés. La saisie manuelle existante reste disponible.'
@@ -112,7 +134,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         setCapabilityState(undefined); setCatalogAttempt((current) => current + 1)
       }}>{fr ? 'Réessayer' : 'Retry catalog'}</button>}
     </div>}
-    {materials.slice(materialStart, materialStart + size).map((line, index) => {
+    {visibleMaterials.slice(materialStart, materialStart + size).map((line, index) => {
       const number = materialStart + index + 1
       function update(change: Partial<DraftMaterial>) {
         setMaterials((rows) => rows.map((r) => r.id === line.id ? { ...r, ...change } : r))
@@ -139,7 +161,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
               }}>
               {line.pricingSource == null && <option value="legacy">{fr ? 'Saisie manuelle existante' : 'Existing manual entry'}</option>}
               <option value="manual">{fr ? 'Non-KONE - saisie manuelle' : 'Non-KONE - manual entry'}</option>
-              <option value="package">{fr ? 'KONE - montants du forfait' : 'KONE - package amounts'}</option>
+              {packagePriced && <option value="package">{fr ? 'KONE - montants du forfait (historique)' : 'KONE - package amounts (saved legacy)'}</option>}
             </select>
           </label>}
           <label className="field-label">{fr ? 'Description' : 'Description'}
@@ -147,16 +169,12 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
               readOnly={!!line.catalogPartId}
               onChange={(e) => update({ description: e.target.value })} />
           </label>
-          <label className="field-label">{fr ? 'Fournisseur' : 'Vendor'}
-            <input className="text-input" maxLength={100} readOnly={!!line.catalogPartId}
-              value={line.vendor} onChange={(e) => update({ vendor: e.target.value })} />
-          </label>
-          <label className="field-label">{fr ? 'Numéro de pièce' : 'Part number'}
-            <input className="text-input" maxLength={100} readOnly={!!line.catalogPartId}
+          {(line.pricingSource != null || line.partType == null) && <label className="field-label">{fr ? 'Numéro de pièce' : 'Part number'}
+            <input className="text-input" required maxLength={100} readOnly={!!line.catalogPartId}
               value={line.part} onChange={(e) => update({ part: e.target.value })} />
-          </label>
+          </label>}
           <label className="field-label">{packagePriced ? (fr ? 'Quantité (information seulement)' : 'Quantity (reference only)') : (fr ? 'Quantité' : 'Quantity')}
-            <input className="text-input" type="number" required min={0.01} max={100000} step="0.01" value={line.quantity}
+            <input className="text-input" type="number" required min={1} max={100000} step="1" value={line.quantity || ''}
               onChange={(e) => update({ quantity: Number(e.target.value) })} />
           </label>
           {!packagePriced && <label className="field-label">{fr ? 'Coût unitaire' : 'Unit cost'}
@@ -164,7 +182,11 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
               step={line.catalogPartId ? 'any' : '0.01'} readOnly={!!line.catalogPartId || line.partType === 'kone'} value={line.unitCost}
               onChange={(e) => update({ unitCost: Number(e.target.value) })} />
           </label>}
+          {line.pricingSource == null && line.partType != null && <label className="field-label">{fr ? 'Prix unitaire' : 'Unit price'}
+            <input className="text-input" readOnly value={line.unitPrice == null ? (fr ? 'Indisponible' : 'Unavailable') : money(line.unitPrice)} />
+          </label>}
         </div>
+        {materialEntryError(line, language) && <p className="error-box" role="alert">{materialEntryError(line, language)}</p>}
         {packagePriced && <div className="draft-notice" role="status">
           <p>{fr ? 'Les numéros de pièce et quantités sont descriptifs. Plusieurs lignes KONE ne répètent pas le montant du forfait.'
             : 'Part numbers and quantities are descriptive. Multiple KONE lines do not repeat the package amount.'}</p>
@@ -177,11 +199,11 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
           {fr ? 'Supprimer le matériau' : 'Remove material'} {number}</button>}
       </fieldset>
     })}
-    {pageControls(materials.length, materialPage, setMaterialPage)}
+    {pageControls(visibleMaterials.length, materialPage, setMaterialPage)}
     {!readOnly && enabled && <button type="button" className="button secondary" disabled={!canAdd}
-      onClick={() => { setMaterialPage(Math.floor(materials.length / size)); setMaterials((rows) => [...rows, {
+      onClick={() => { setMaterialPage(Math.floor(visibleMaterials.length / size)); setMaterials((rows) => [...rows, {
         id: crypto.randomUUID(), packageId: activePackageId ?? (packages.length === 1 ? packages[0].id : undefined),
-        description: '', vendor: '', part: '', quantity: 1, unitCost: 0, pricingSource: 'manual', partType: 'non-kone',
+        description: '', vendor: '', part: '', quantity: 2, unitCost: 0, partType: 'non-kone',
       }]) }}>{fr ? 'Ajouter un matériau' : 'Add material'}</button>}
     {!readOnly && !canAdd && <p role="alert">{fr ? 'Limite technique atteinte. Divisez la demande.' : 'Technical processing budget reached. Split this request.'}</p>}
   </section>

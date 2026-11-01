@@ -1,7 +1,16 @@
 import type { RepairPackage } from './repairEstimatorRepository'
 import type { DraftLabor, DraftMaterial } from './draftContract'
+import { materialEntryError } from './customMaterialCosts.ts'
 
 export type CostRate = { role: number; time: number; rate: number }
+type CostPackage = Pick<RepairPackage, 're_mechanichours' | 're_materialmisctaxcost' | 're_materialbeforemarkup' | 're_iscustompackage' | 're_repairpackageid'>
+
+function rateFor(rates: CostRate[], role: number, category: number) {
+  const matches = rates.filter((r) => r.role === role && r.time === category)
+  if (matches.length !== 1 || !Number.isFinite(matches[0].rate) || matches[0].rate < 0)
+    throw new Error('Branch labor cost rate is missing or ambiguous.')
+  return matches[0].rate
+}
 
 export function packageCost(hours: number, material: number, quantity: number, rate: number, tax: number, freight: number) {
   if (![hours, material, quantity, rate, tax, freight].every(Number.isFinite)
@@ -12,34 +21,50 @@ export function packageCost(hours: number, material: number, quantity: number, r
   return { hours: hours * quantity, labor, material: materialTotal, total: labor + materialTotal * (1 + tax / 100 + freight / 100) }
 }
 
-export function calculatePackageCost(p: Pick<RepairPackage, 're_mechanichours' | 're_materialmisctaxcost' | 're_materialbeforemarkup' | 're_iscustompackage' | 're_repairpackageid'>,
-  quantity: number, rates: CostRate[], time: number, tax: number, freight: number, labor: DraftLabor[], materials: DraftMaterial[]) {
-  const rateFor = (role: number, category: number) => {
-    const matches = rates.filter((r) => r.role === role && r.time === category)
-    if (matches.length !== 1 || !Number.isFinite(matches[0].rate) || matches[0].rate < 0)
-      throw new Error('Branch labor cost rate is missing or ambiguous.')
-    return matches[0].rate
+function packageMaterialRates(p: CostPackage, tax: number, freight: number, materials: DraftMaterial[]) {
+  const packagePriced = p.re_iscustompackage && materials.some((m) =>
+    m.packageId === p.re_repairpackageid && m.pricingSource === 'package')
+  if (packagePriced && (p.re_materialbeforemarkup == null || !Number.isFinite(p.re_materialbeforemarkup) || p.re_materialbeforemarkup < 0))
+    throw new Error('Package Material Before Markup is missing or invalid.')
+  return {
+    material: packagePriced ? p.re_materialbeforemarkup ?? NaN : p.re_materialmisctaxcost ?? NaN,
+    tax: p.re_iscustompackage ? packagePriced ? 0 : tax : 5,
+    freight: p.re_iscustompackage ? packagePriced ? 0 : freight : 14,
+    packagePriced,
   }
-  const rate = rateFor(126110000, time)
+}
+
+function predefinedPackageCost(p: CostPackage, quantity: number, rate: number, tax: number, freight: number, materials: DraftMaterial[]) {
+  const applied = packageMaterialRates(p, tax, freight, materials)
+  return packageCost(p.re_mechanichours ?? NaN, applied.material, quantity, rate, applied.tax, applied.freight)
+}
+
+export function calculatePackageUnitCost(p: CostPackage, rates: CostRate[], time: number, tax: number, freight: number, materials: DraftMaterial[]) {
+  const rate = rateFor(rates, 126110000, time)
+  const applied = packageMaterialRates(p, tax, freight, materials)
+  const cost = packageCost(p.re_mechanichours ?? NaN, applied.material, 1, rate, applied.tax, applied.freight)
+  return { ...cost, rate, tax: applied.tax, freight: applied.freight,
+    taxAmount: cost.material * applied.tax / 100, freightAmount: cost.material * applied.freight / 100,
+    packagePriced: applied.packagePriced }
+}
+
+export function calculatePackageCost(p: CostPackage,
+  quantity: number, rates: CostRate[], time: number, tax: number, freight: number, labor: DraftLabor[], materials: DraftMaterial[]) {
+  const rate = rateFor(rates, 126110000, time)
   if (!p.re_iscustompackage)
-    return { ...packageCost(p.re_mechanichours ?? NaN, p.re_materialmisctaxcost ?? NaN, quantity, rate, 5, 14), rate }
+    return { ...predefinedPackageCost(p, quantity, rate, tax, freight, materials), rate }
   const lines = labor.filter((l) => l.packageId === p.re_repairpackageid)
   const parts = materials.filter((m) => m.packageId === p.re_repairpackageid)
   const packagePriced = parts.some((m) => m.pricingSource === 'package')
   if (!lines.length || !parts.length || lines.some((l) => !(l.hours > 0) || !Number.isFinite(l.hours))
-    || parts.some((m) => !m.description.trim() || !(m.quantity > 0) ||
+    || parts.some((m) => materialEntryError(m, 'en') || !m.description.trim() || !(m.quantity > 0) ||
       (m.pricingSource === 'package' ? m.unitCost !== 0 || m.partType !== 'kone' : !(m.unitCost > 0))
       || !Number.isFinite(m.quantity) || !Number.isFinite(m.unitCost)))
     throw new Error('Complete the CSTM labor and material entries.')
-  const laborCost = lines.reduce((sum, l) => sum + l.hours * (l.rate ?? rateFor(l.role, l.time)), 0)
+  const laborCost = lines.reduce((sum, l) => sum + l.hours * (l.rate ?? rateFor(rates, l.role, l.time)), 0)
   if (!Number.isFinite(laborCost) || laborCost < 0) throw new Error('Custom labor cost rate is invalid.')
   const material = parts.reduce((sum, m) => sum + m.quantity * m.unitCost, 0)
-  const beforeMarkup = p.re_materialbeforemarkup
-  if (packagePriced && (beforeMarkup == null || !Number.isFinite(beforeMarkup) || beforeMarkup < 0))
-    throw new Error('Package Material Before Markup is missing or invalid.')
-  const predefined = packageCost(p.re_mechanichours ?? NaN,
-    packagePriced ? beforeMarkup ?? NaN : p.re_materialmisctaxcost ?? NaN, quantity, rate,
-    packagePriced ? 0 : tax, packagePriced ? 0 : freight)
+  const predefined = predefinedPackageCost(p, quantity, rate, tax, freight, materials)
   const adjusted = packageCost(0, material, 1, 0, tax, freight)
   return { hours: predefined.hours + lines.reduce((sum, l) => sum + l.hours, 0), rate,
     labor: predefined.labor + laborCost, material: predefined.material + material, total: predefined.total + laborCost + adjusted.total,

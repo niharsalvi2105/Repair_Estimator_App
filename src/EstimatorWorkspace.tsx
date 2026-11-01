@@ -11,6 +11,8 @@ import { CustomCostLines } from './CustomCostLines'
 import { PackageSelect } from './PackageSelect'
 import { EquipmentSelect } from './EquipmentSelect'
 import { EquipmentExcelUpload } from './EquipmentExcelUpload'
+import { ContractEquipmentCard, type ContractAddSummary } from './ContractEquipmentCard'
+import { EquipmentPackageCosts } from './EquipmentPackageCosts'
 import { localizePackage, localizeScope } from './data/packageSearch'
 import { MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
 import { getPackageCostRates } from './data/repairEstimatorRepository'
@@ -77,6 +79,7 @@ type Props = {
   addUnlistedEquipment: () => void
   addEquipmentList: (text: string) => Promise<void>
   uploadEquipmentExcel: (file: File) => Promise<void>
+  addContractEquipment: (numbers: string[], file?: File) => Promise<ContractAddSummary | undefined>
   equipmentPasteResult: EquipmentPasteResult | undefined
   setSelectedEquipment: Dispatch<SetStateAction<SelectedEquipment[]>>
   selectedPackages: Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]
@@ -113,7 +116,7 @@ export default function EstimatorWorkspace({
   setJobTypeId, savedSalesperson, session, buildingName, setBuildingName,
   stateId, updateRequestInput, requestInputs, equipmentQuery,
   changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, equipmentBulkBusy, toggleEquipment,
-  selectedEquipment, addUnlistedEquipment, addEquipmentList, uploadEquipmentExcel, equipmentPasteResult, setSelectedEquipment,
+  selectedEquipment, addUnlistedEquipment, addEquipmentList, uploadEquipmentExcel, addContractEquipment, equipmentPasteResult, setSelectedEquipment,
   selectedPackages, packageLoading, packageError, packageResults, togglePackage, retryPackages,
   selectedPackageIds, setSelectedPackages, marketName, customerName, setCustomerName,
   customerEmail, setCustomerEmail, customerPhone, setCustomerPhone, setStep,
@@ -154,8 +157,9 @@ export default function EstimatorWorkspace({
     const controls = requestSection.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')
     if (controls && !Array.from(controls).every((input) => input.reportValidity())) return
     try {
+      // Validate the entered package costs before estimate-wide tax/freight are configured.
       for (const p of customPackages) calculatePackageCost(p, costInputs.quantity, rates, costInputs.time,
-        costInputs.tax, costInputs.freight, laborLines, materialLines)
+        0, 0, laborLines, materialLines)
       setCustomError(''); setActiveCustom(undefined); setStep(2)
     } catch (reason) { setCustomError(reason instanceof Error ? reason.message : String(reason)) }
   }
@@ -438,6 +442,10 @@ export default function EstimatorWorkspace({
               </>}
             </section>
 
+            {step === 2 && <ContractEquipmentCard key={`${draftId}:${branchId}`} branchId={branchId} market={market}
+              language={language} busy={equipmentBulkBusy} disabled={!branchId || draftBusy || submitted}
+              onAdd={addContractEquipment} />}
+
             {step === 2 && selectedEquipment.length > 0 && (
               <section className="form-card selected-card">
                 <div className="section-heading">
@@ -535,7 +543,9 @@ export default function EstimatorWorkspace({
                 </div>
                 <div className="selected-list">
                   {selectedPackages.slice(currentPackagePage * pageSize, (currentPackagePage + 1) * pageSize).map((repairPackage) => (
-                    <article className="equipment-card selected-package-card" key={repairPackage.re_repairpackageid}>
+                    <div className="selected-package-group" key={repairPackage.re_repairpackageid}>
+                    <EquipmentPackageCosts equipment={selectedEquipment} repairPackage={repairPackage} {...costInputs} />
+                    <article className="equipment-card selected-package-card">
                       <div className="equipment-index">PK</div>
                       <div className="equipment-info selected-package-description">
                         <div className="equipment-title">
@@ -562,6 +572,7 @@ export default function EstimatorWorkspace({
                         ×
                       </button>
                     </article>
+                    </div>
                   ))}
                 </div>
                 {packagePaging}
@@ -596,7 +607,7 @@ export default function EstimatorWorkspace({
         <div className="form-layout single-column">
           <div className="form-main">
             {packageCostSummary}
-            <section className="form-card">
+            {!(step === 3 && activeCustom && hasCustom) && <section className="form-card">
               <div className="section-heading">
                 <span className="section-icon">{step === 3 ? '03' : '04'}</span>
                 <div>
@@ -608,20 +619,17 @@ export default function EstimatorWorkspace({
                 value={requestInputs} onChange={updateRequestInput} currency={currency}
                 custom={hasCustom || (step !== 3 && Number(requestInputs.re_konesparessalespricevk13) > 0)} />
               <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
-              {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
-                {rateResult.error}<button className="button secondary" onClick={() => setRateAttempt((n) => n + 1)}>{t.retry}</button>
-              </div>}
-            </section>
+            </section>}
+            {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
+              {rateResult.error}<button className="button secondary" onClick={() => setRateAttempt((n) => n + 1)}>{t.retry}</button>
+            </div>}
             {step === 3 && ((activeCustom && hasCustom) || (!hasCustom && (laborLines.length > 0 || materialLines.length > 0))) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd} readOnly={draftBusy}
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
                   materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))}
-                activePackageId={activeCustom} />}
+                activePackageId={activeCustom} currency={currency} />}
             {step === 3 && customValidation && <p role="alert" className="error-box">{customValidation}</p>}
-            {step === 3 && activeCustom && customPackages.filter((p) => p.re_repairpackageid === activeCustom).map((p) => <section className="form-card" key={p.re_repairpackageid}>
-              <h3>{p.re_packagenumber}</h3><PackageCostDetails repairPackage={p} {...costInputs} />
-            </section>)}
             {step === 3 && customError && <p role="alert" className="error-box">{customError}</p>}
             {step === 4 && (laborLines.length > 0 || materialLines.length > 0) &&
               <p>{language === 'fr' ? 'Lignes personnalisées' : 'Custom lines'}: {laborLines.length} / {materialLines.length}</p>}
@@ -643,7 +651,7 @@ export default function EstimatorWorkspace({
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={false} readOnly
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
-                  materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))} />}
+                  materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))} currency={currency} />}
             <section className="form-card">
               <div className="section-heading">
                 <span className="section-icon">05</span>

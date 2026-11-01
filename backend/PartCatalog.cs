@@ -159,9 +159,11 @@ namespace RepairEstimator.Drafts
             var query = Effective("re_sparepart", PartColumns);
             query.Criteria.AddCondition("re_parttype", ConditionOperator.Equal, input.partType == "kone" ? 126110000 : 126110001);
             var filter = query.Criteria.AddFilter(LogicalOperator.Or);
-            filter.AddCondition("re_partnumber", ConditionOperator.BeginsWith, search);
-            filter.AddCondition("re_descriptionen", ConditionOperator.BeginsWith, search);
-            filter.AddCondition("re_descriptionfr", ConditionOperator.BeginsWith, search);
+            if (search.IndexOfAny(new[] { '%', '_', '[', ']' }) >= 0)
+                Fail("Part search cannot contain wildcard characters.");
+            filter.AddCondition("re_partnumber", ConditionOperator.Like, "%" + search + "%");
+            filter.AddCondition("re_descriptionen", ConditionOperator.Like, "%" + search + "%");
+            filter.AddCondition("re_descriptionfr", ConditionOperator.Like, "%" + search + "%");
             query.AddOrder("re_partnumber", OrderType.Ascending);
             query.AddOrder("re_sparepartid", OrderType.Ascending);
             query.TopCount = 21;

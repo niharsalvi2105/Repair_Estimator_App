@@ -118,6 +118,7 @@ namespace RepairEstimator.Drafts
         [DataMember] public string phone;
         [DataMember] public string salesperson;
         [DataMember] public string pricingState;
+        [DataMember(EmitDefaultValue = false)] public List<string> contractNumbers;
         [DataMember] public int market;
         [DataMember] public List<Field> fields = new List<Field>();
         [DataMember] public List<EquipmentInput> equipment = new List<EquipmentInput>();
@@ -169,9 +170,17 @@ namespace RepairEstimator.Drafts
             bool choiceOperation = false;
             bool catalogOperation = false;
             bool presetOperation = false;
+            bool contractOperation = false;
             try
             {
                 var input = Deserialize<Draft>((string)context.InputParameters["InputJson"]);
+                contractOperation = input.mode == "contractcapabilities" || input.mode == "contractsearch" || input.mode == "contractresolve";
+                if (contractOperation)
+                {
+                    context.OutputParameters["ResultJson"] = Serialize(ContractEquipment.Read(
+                        factory.CreateOrganizationService(context.InitiatingUserId), input));
+                    return;
+                }
                 presetOperation = input.mode == "presetlist" || input.mode == "presetsave" || input.mode == "presetdelete";
                 if (presetOperation)
                 {
@@ -216,9 +225,9 @@ namespace RepairEstimator.Drafts
             catch (InvalidPluginExecutionException) { throw; }
             catch (Exception ex)
             {
-                trace.Trace("{0} operation failed: {1}", dashboardOperation ? "Dashboard" : presetOperation ? "Opportunity presets" : catalogOperation ? "Parts catalog" : "Draft", ex);
+                trace.Trace("{0} operation failed: {1}", contractOperation ? "Contract equipment" : dashboardOperation ? "Dashboard" : presetOperation ? "Opportunity presets" : catalogOperation ? "Parts catalog" : "Draft", ex);
                 throw new InvalidPluginExecutionException(
-                    (dashboardOperation ? "Dashboard could not be loaded. " :
+                    (contractOperation ? "Contract equipment could not be loaded. " : dashboardOperation ? "Dashboard could not be loaded. " :
                         choiceOperation ? "Choices could not be loaded. " :
                         catalogOperation ? "Parts catalog could not be loaded. " :
                         presetOperation ? "Opportunity preset operation failed. " : "The draft was not saved. ") + ex.Message, ex);
@@ -597,8 +606,9 @@ namespace RepairEstimator.Drafts
                 var previous = priorMaterial.FirstOrDefault(r => r.Id.ToString() == line.id);
                 if (line.pricingSource == null && PackageMaterialPricing.Source(previous ?? new Entity(Material)) != null)
                     Fail("Reload the current app before editing package/manual material.");
-                if (line.quantity <= 0 || line.quantity > 100000 ||
-                    decimal.Round(line.quantity, 2) != line.quantity ||
+                if (line.quantity <= 0 || line.quantity > 100000 || decimal.Truncate(line.quantity) != line.quantity)
+                    Fail("Material quantity must be a whole number from 1 to 100000.");
+                if (
                     (line.pricingSource != "package" && string.IsNullOrEmpty(line.catalogPartId) &&
                         (line.unitCost <= 0 || line.unitCost > 1000000000 || decimal.Round(line.unitCost, 2) != line.unitCost)))
                     Fail("Invalid material quantity or unit cost (two decimals required).");
@@ -608,7 +618,7 @@ namespace RepairEstimator.Drafts
                 row["re_estimatematerialline"] = "Custom material";
                 row["re_entereddescription"] = Required(line.description, 2000, "Material description");
                 row["re_vendor"] = Optional(line.vendor, 100);
-                row["re_partnumber"] = Optional(line.part, 100);
+                row["re_partnumber"] = Required(line.part, 100, "Material part number");
                 row["re_quantity"] = line.quantity;
                 var unitCost = line.pricingSource != null
                     ? PackageMaterialPricing.Apply(line, previous, row)

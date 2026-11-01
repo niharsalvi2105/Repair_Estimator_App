@@ -81,6 +81,21 @@ CLI, not edited by hand.
 
 ## New request workflow
 
+Within Selected packages, each package's per-equipment details appear
+immediately before that same package's aggregate card: package 1 details,
+package 1 total, package 2 details, package 2 total. Each details section shows
+only its own package under each equipment number. Its always-visible
+breakdown uses one equipment: labor hours, mechanic rate, labor cost, material,
+applicable tax/freight percentages and amounts, the calculation formula, and a
+highlighted estimated total. Applicable package tax/freight is included; these are not selling
+prices. Custom labor/material lines and estimate-level additions are not
+allocated to equipment. Package-priced KONE uses the package's before-markup
+true cost without extra tax/freight. Missing rates, amounts or currency are
+explicitly unavailable, not zero. Equipment is paged in groups of 20 per
+package; the existing selected-package pagination pages details and aggregate
+cards together. Existing selected-package totals and server pricing
+remain unchanged.
+
 Desktop navigation uses a compact 240px sidebar, reduced branding, 44px action
 targets and consistent outline SVG icons. Narrow screens retain bottom navigation.
 The supplied JPEG logo has a 576 x 324 derivative for the sidebar, preserving the
@@ -367,10 +382,124 @@ Activation is **not performed by this change**:
    masters before rollout. After a timeout, refresh presets before repeating
    a mutation; a lost response does not prove that the operation was rolled back.
 
+### Equipment selection by contract (deployment-gated)
+
+Step 2 has an alternative **Add equipment by contract** card alongside the
+existing equipment search and equipment Excel import. Browse/search a contract
+number, or download/upload the one-column **Contract Number** Excel template
+(.xlsx, 5 MB maximum, 1000 unique identifiers maximum). Text formatting preserves
+leading zeros. Blank rows are ignored; malformed rows, formulas and extra
+populated worksheets reject the whole file before any equipment is added.
+
+Selecting a contract adds **all active Equipment records linked to an Active
+contract in the selected branch and market**, not a separate selection list.
+Repeated contracts and already-selected equipment are deduplicated. The summary
+reports added/already-selected equipment and contracts without eligible units.
+No unlisted equipment or master records are created. The existing equipment
+search, import, removal, package quantity, save and reload workflows remain in
+use. Bulk resolution checks the shared 1000-child budget and adds nothing when
+it would be exceeded; all pages/batches must finish before adding equipment.
+New drafts/branch resets discard in-flight results.
+
+The draft API adds read-only `contractcapabilities`, `contractsearch` and
+`contractresolve` modes, running with the initiating user's permissions.
+Search returns up to 20 distinct contract numbers; resolution pages all matching
+units. Missing mapping columns, older backend versions, permission failures,
+ambiguous equipment or paging errors are reported explicitly. Contract controls
+stay unavailable until their schema/backend mapping is deployed; ordinary
+equipment selection remains available.
+
+UI-only releases leave `VITE_CONTRACT_LOOKUP_ENABLED` unset (or `false`).
+The card and template remain visible, but no contract API operations are sent.
+This prevents older draft plugins from treating an unsupported read operation
+as a draft save and attempting to parse its absent draft ID. After the updated
+assembly, columns and approved mappings are verified, rebuild with
+`VITE_CONTRACT_LOOKUP_ENABLED=true` to enable lookup. Browser regression tests
+enable the flag against their mock backend; run the UI-only regression with
+the flag set to `false` to verify no contract calls and ordinary draft saving.
+
+The reviewed local schema is
+[`backend/contract-equipment-schema.json`](backend/contract-equipment-schema.json):
+`re_equipment.re_contractnumber` and `re_contractstatus` are text columns.
+The supplied Equipment Master sheet maps `Contract__c` to equipment `Name`,
+branch `Plant_Section__c` and market `Sales_Organization__c`. Only `Status=VALID`
+and `CS_Service_Contract_Status__c=Active` rows are eligible. As confirmed,
+MKOF maps to MKO; MKOM is also normalized to MKO; CKE/CKQ map directly.
+
+Prepare a local CSV and report with
+[`backend/prepare-contract-equipment.mjs`](backend/prepare-contract-equipment.mjs):
+
+```powershell
+node backend\prepare-contract-equipment.mjs "<Equipment-Master.xlsx>" "<new-output-directory>"
+```
+
+The streaming reader supports the large master workbook without uploading it.
+It preserves identifiers, excludes missing/inactive contracts, rejects invalid
+or conflicting mappings and never overwrites existing output files. The supplied
+replacement workbook yielded 86,718 eligible mappings, 283,385 missing-contract
+rows and 58,245 inactive rows. The CSV contains market/branch/equipment match
+keys, **not resolved Dataverse record IDs**. An authorized import must uniquely
+resolve existing records using all three keys, account for branch zero padding
+(for example, source 20 vs branch 020), reject unmatched/ambiguous records, and
+clear obsolete mappings during an approved refresh. Never import by equipment
+number alone or create/update unrelated master data.
+
+The preparation scripts do not deploy schema, import live records, publish
+Power Apps or write to a tenant. Deploy the approved columns and draft assembly,
+load/refresh approved mappings, verify non-admin permissions, then publish the
+frontend before enabling client use.
+
+#### Dev rollout status (2026-11-01)
+
+The contract columns and updated draft assembly are deployed in Dev. The approved
+mapping import updated and independently verified 47,431 existing equipment
+records; 39,287 unmatched mappings were skipped. No equipment was created and no
+historical estimates were changed. Live capability, search and resolution checks
+passed, and the contract-enabled frontend was published.
+
+Contract lookup is a build-time opt-in. To reproduce the enabled Dev frontend:
+
+```powershell
+$env:VITE_CONTRACT_LOOKUP_ENABLED = 'true'
+npm run build
+```
+
+The parts-catalog tables, configuration and approved catalog import remain
+pending. Final live contract selection/save/reopen and non-admin verification
+remain rollout checks; do not treat successful local tests as proof that every
+live workflow is complete. Submission remains unconnected.
+
+Source workbooks, generated business-data extracts, live import backups and
+credentials are not included in the repository. Obtain approved data separately;
+do not commit signing keys or access tokens.
+
 ### CSTM spare-parts catalog (deployment-gated)
 
-New **Custom costs (CSTM) > Materials** entries use manual part numbers:
-- **KONE - package amounts**: the server snapshots the selected Repair Package's
+The CSTM package editor shows only custom labor lines, material lines and a
+read-only **Material** total: `sum(unit cost * quantity)` before tax/freight.
+Only the active CSTM package's lines appear when editing that package. The
+estimate-wide additional-details card remains on the later Costs screen; its
+scalar additional-material amount is not copied into the itemized total or
+double-counted. Labor entry and server rate resolution are unchanged.
+
+New material rows default to quantity **2**. Part number and a positive whole
+quantity (1–100000, no decimals) are mandatory in both frontend and draft API.
+Vendor is no longer an editable/displayed column; existing saved vendor metadata
+is retained and catalog KONE classification remains authoritative.
+
+The **Part number** combobox searches inside part numbers or descriptions,
+supports keyboard selection, and fills the approved description, unit cost,
+unit selling price and UOM. The entered quantity is retained when selecting a
+part; the workbook pricing unit is not an order quantity.
+- **KONE**: new rows require a catalog part. Unit cost times quantity contributes
+  to material cost; the catalog VK13 price and markup remain a separate selling
+  contribution. New rows cannot opt into the old package-amount reference mode.
+- **Non-KONE**: approved catalog selection or manual number, description and
+  positive unit cost. When the catalog is unavailable, explicitly choose
+  **Use manual entry without catalog** for the existing manual pricing route.
+
+Saved historical rows keep their pricing source:
+- **KONE - package amounts (saved legacy)**: the server snapshots the selected Repair Package's
   `re_materialbeforemarkup` as internal cost and `re_materialmisctaxcost` as its
   already-marked-up final selling contribution. Both scale once per equipment,
   regardless of how many descriptive KONE rows or quantities are entered.
@@ -382,20 +511,20 @@ New **Custom costs (CSTM) > Materials** entries use manual part numbers:
 The KONE final amount appears separately in package details and the server's
 KONE-specific suggested price; the entered proposal selling price is not changed.
 Standard packages and historical legacy/catalog drafts keep their existing
-formulas unless explicitly opted into the new CSTM route. Saved package prices
+formulas. Saved package prices
 remain immutable across ordinary edits; clones resolve current source values.
 Missing or negative package amounts fail explicitly (zero is allowed).
 The `_base` field is never used as a markup or selling amount.
 
 Deploy [package material snapshot columns](backend/package-material-pricing-schema.json),
 then **both** backend assemblies (pricing `2026.5`), then the frontend.
-This is a separate route, not activation of the spare-parts catalog; it needs no
-spare-part import or catalog configuration. Do not mix package KONE pricing with
+The saved package-amount route is separate from the spare-parts catalog and
+needs no spare-part import or catalog configuration. Do not mix package KONE pricing with
 catalog KONE lines, heuristic legacy KONE lines or the legacy aggregate VK13 price.
 For older drafts without a before-markup snapshot, reselect the CSTM package to
 preview its current amounts before opting in.
 
-Existing catalog-backed rows retain catalog search/selection and per-line KONE
+New and existing catalog-backed rows use catalog search/selection and per-line KONE
 markup controls. They use the draft
 API's read-only `partcapabilities`/`partcatalog` modes, not synthetic fixtures.
 Missing schema, disabled configuration and service/permission errors leave the
@@ -404,8 +533,9 @@ available. Search uses at least two characters and returns up to 20 effective,
 active matches; refine the search when more matches exist.
 
 For this separate catalog route, KONE requires catalog selection. Non-KONE supports an approved catalog or manual
-entry in estimate currency. Catalog description, vendor, number and cost are
-read-only. Saving resolves trusted source values on the server and ignores
+entry in estimate currency. Catalog description, unit cost and price are
+read-only; editing the part-number search invalidates the old selection until a
+new part is selected. Saving resolves trusted source values on the server and ignores
 browser cost/price overrides. New typed non-KONE manual entries cannot reuse a
 currently active KONE catalog number. Unclassified legacy rows retain their old
 behavior; saved typed rows cannot be silently downgraded by an older client.
@@ -439,8 +569,8 @@ Activation is **not performed by this change**:
    to true (default false). Never enable against sample/unapproved data.
 
 This integration covers CSTM package materials. Additional-material itemization
-and master-data refresh/import are not production-wired; the existing scalar
-additional-material field is unchanged.
+and live master-data refresh/import are not production-wired; the existing scalar
+additional-material field on the later estimate-wide screen is unchanged.
 
 ### Spare-parts schema and isolated UI preview
 
@@ -449,8 +579,24 @@ The proposed catalog/material snapshot schema is defined in
 design contract, **not a deployed schema or an import/deployment script**.
 The revised Material tab owns KONE USD cost and VK13 price. All of its parts are
 KONE; non-KONE parts come from a separate approved catalog or manual entry.
-Production import remains blocked pending the revised currently effective extract,
-pricing-unit/cost-basis confirmation, zero-amount policy and refresh policy.
+The local preparation tool
+[`backend/prepare-part-catalog.mjs`](backend/prepare-part-catalog.mjs) reads the
+supplied revised Material sheet and writes a Dataverse-column CSV plus a JSON
+rejection report without any network calls or live writes:
+
+```powershell
+node backend\prepare-part-catalog.mjs "<workbook.xlsx>" "<new-output-directory>" --as-of 2026-11-01
+```
+
+It validates the exact headers, ZR00/MKOM/01 context, validity dates, USD source
+amounts, pricing unit 1, UOM and unique effective source keys. Leading-zero part
+numbers and source precision are retained; CAD costs/prices are resolved by the
+server's versioned conversion configuration, not missing Excel formula caches.
+As approved for this request, zero cost/price rows are excluded and reported.
+Expired and future rows are excluded and counted. Existing output files are
+not overwritten. Review the report and source context before importing; the
+CSV is not automatically activated or uploaded. Tenant schema, refresh policy,
+conversion configuration, roles and deployment still require explicit approval.
 
 For frontend review, run the existing development server and open
 `http://localhost:5173/?materialPreview=1` (use the actual server port if different).
