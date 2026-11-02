@@ -703,6 +703,24 @@
   background: #392f1d;
 }
 
+:root[data-theme='dark'] .preview-badge.status-submitted {
+  color: #9de4f5;
+  border-color: #3f7d94;
+  background: #173b48;
+}
+
+:root[data-theme='dark'] .preview-badge.status-pending {
+  color: #d6c2ff;
+  border-color: #7a5cb3;
+  background: #2e2444;
+}
+
+:root[data-theme='dark'] .preview-badge.status-complete {
+  color: #bdf0cd;
+  border-color: #3c7f54;
+  background: #173825;
+}
+
 :root[data-theme='dark'] .dashboard-stat-icon.tone-2 {
   color: #9de4f5;
   background: #173b48;
@@ -1539,6 +1557,24 @@
   background: #fff7e5;
   font-size: 12px;
   font-weight: 750;
+}
+
+.preview-badge.status-submitted {
+  color: #1d5f99;
+  border-color: #9fcdf5;
+  background: #e6f3ff;
+}
+
+.preview-badge.status-pending {
+  color: #6a3fa8;
+  border-color: #cdb8f0;
+  background: #f3ecff;
+}
+
+.preview-badge.status-complete {
+  color: #1e6b3a;
+  border-color: #9fdcae;
+  background: #e7f8ec;
 }
 
 .stepper {
@@ -2549,13 +2585,16 @@
 }
 
 .draft-notice {
-  margin: 15px 0 0;
   padding: 12px 14px;
   border-left: 3px solid #e0ae37;
   color: #806019;
   background: #fff8e8;
   font-size: 12px;
   line-height: 1.55;
+}
+
+.draft-notice + .stepper {
+  margin-top: 18px;
 }
 
 .form-footer {

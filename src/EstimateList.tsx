@@ -11,7 +11,7 @@ const text = {
     error: 'Could not load repair requests.', denied: 'Dataverse denied access to these requests.',
     retry: 'Retry', previous: 'Previous', next: 'Next', page: 'Page',
     request: 'Request', customer: 'Customer', building: 'Building', created: 'Created',
-    draft: 'Draft', pending: 'Pending', submitted: 'Submitted', unknown: 'Unknown status',
+    draft: 'Draft', pending: 'Pending', submitted: 'Submitted', complete: 'Complete', unknown: 'Unknown status',
     scope: 'Only records allowed by your Dataverse permissions are returned.',
     ownScope: 'Only your own requests are shown.',
     open: 'Open draft',
@@ -25,7 +25,7 @@ const text = {
     error: 'Impossible de charger les demandes.', denied: 'Dataverse a refusé l’accès à ces demandes.',
     retry: 'Réessayer', previous: 'Précédent', next: 'Suivant', page: 'Page',
     request: 'Demande', customer: 'Client', building: 'Immeuble', created: 'Création',
-    draft: 'Brouillon', pending: 'En attente', submitted: 'Envoyée', unknown: 'État inconnu',
+    draft: 'Brouillon', pending: 'En attente', submitted: 'Envoyée', complete: 'Terminée', unknown: 'État inconnu',
     scope: 'Seules les demandes autorisées par Dataverse sont affichées.',
     ownScope: 'Seules vos propres demandes sont affichées.',
     open: 'Ouvrir le brouillon',
@@ -84,7 +84,10 @@ function PagedEstimateList({ language, market, ownerId, onOpen, onClone, busy = 
   }, [search, status, skipToken, retry, market, recent, ownerId])
 
   const statuses: Record<number, string> = {
-    126110000: t.draft, 126110001: t.pending, 126110002: t.submitted,
+    126110000: t.draft, 126110001: t.pending, 126110002: t.submitted, 126110003: t.complete,
+  }
+  const statusClasses: Record<number, string> = {
+    126110001: 'status-pending', 126110002: 'status-submitted', 126110003: 'status-complete',
   }
 
   return (
@@ -123,7 +126,7 @@ function PagedEstimateList({ language, market, ownerId, onOpen, onClone, busy = 
                   <div className="request-record-heading">
                     <h3>{record.re_estimatename || '—'}</h3>
                     <div className="request-record-actions">
-                      <span className="preview-badge">{record.exportRequestId && record.re_estimatestatus === 126110000
+                      <span className={`preview-badge ${statusClasses[record.re_estimatestatus] ?? ''}`}>{record.exportRequestId && record.re_estimatestatus === 126110000
                         ? t.automation : statuses[record.re_estimatestatus] ?? t.unknown}</span>
                       {[126110000, 126110002].includes(record.re_estimatestatus) && onOpen && (
                         <button className="button secondary" disabled={busy}

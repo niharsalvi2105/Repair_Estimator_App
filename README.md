@@ -9,6 +9,8 @@ store, or selectable demo roles.
 ```powershell
 npx playwright install chromium
 npm run validate
+npm install --global @microsoft/power-apps-cli
+npm install vite
 pa app run
 ```
 
