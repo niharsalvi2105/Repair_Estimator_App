@@ -11,10 +11,10 @@ import { CustomCostLines } from './CustomCostLines'
 import { PackageSelect } from './PackageSelect'
 import { EquipmentSelect } from './EquipmentSelect'
 import { EquipmentExcelUpload } from './EquipmentExcelUpload'
-import { ContractEquipmentCard, type ContractAddSummary } from './ContractEquipmentCard'
 import { EquipmentPackageCosts } from './EquipmentPackageCosts'
 import { localizePackage, localizeScope } from './data/packageSearch'
-import { MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
+import { MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial, type ExportDelivery } from './data/draftContract'
+import { submissionDeliveryMessage } from './data/submissionDelivery'
 import { getPackageCostRates } from './data/repairEstimatorRepository'
 import { customCostsError } from './data/requestValidation'
 import { PackageCostDetails } from './PackageCostDetails'
@@ -39,6 +39,7 @@ type Props = {
   draftComplete: boolean
   saveDraft: (submit?: boolean) => Promise<void>
   submitted: boolean
+  exportDelivery?: ExportDelivery
   step: number
   estimateTitle: string
   setEstimateTitle: Dispatch<SetStateAction<string>>
@@ -79,7 +80,6 @@ type Props = {
   addUnlistedEquipment: () => void
   addEquipmentList: (text: string) => Promise<void>
   uploadEquipmentExcel: (file: File) => Promise<void>
-  addContractEquipment: (numbers: string[], file?: File) => Promise<ContractAddSummary | undefined>
   equipmentPasteResult: EquipmentPasteResult | undefined
   setSelectedEquipment: Dispatch<SetStateAction<SelectedEquipment[]>>
   selectedPackages: Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]
@@ -108,7 +108,7 @@ type Props = {
 export default function EstimatorWorkspace({
   requestSection, t, draftVersion, draftDirty, dt,
   draftNumber, newDraft, onSaveOpportunity, draftBusy, canStart, openDraft,
-  draftId, canWork, draftComplete, saveDraft, submitted, step,
+  draftId, canWork, draftComplete, saveDraft, submitted, exportDelivery, step,
   estimateTitle, setEstimateTitle, draftReferences, selectedBranch, draftReferenceError,
   setReferenceAttempt, branchLoading, branchError, loadBranches, market,
   marketBranches, branchId, changeBranch, language, referenceError,
@@ -116,7 +116,7 @@ export default function EstimatorWorkspace({
   setJobTypeId, savedSalesperson, session, buildingName, setBuildingName,
   stateId, updateRequestInput, requestInputs, equipmentQuery,
   changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, equipmentBulkBusy, toggleEquipment,
-  selectedEquipment, addUnlistedEquipment, addEquipmentList, uploadEquipmentExcel, addContractEquipment, equipmentPasteResult, setSelectedEquipment,
+  selectedEquipment, addUnlistedEquipment, addEquipmentList, uploadEquipmentExcel, equipmentPasteResult, setSelectedEquipment,
   selectedPackages, packageLoading, packageError, packageResults, togglePackage, retryPackages,
   selectedPackageIds, setSelectedPackages, marketName, customerName, setCustomerName,
   customerEmail, setCustomerEmail, customerPhone, setCustomerPhone, setStep,
@@ -219,7 +219,7 @@ export default function EstimatorWorkspace({
           <h1>{t.newTitle}</h1>
           <p>{t.newSubtitle}</p>
         </div>
-        <span className="unsaved-badge">{submitted ? `${language === 'fr' ? 'Soumis' : 'Submitted'} ${draftNumber}` : draftVersion && !draftDirty ? `${dt.saved} ${draftNumber}` : t.notSaved}</span>
+        <span className="unsaved-badge">{exportDelivery ? `${submissionDeliveryMessage(exportDelivery.state, language)} ${draftNumber}` : submitted ? `${language === 'fr' ? 'Soumis' : 'Submitted'} ${draftNumber}` : draftVersion && !draftDirty ? `${dt.saved} ${draftNumber}` : t.notSaved}</span>
       </div>
       <div className="draft-toolbar">
         <div className="draft-secondary-actions">
@@ -235,7 +235,7 @@ export default function EstimatorWorkspace({
             {dt.reload}
           </button>}
         </div>
-        <button className="button primary draft-save-action" disabled={submitted || draftBusy || equipmentBulkBusy || !canWork || !draftComplete}
+        <button className="button primary draft-save-action" disabled={submitted || !!exportDelivery || draftBusy || equipmentBulkBusy || !canWork || !draftComplete}
           onClick={() => void saveDraft()}>
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
             strokeLinecap="round" strokeLinejoin="round"><path d="m19 21 2-2V7l-4-4H5L3 5v14l2 2h14ZM7 3v6h10V3M7 21v-8h10v8" /></svg>
@@ -243,10 +243,15 @@ export default function EstimatorWorkspace({
         </button>
       </div>
       {draftVersion && <p className="field-help">{dt.locked}</p>}
-      {submitted && <p className="draft-notice" role="status">{language === 'fr'
+      {exportDelivery && <p className="draft-notice" role="status">{submissionDeliveryMessage(exportDelivery.state, language)}
+        {exportDelivery.workbookUrl && <> <a href={exportDelivery.workbookUrl} target="_blank" rel="noopener noreferrer">
+          {language === 'fr' ? 'Ouvrir le classeur' : 'Open workbook'}
+        </a></>}
+      </p>}
+      {submitted && !exportDelivery && <p className="draft-notice" role="status">{language === 'fr'
         ? 'Ce devis a été soumis et ne peut plus être modifié.'
         : 'This estimate has been submitted and is locked against editing.'}</p>}
-      <fieldset className="draft-workspace" disabled={draftBusy || submitted || equipmentBulkBusy}>
+      <fieldset className="draft-workspace" disabled={draftBusy || submitted || !!exportDelivery || equipmentBulkBusy}>
 
       <p className="draft-notice">{t.workbookAlignment}</p>
       <div className="stepper" aria-label={`${t.stepOf} ${step} / 5`}>
@@ -442,10 +447,6 @@ export default function EstimatorWorkspace({
               </>}
             </section>
 
-            {step === 2 && <ContractEquipmentCard key={`${draftId}:${branchId}`} branchId={branchId} market={market}
-              language={language} busy={equipmentBulkBusy} disabled={!branchId || draftBusy || submitted}
-              onAdd={addContractEquipment} />}
-
             {step === 2 && selectedEquipment.length > 0 && (
               <section className="form-card selected-card">
                 <div className="section-heading">
@@ -625,6 +626,7 @@ export default function EstimatorWorkspace({
             </div>}
             {step === 3 && ((activeCustom && hasCustom) || (!hasCustom && (laborLines.length > 0 || materialLines.length > 0))) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
+                requestInputs={requestInputs} updateRequestInput={updateRequestInput}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd} readOnly={draftBusy}
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
                   materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))}
@@ -649,6 +651,7 @@ export default function EstimatorWorkspace({
               calculate={saveDraft} calculating={draftBusy} canCalculate={canWork && draftComplete} />
             {(hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
+                requestInputs={requestInputs} updateRequestInput={updateRequestInput}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={false} readOnly
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
                   materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))} currency={currency} />}

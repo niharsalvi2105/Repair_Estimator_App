@@ -216,7 +216,7 @@ namespace RepairEstimator.Drafts
             var fx = market == 126110000 ? 1m : config.GetAttributeValue<decimal>("re_usdtocadfactor");
             var uplift = market == 126110000 ? 1m : config.GetAttributeValue<decimal>("re_costonlyfactor");
             var cost = part.GetAttributeValue<decimal>("re_usdcost") * fx * uplift;
-            var price = part.GetAttributeValue<decimal?>("re_usdprice") * fx;
+            var price = part.GetAttributeValue<decimal?>("re_usdprice") * fx * uplift;
             if (cost > 1000000000m || decimal.Round(cost, 10) != cost ||
                 (price.HasValue && (price < 0 || price > 1000000000m || decimal.Round(price.Value, 10) != price.Value)))
                 Fail("Converted part amounts exceed supported precision or range.");

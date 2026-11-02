@@ -88,9 +88,9 @@ test('invalid or ambiguous material input never produces valid-looking totals', 
   assert.throws(() => calculatePartMaterial(input, 'CKE', { ...config, usdToCadFactor: NaN }), /configuration/)
 })
 
-test('catalog schema is explicitly undeployed and includes precise snapshots and both scopes', async () => {
+test('catalog schema records Dev deployment without enabling production import and retains precise snapshots and both scopes', async () => {
   const schema = JSON.parse(await readFile(new URL('../backend/parts-catalog-schema.json', import.meta.url), 'utf8'))
-  assert.equal(schema.status, 'design-only-not-deployed')
+  assert.equal(schema.status, 'dev-deployed-production-not-approved')
   assert.equal(schema.productionImportEnabled, false)
   const table = schema.tables.find((entry) => entry.logicalName === 're_sparepart')
   assert.deepEqual(table.alternateKey, ['re_sourcekey'])

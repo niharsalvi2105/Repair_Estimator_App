@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "design-only-not-deployed",
+  "status": "dev-deployed-production-not-approved",
   "productionImportEnabled": false,
   "ownership": {
     "kone": "Revised Material tab is authoritative for USD cost and VK13 price; all Material-tab records are KONE.",

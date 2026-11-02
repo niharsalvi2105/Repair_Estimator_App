@@ -253,7 +253,7 @@ static class DraftServiceTests
         var found = (CatalogResult)search.Invoke(null, new object[] { service,
             new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "00" } });
         Assert(found.available && found.parts.Single().unitCost == 7.73178m &&
-            found.parts.Single().unitPrice == 40.376m, "Catalog query must return exact CAD formulas.");
+            found.parts.Single().unitPrice == 49.66248m, "Catalog query must return exact CAD formulas.");
         var descriptionMatch = (CatalogResult)search.Invoke(null, new object[] { service,
             new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "log mo" } });
         Assert(descriptionMatch.parts.Single().number == "0001", "Part search must match inside descriptions, not just their prefix.");
@@ -291,7 +291,7 @@ static class DraftServiceTests
         Run(service, input);
         var loaded = Load(service, input);
         var material = loaded.materialLines.Single();
-        Assert(material.unitCost == 7.73178m && material.unitPrice == 40.376m &&
+        Assert(material.unitCost == 7.73178m && material.unitPrice == 49.66248m &&
             material.part == "0001" && material.description == "Catalog motor" && material.markupPercent == 10m,
             "Server must ignore spoofed catalog costs/prices/description and preserve exact snapshots.");
         var stored = service.Rows[Guid.Parse(material.id)];
@@ -329,7 +329,7 @@ static class DraftServiceTests
         input.materialLines[0].refreshPart = true;
         Run(service, input);
         loaded = Load(service, input);
-        Assert(loaded.materialLines.Single().unitCost == 172.2m && loaded.materialLines.Single().unitPrice == 280m,
+        Assert(loaded.materialLines.Single().unitCost == 172.2m && loaded.materialLines.Single().unitPrice == 344.4m,
             "Explicit reselection refreshes trusted cost and selling snapshots.");
         input = loaded; input.materialLines[0].partType = null; input.materialLines[0].catalogPartId = null;
         Reject(() => Run(service, input), "Reload the current app");

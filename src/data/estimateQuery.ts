@@ -39,7 +39,7 @@ export function buildEstimateQuery(options: EstimateQuery): IGetAllOptions {
   }
   return {
     select: ['re_repairestimateid', 're_name', 're_estimatename', 're_customername',
-      're_buildingname', 're_estimatestatus', 'createdon'],
+      're_buildingname', 're_estimatestatus', 'createdon', '_re_exportrequest_value'],
     filter: filters.join(' and '),
     orderBy: ['createdon desc', 're_repairestimateid asc'],
     maxPageSize: options.recent ? 5 : 25,

@@ -19,6 +19,10 @@ namespace RepairEstimator.Plugins.Plugins
             var ctx = local.Context;
             var target = local.Target;
             if (target == null) return;
+            // Export queuing validates/calculates explicitly. Finalization must retain the frozen prices.
+            if (Automation.ExportRequestPlugin.IsTrusted(ctx, target.Id) ||
+                (target.Attributes.Count == 1 && target.Contains(Automation.ExportRequestPlugin.LockVersion) &&
+                    Automation.ExportRequestPlugin.IsChildTouch(ctx, target.Id))) return;
 
             bool isCreate = string.Equals(ctx.MessageName, "Create", StringComparison.OrdinalIgnoreCase);
             if (isCreate) EstimateDefaults.Apply(local, target);

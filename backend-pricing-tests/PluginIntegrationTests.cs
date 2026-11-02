@@ -10,12 +10,100 @@ using RepairEstimator.Drafts;
 using RepairEstimator.Plugins.Infrastructure;
 using RepairEstimator.Plugins.Plugins;
 using RepairEstimator.Plugins.Pricing;
+using RepairEstimator.Plugins.Automation;
 using Xunit;
 
 namespace RepairEstimator.Tests
 {
     public class PluginIntegrationTests
     {
+        [Fact]
+        public void Draft_submit_uses_enabled_configuration_and_returns_locked_pending_delivery_not_submitted()
+        {
+            var db = new Pipeline(true);
+            db.Add("re_exportconfiguration", ("re_name", "RepairEstimator"), ("statecode", new OptionSetValue(0)),
+                ("re_enabled", true), ("re_outputmode", "sample"), ("re_flowuser", new EntityReference("systemuser", db.UserId)));
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            var json = db.DraftJson().Replace("\"mode\":\"save\"", "\"mode\":\"submit\"")
+                .Replace("\"fields\":[", "\"fields\":[{\"key\":\"re_sellprice\",\"value\":\"1000\"},");
+            var record = ExportSnapshot.Deserialize<Draft>(db.Save(json));
+            Assert.Equal(Labels.DraftStatus, record.status);
+            Assert.Equal(ExportState.Pending, record.exportDelivery.state);
+            Assert.Single(db.Rows.Values, row => row.LogicalName == ExportRequestPlugin.Table);
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Save(db.DraftJson(record.version)));
+            var clone = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"clonesource\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Null(clone.exportDelivery);
+        }
+
+        [Fact]
+        public void Export_guard_allows_new_drafts_but_rejects_reserved_export_fields_on_create()
+        {
+            var db = new Pipeline(true);
+            var draft = new Entity(Names.Estimate.Entity, Guid.NewGuid());
+            draft[Names.Estimate.Status] = new OptionSetValue(Labels.DraftStatus);
+            Assert.Equal(draft.Id, db.Caller.Create(draft));
+            var reserved = new Entity(Names.Estimate.Entity, Guid.NewGuid());
+            reserved[ExportRequestPlugin.LockVersion] = 1;
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Caller.Create(reserved));
+        }
+
+        [Fact]
+        public void Export_queues_frozen_validated_data_locks_all_writes_and_finalizes_only_after_acceptance()
+        {
+            var db = new Pipeline(true);
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            db.Save(db.DraftJson().Replace("\"fields\":[", "\"fields\":[{\"key\":\"re_sellprice\",\"value\":\"1000\"},"));
+            var plugin = new ExportRequestPlugin(db.UserId.ToString("D"), null);
+            Func<ExportCommand, ExportResponse> invoke = command => ExportSnapshot.Deserialize<ExportResponse>(
+                (string)db.Invoke(plugin, ExportRequestPlugin.Api, null, null, 1, ExportSnapshot.Serialize(command))["ResultJson"]);
+            var queued = invoke(new ExportCommand { operation = "queue", estimateId = db.EstimateId.ToString(), mode = "sample" });
+            Assert.Equal(ExportState.Pending, queued.state);
+            Assert.Equal(Labels.DraftStatus, db.Rows[db.EstimateId].GetAttributeValue<OptionSetValue>(Names.Estimate.Status).Value);
+            Assert.Equal(queued.requestId, invoke(new ExportCommand {
+                operation = "queue", estimateId = db.EstimateId.ToString(), mode = "expanded" }).requestId);
+            Assert.Single(db.Rows.Values, row => row.LogicalName == ExportRequestPlugin.Table);
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) {
+                [Names.Estimate.SellPrice] = new Money(2000) }));
+            var child = db.Rows.Values.First(row => row.LogicalName == Names.EstimatePackage.Entity);
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Caller.Update(new Entity(child.LogicalName, child.Id) {
+                [Names.EstimatePackage.Hours] = 9m }));
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Caller.Delete(child.LogicalName, child.Id));
+            var claim = invoke(new ExportCommand { operation = "claim", requestId = queued.requestId, runId = "flow-1" });
+            Assert.True(claim.claimed);
+            Assert.Equal(claim.hash, ExportSnapshot.Hash(claim.payload));
+            Assert.Contains("\"key\":\"re_sellprice\"", claim.payload);
+            Assert.False(invoke(new ExportCommand { operation = "claim", requestId = queued.requestId, runId = "flow-2" }).claimed);
+            var command = new ExportCommand { requestId = queued.requestId, runId = "flow-1", operation = "finalize" };
+            Assert.Throws<InvalidPluginExecutionException>(() => invoke(command));
+            command.operation = "generated";
+            command.workbookUrl = "https://kone.sharepoint.com/sites/Automation_Testing62/Shared%20Documents/RepairEstimator/Generated/test.xlsx";
+            Assert.Equal(ExportState.Generated, invoke(command).state);
+            command.operation = "sending";
+            Assert.Equal(ExportState.Sending, invoke(command).state);
+            Assert.Throws<InvalidPluginExecutionException>(() => invoke(command));
+            command.operation = "accepted"; command.receipt = "flow-1:Send_email:Succeeded";
+            Assert.Equal(ExportState.Accepted, invoke(command).state);
+            var frozenCost = db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value;
+            db.Rows[db.BranchId].Attributes.Remove(Names.Branch.MarginGroup);
+            command.operation = "finalize";
+            Assert.Equal(ExportState.Completed, invoke(command).state);
+            Assert.Equal(ExportState.Completed, invoke(command).state);
+            Assert.Equal(Labels.SubmittedStatus, db.Rows[db.EstimateId].GetAttributeValue<OptionSetValue>(Names.Estimate.Status).Value);
+            Assert.Equal(frozenCost, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.False(invoke(new ExportCommand { operation = "claim", requestId = queued.requestId, runId = "flow-1" }).claimed);
+        }
+
+        [Fact]
+        public void Export_rejects_invalid_submission_before_creating_an_outbox_request()
+        {
+            var db = new Pipeline(true);
+            db.Save(db.DraftJson());
+            var plugin = new ExportRequestPlugin(db.UserId.ToString("D"), null);
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Invoke(plugin, ExportRequestPlugin.Api, null, null, 1,
+                ExportSnapshot.Serialize(new ExportCommand { operation = "queue", estimateId = db.EstimateId.ToString(), mode = "sample" })));
+            Assert.DoesNotContain(db.Rows.Values, row => row.LogicalName == ExportRequestPlugin.Table);
+        }
+
         [Fact]
         public void Choice_read_mode_returns_published_metadata_for_every_draft_choice_without_writing_estimates()
         {
@@ -347,7 +435,7 @@ namespace RepairEstimator.Tests
             var response = db.Save(json);
             Assert.Contains("\"materialBeforeMarkup\":617.45", response);
             Assert.Contains("\"pricingSource\":\"package\"", response);
-            Assert.Contains("\"pricingState\":\"2026.5\"", response);
+            Assert.Contains("\"pricingState\":\"2026.6\"", response);
             var header = db.Rows[db.EstimateId];
             Assert.Equal(941.25m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
             Assert.Equal(1497.37m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value);
@@ -430,9 +518,11 @@ namespace RepairEstimator.Tests
             long version;
             public int Calculations;
             public bool UseMatchedEquipment;
+            readonly bool exportEnabled;
 
-            public Pipeline()
+            public Pipeline(bool exportEnabled = false)
             {
+                this.exportEnabled = exportEnabled;
                 var caller = new Mock<IOrganizationService>(MockBehavior.Strict);
                 Caller = caller.Object;
                 caller.Setup(s => s.Retrieve(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<ColumnSet>()))
@@ -442,6 +532,7 @@ namespace RepairEstimator.Tests
                 caller.Setup(s => s.Update(It.IsAny<Entity>())).Callback((Entity e) => Write(e, false));
                 caller.Setup(s => s.Delete(It.IsAny<string>(), It.IsAny<Guid>())).Callback((string name, Guid id) => {
                     var row = Rows[id];
+                    if (exportEnabled) Invoke(new ExportLockPlugin(), "Delete", row.ToEntityReference());
                     Invoke(new ChildLockPlugin(), "Delete", row.ToEntityReference());
                     Rows.Remove(id);
                     Invoke(new ChildChangeTriggerPlugin(), "Delete", row.ToEntityReference(), row);
@@ -479,6 +570,14 @@ namespace RepairEstimator.Tests
                     requestTag = r.Parameters.Contains("tag") ? (string)r["tag"] : null;
                     try
                     {
+                        if (r.RequestName == ExportRequestPlugin.Api)
+                        {
+                            var output = Invoke(new ExportRequestPlugin(), ExportRequestPlugin.Api, null, null, 1,
+                                (string)r["InputJson"]);
+                            var response = new OrganizationResponse();
+                            response.Results["ResultJson"] = output["ResultJson"];
+                            return response;
+                        }
                         if (r is CreateRequest create) {
                             var response = new CreateResponse();
                             response.Results["id"] = Write(create.Target, true);
@@ -498,10 +597,15 @@ namespace RepairEstimator.Tests
                 });
                 var system = new Mock<IOrganizationService>(MockBehavior.Strict);
                 config = system.Object;
+                system.Setup(s => s.Retrieve(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<ColumnSet>()))
+                    .Returns((string name, Guid id, ColumnSet cols) => Caller.Retrieve(name, id, cols));
+                system.Setup(s => s.Create(It.IsAny<Entity>())).Returns((Entity e) => Caller.Create(e));
+                system.Setup(s => s.Update(It.IsAny<Entity>())).Callback((Entity e) => Caller.Update(e));
                 system.Setup(s => s.RetrieveMultiple(It.IsAny<QueryBase>())).Returns((QueryBase q) => {
                     var query = (QueryExpression)q; ConfigReads.Add(query.EntityName); return Query(query);
                 });
                 system.Setup(s => s.Execute(It.IsAny<OrganizationRequest>())).Returns((OrganizationRequest r) => {
+                    if (!(r is RetrieveOptionSetRequest)) return Caller.Execute(r);
                     var request = (RetrieveOptionSetRequest)r;
                     var labels = LabelsFor(request.Name);
                     var meta = new OptionSetMetadata { Name = request.Name };
@@ -565,12 +669,18 @@ namespace RepairEstimator.Tests
                 var message = create ? "Create" : "Update";
                 if (target.LogicalName == Names.Estimate.Entity)
                 {
+                    if (exportEnabled) Invoke(new ExportLockPlugin(), message, target);
                     if (!create) Invoke(new EstimateLockPlugin(), message, target);
                     if (!IsBatch(target.Id)) Calculations++;
                     Invoke(new EstimateCalculationPlugin(), message, target, pre);
                 }
+                else if (target.LogicalName == ExportRequestPlugin.Table)
+                {
+                    Invoke(new ExportLockPlugin(), message, target);
+                }
                 else
                 {
+                    if (exportEnabled) Invoke(new ExportLockPlugin(), message, target);
                     Invoke(new ChildLockPlugin(), message, target, pre);
                     IPlugin guard = target.LogicalName == Names.EstimateEquipment.Entity
                         ? (IPlugin)new EstimateEquipmentSnapshotPlugin() : target.LogicalName == Names.EstimatePackage.Entity
@@ -585,7 +695,7 @@ namespace RepairEstimator.Tests
                     if (target.LogicalName == Names.Estimate.Entity) row["re_name"] = "0000000042";
                 }
                 row.RowVersion = (++version).ToString(); Rows[row.Id] = row;
-                if (target.LogicalName != Names.Estimate.Entity)
+                if (target.LogicalName != Names.Estimate.Entity && target.LogicalName != ExportRequestPlugin.Table)
                     Invoke(new ChildChangeTriggerPlugin(), message, target, pre);
                 return row.Id;
             }

@@ -20,6 +20,9 @@ export type DraftMaterial = {
 }
 export const MAX_DRAFT_BYTES = 200000
 export const MAX_DRAFT_CHILD_OPERATIONS = 1000
+export const EXPORT_DELIVERY_STATES = ['pending', 'generating', 'generated', 'sending', 'accepted', 'completed', 'failed', 'needs-review'] as const
+export type ExportDeliveryState = typeof EXPORT_DELIVERY_STATES[number]
+export type ExportDelivery = { requestId: string; state: ExportDeliveryState; workbookUrl?: string | null }
 export function serializeDraft(input: unknown): string {
   const json = JSON.stringify(input)
   if (new TextEncoder().encode(json).length > MAX_DRAFT_BYTES)
@@ -33,10 +36,10 @@ export type DraftRecord = {
   building: string; customer: string; email: string; phone: string; market: Market
   salesperson?: string | null
   pricingState?: string | null
+  exportDelivery?: ExportDelivery | null
   fields: { key: string; value: string }[]; equipment: DraftEquipment[]; packages: DraftPackage[]
   laborLines?: DraftLabor[]; materialLines?: DraftMaterial[]
 }
-
 export function parseDraft(value: unknown): DraftRecord {
   if (!value || typeof value !== 'object') throw new Error('Invalid draft response.')
   const record = value as Partial<DraftRecord>
@@ -51,6 +54,21 @@ export function parseDraft(value: unknown): DraftRecord {
     || ![126110000, 126110001, 126110002].includes(record.market ?? -1)
     || !Array.isArray(record.fields) || !Array.isArray(record.equipment) || !Array.isArray(record.packages)) {
     throw new Error('The draft service returned incomplete data. Reload before editing.')
+  }
+  if (record.exportDelivery != null) {
+    const delivery = record.exportDelivery
+    if (typeof delivery !== 'object' || typeof delivery.requestId !== 'string' ||
+      !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(delivery.requestId) ||
+      !EXPORT_DELIVERY_STATES.includes(delivery.state) || !nullableString(delivery.workbookUrl) ||
+      (delivery.state === 'completed' ? record.status !== 126110002 : record.status !== 126110000))
+      throw new Error('Invalid submission delivery response. Reload before editing.')
+    if (delivery.workbookUrl != null) {
+      const url = new URL(delivery.workbookUrl)
+      if (url.protocol !== 'https:' || url.hostname !== 'kone.sharepoint.com' || url.username || url.password ||
+        url.search || url.hash || !url.pathname.startsWith('/sites/Automation_Testing62/Shared%20Documents/RepairEstimator/Generated/') ||
+        !url.pathname.toLowerCase().endsWith('.xlsx'))
+        throw new Error('Invalid submission workbook URL.')
+    }
   }
   if (record.equipment.length < 1 || record.packages.length < 1 ||
     record.packages.length + record.equipment.length + (record.laborLines?.length ?? 0) +

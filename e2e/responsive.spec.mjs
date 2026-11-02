@@ -1411,8 +1411,11 @@ test('package preview rates query current branch mechanic cost data from Dataver
       const materials = await openCatalogMaterial(page, true, language, width)
       const material = materials.first()
       const type = fr ? 'Type de pièce' : 'Part type'
-      for (const key of ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous', 're_usetax', 're_freight', 're_additionalscope'])
+      for (const key of ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous', 're_additionalscope'])
         await expect(page.locator(`#request-${key}`)).toHaveCount(0)
+      await expect(page.locator('#request-re_usetax')).toHaveValue('5.00')
+      await expect(page.locator('#request-re_freight')).toHaveValue('10.00')
+      await setCostRates(page, '3', '12')
       await expect(material.getByLabel(label('Vendor', 'Fournisseur'), { exact: true })).toHaveCount(0)
       const quantity = material.getByRole('spinbutton', { name: label('Quantity', 'Quantité'), exact: true })
       await expect(quantity).toHaveValue('2')
@@ -1455,10 +1458,14 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await next(page)
       await expect(page.locator('#request-re_additionalmaterial')).toBeVisible()
       await expect(page.locator('.custom-cost-lines')).toHaveCount(0)
-      await setCostRates(page)
+      await expect(page.locator('#request-re_usetax')).toHaveValue('3.00')
+      await expect(page.locator('#request-re_freight')).toHaveValue('12.00')
       await page.locator('.draft-save-action').click()
       await expect(page.locator('.draft-saved')).toBeVisible()
       const lines = await page.evaluate(() => window.__draftSaved.materialLines)
+      expect(await page.evaluate(() => window.__draftSaved.fields)).toEqual(expect.arrayContaining([
+        { key: 're_usetax', value: '3' }, { key: 're_freight', value: '12' },
+      ]))
       expect(lines[0]).toMatchObject({ partType: 'kone',
         unitCost: 7.73178, part: 'TEST-PART-001', quantity: 3, packageId: 'catalog-custom',
         catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', unitPrice: 40.376, markupPercent: 10 })
@@ -2480,16 +2487,82 @@ test('dashboard market change confirms unsaved edits and cancellation keeps the 
   page.once('dialog', (dialog) => dialog.dismiss())
   await market.selectOption('126110001')
   await expect(market).toHaveValue('126110000')
-  page.once('dialog', (dialog) => dialog.dismiss())
   await page.locator('.main-nav .nav-item').nth(1).click()
-  await expect(page.locator('.operations-dashboard')).toBeVisible()
+  await expect(page.locator('#request-re_notesforcttteam')).toHaveValue('Keep these local edits')
   expect(await page.evaluate(() => window.__draftCalls.length)).toBe(1)
+  await page.locator('.main-nav').getByRole('button', { name: 'Dashboard', exact: true }).click()
   page.once('dialog', (dialog) => dialog.accept())
   await market.selectOption('126110001')
   await expect(market).toHaveValue('126110001')
   await page.locator('.main-nav .nav-item').nth(1).click()
   await expect(page.locator('#estimate-title')).toHaveValue('')
   await expect(market).toBeEnabled()
+})
+
+for (const [width, language] of [[1366, 'en'], [320, 'fr']]) {
+  test(`canceled new request preserves the workspace and sidebar resumes it at ${width}px ${language}`, async ({ page }) => {
+    await completeDraft(page, { width, height: 900 }, language)
+    const dialogs = []
+    const dismiss = async dialog => { dialogs.push(dialog.message()); await dialog.dismiss() }
+    page.on('dialog', dismiss)
+
+    await page.locator('.draft-secondary-actions button').first().click()
+    expect(dialogs).toHaveLength(1)
+    await expect(page.locator('.customer-summary')).toContainText('Draft customer')
+    await page.locator('.main-nav .nav-item').first().click()
+    await expect(page.locator('.operations-dashboard')).toBeVisible()
+    await page.locator('.operations-dashboard .page-heading .primary').click()
+    expect(dialogs).toHaveLength(2)
+    await expect(page.locator('.operations-dashboard')).toBeVisible()
+
+    await page.locator('.main-nav .nav-item').nth(1).click()
+    await expect(page.locator('.customer-summary')).toContainText('Draft customer')
+    expect(dialogs).toHaveLength(2)
+    await expect(page.locator('[aria-current="step"]')).toContainText('5')
+    await expect(page.locator('.summary-card li').filter({ hasText: 'TEST123' })).toBeVisible()
+    await expect(page.locator('.summary-card li').filter({ hasText: 'PKG001' })).toBeVisible()
+
+    for (const index of [2, 3, 4, 6]) {
+      await page.locator('.main-nav .nav-item').nth(index).click()
+      await page.locator('.main-nav .nav-item').nth(1).click()
+      await expect(page.locator('.customer-summary')).toContainText('Draft customer')
+      await expect(page.locator('[aria-current="step"]')).toContainText('5')
+    }
+    expect(dialogs).toHaveLength(2)
+    expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+    page.off('dialog', dismiss)
+
+    for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+    await expect(page.locator('#estimate-title')).toHaveValue('Motor repair draft')
+    await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+    page.once('dialog', dialog => dialog.accept())
+    await page.locator('.draft-secondary-actions button').first().click()
+    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await expect(page.locator('#customer-name')).toHaveValue('')
+  })
+}
+
+test('canceling reload or open draft retains local edits and allows returning to the same request', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  await page.locator('#estimate-title').fill('Keep my original local changes')
+  const calls = await page.evaluate(() => window.__draftCalls.length)
+  page.once('dialog', dialog => dialog.dismiss())
+  await page.getByRole('button', { name: 'Reload draft', exact: true }).click()
+  await expect(page.locator('#estimate-title')).toHaveValue('Keep my original local changes')
+  expect(await page.evaluate(() => window.__draftCalls.length)).toBe(calls)
+
+  await page.locator('.main-nav .nav-item').nth(2).click()
+  page.once('dialog', dialog => dialog.dismiss())
+  await page.locator('.request-record').getByRole('button', { name: 'Open draft', exact: true }).click()
+  expect(await page.evaluate(() => window.__draftCalls.length)).toBe(calls)
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await expect(page.locator('#estimate-title')).toHaveValue('Keep my original local changes')
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
+  expect(await page.evaluate(() => window.__draftSaved.title)).toBe('Keep my original local changes')
 })
 
 for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 }]) {
@@ -2562,16 +2635,22 @@ for (const width of [320, 1366]) {
     await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
   })
 
-  for (const entry of ['dashboard', 'sidebar']) {
+  for (const entry of ['dashboard', 'workspace']) {
     test(`new request clears the previous saved draft via ${entry} at ${width}px`, async ({ page }) => {
       await completeDraft(page, { width, height: 900 })
       await page.locator('.draft-save-action').click()
       await expect(page.locator('.draft-saved')).toBeVisible()
       const previous = await page.evaluate(() => structuredClone(window.__draftSaved))
       await page.locator('.main-nav .nav-item').nth(0).click()
+      if (entry === 'workspace') {
+        await page.locator('.main-nav .nav-item').nth(1).click()
+        await expect(page.locator('.customer-summary')).toContainText('Draft customer')
+        for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+        await expect(page.locator('#estimate-title')).toHaveValue(previous.title)
+      }
       const start = entry === 'dashboard'
         ? page.locator('.operations-dashboard .page-heading .primary')
-        : page.locator('.main-nav .nav-item').nth(1)
+        : page.locator('.draft-secondary-actions button').first()
       await start.click()
       await expect(page.locator('#estimate-title')).toHaveValue('')
       await expect(page.locator('#opportunity-building')).toHaveValue('')
@@ -2582,10 +2661,10 @@ for (const width of [320, 1366]) {
       await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
       await page.locator('#estimate-title').fill('Fresh request')
       page.once('dialog', (dialog) => dialog.dismiss())
-      await page.locator('.main-nav .nav-item').nth(1).click()
+      await page.locator('.draft-secondary-actions button').first().click()
       await expect(page.locator('#estimate-title')).toHaveValue('Fresh request')
       page.once('dialog', (dialog) => dialog.accept())
-      await page.locator('.main-nav .nav-item').nth(1).click()
+      await page.locator('.draft-secondary-actions button').first().click()
       await expect(page.locator('#estimate-title')).toHaveValue('')
       await page.locator('#estimate-title').fill('Separate estimate')
       await page.locator('#branch-select').fill('020')
@@ -3036,18 +3115,19 @@ for (const width of [320, 1366]) {
   })
 }
 
-test('header search respects unsaved draft confirmation and retains inputs on cancellation', async ({ page }) => {
+test('header search preserves the unsaved workspace without a discard prompt', async ({ page }) => {
   await completeDraft(page)
+  const dialogs = []
+  page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss() })
   const search = page.locator('#header-request-search')
   await search.fill('Repair')
-  page.once('dialog', (dialog) => dialog.dismiss())
-  await search.press('Enter')
-  await expect(page.locator('.customer-summary')).toBeVisible()
-  await expect(page.locator('.stepper')).toBeVisible()
-  page.once('dialog', (dialog) => dialog.accept())
   await search.press('Enter')
   await expect(page.locator('.stepper')).toHaveCount(0)
   await expect(page.locator('.request-record')).toHaveCount(1)
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await expect(page.locator('.customer-summary')).toContainText('Draft customer')
+  await expect(page.locator('[aria-current="step"]')).toContainText('5')
+  expect(dialogs).toEqual([])
 })
 
 for (const language of ['en', 'fr']) {
@@ -3255,160 +3335,11 @@ test('Excel equipment details are kept on screen with explicit warning when an o
   await expect(page.locator('.draft-saved')).toHaveCount(0)
 })
 
-async function openContractEquipment(page, width = 1366, language = 'en', theme = 'light', enabled = true) {
-  await page.addInitScript((enabled) => {
-    window.__contractEnabled = enabled
-    const unit = (id, number) => ({ id, number, name: `Contract equipment ${number}`, location: 'Contract location',
-      customer: 'Contract customer', oem: 'KONE', age: 0, matched: true })
-    window.__contractMap = {
-      '00004110': [unit('11111111-1111-1111-1111-111111111111', 'TEST123'),
-        unit('22222222-2222-2222-2222-222222222222', 'EQ-C1')],
-      '00004120': [unit('22222222-2222-2222-2222-222222222222', 'EQ-C1'),
-        unit('33333333-3333-3333-3333-333333333333', 'EQ-C2')],
-    }
-  }, enabled)
-  await completeDraft(page, { width, height: 900 }, language, theme)
+test('equipment step has no contract card and sends no contract operations', async ({ page }) => {
+  await completeDraft(page, { width: 1366, height: 900 }, 'en', 'light')
   for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
-  return page.locator('.contract-equipment-card')
-}
-
-async function contractWorkbook(numbers, header = 'Contract Number') {
-  const workbook = new ExcelJS.Workbook(), sheet = workbook.addWorksheet('Contracts')
-  sheet.addRow([header])
-  sheet.getColumn(1).numFmt = '@'
-  for (const number of numbers) sheet.addRow([number])
-  return { name: 'contracts.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer: Buffer.from(await workbook.xlsx.writeBuffer()) }
-}
-
-test('contract UI-only release sends no contract operations and preserves draft saving', async ({ page }) => {
-  test.skip(process.env.VITE_CONTRACT_LOOKUP_ENABLED !== 'false', 'Run with the UI-only deployment flag.')
-  const card = await openContractEquipment(page)
-  await expect(card).toBeVisible()
-  await expect(card).toContainText('Contract lookup is not enabled in this app release.')
-  await expect(card.getByRole('combobox', { name: 'Contract number', exact: true })).toBeDisabled()
-  await expect(card.getByRole('button', { name: 'Upload Excel file', exact: true })).toBeDisabled()
-  await expect(card.getByRole('button', { name: 'Download Excel template', exact: true })).toBeEnabled()
-  await card.getByRole('button', { name: 'Retry contracts', exact: true }).click()
-  await expect(card).toContainText('Contract lookup is not enabled in this app release.')
-  await page.locator('.draft-save-action').click()
-  await expect(page.locator('.draft-saved')).toBeVisible()
-  expect(await page.evaluate(() => window.__contractCalls ?? [])).toEqual([])
-  expect(await page.evaluate(() => window.__draftSaved.equipment.map(e => e.number))).toEqual(['TEST123'])
-})
-
-for (const [width, language, theme] of [[1366, 'en', 'light'], [320, 'fr', 'dark']]) {
-  test(`contract equipment search and Excel add to the same selection at ${width}px ${language}`, async ({ page }) => {
-    const card = await openContractEquipment(page, width, language, theme)
-    const fr = language === 'fr'
-    const input = card.getByRole('combobox', { name: fr ? 'Numéro de contrat' : 'Contract number', exact: true })
-    await expect(input).toBeEnabled()
-    await input.fill('411')
-    await expect(card.getByRole('listbox').getByRole('option')).toHaveCount(1)
-    await input.press('ArrowDown'); await input.press('Enter')
-    const selected = page.locator('.equipment-card:not(.selected-package-card)')
-    await expect(selected).toHaveCount(2)
-    await expect(card).toContainText(fr ? 'Équipements ajoutés: 1' : 'Equipment added: 1')
-    await expect(card).toContainText(fr ? 'Déjà sélectionnés: 1' : 'Already selected: 1')
-    await expect(selected.filter({ hasText: 'EQ-C1' })).toContainText('Contract location')
-    await expect(selected.filter({ hasText: 'EQ-C1' })).toContainText(fr ? 'Âge: 0' : 'Age: 0')
-    const upload = card.locator('input[type="file"]')
-    await upload.setInputFiles(await contractWorkbook(['00004110', '00004120', '00004120', 'NOT-FOUND']))
-    await expect(selected).toHaveCount(3)
-    await expect(card).toContainText('NOT-FOUND')
-    await expect(card).toContainText(fr ? 'Contrats en double ignorés: 00004120' : 'Duplicate contracts skipped: 00004120')
-    await expect(card).toContainText(fr ? 'Équipements ajoutés: 1' : 'Equipment added: 1')
-    await expect(card).toContainText(fr ? 'Déjà sélectionnés: 2' : 'Already selected: 2')
-    expect(await page.evaluate(() => window.__contractCalls.filter(c => c.mode === 'contractresolve')
-      .every(c => c.branchId === 'test-branch' && c.market === 126110000))).toBe(true)
-    await expect(page.locator('.selected-package-card dt').filter({ hasText: /^(Number of equipment|Nombre d’équipements)$/ }).locator('+ dd')).toHaveText('3')
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
-    await selected.filter({ hasText: 'EQ-C1' }).getByRole('button').click()
-    await expect(selected).toHaveCount(2)
-    await input.fill('411')
-    await card.getByRole('listbox').getByRole('button', { name: /00004110/ }).click()
-    await expect(selected).toHaveCount(3)
-    await page.locator('.draft-save-action').click()
-    await expect(page.locator('.draft-saved')).toBeVisible()
-    expect(await page.evaluate(() => window.__draftSaved.equipment.map(e => e.number))).toEqual(['TEST123', 'EQ-C2', 'EQ-C1'])
-    await page.locator('.draft-secondary-actions button').nth(1).click()
-    await next(page)
-    await expect(selected).toHaveCount(3)
-  })
-}
-
-test('contract lookup is deployment gated and recovers after retry without changing equipment selection', async ({ page }) => {
-  const card = await openContractEquipment(page, 1366, 'en', 'light', false)
-  await expect(card).toContainText('Contract lookup unavailable')
-  await expect(card.getByRole('combobox')).toBeDisabled()
-  await expect(card.getByRole('button', { name: 'Upload Excel file', exact: true })).toBeDisabled()
   await expect(page.locator('#equipment-search')).toBeEnabled()
-  await page.evaluate(() => { window.__contractEnabled = true })
-  await card.getByRole('button', { name: 'Retry contracts', exact: true }).click()
-  await expect(card.getByRole('combobox')).toBeEnabled()
-  await card.getByRole('combobox').fill('NONE')
-  await expect(card.getByRole('status')).toContainText('0 matching contracts.')
-  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(1)
-})
-
-test('contract template and validation failures add nothing; resolver failure supports retry', async ({ page }) => {
-  const card = await openContractEquipment(page)
-  const downloadEvent = page.waitForEvent('download')
-  await card.getByRole('button', { name: 'Download Excel template', exact: true }).click()
-  const download = await downloadEvent
-  expect(download.suggestedFilename()).toBe('Contract-Template.xlsx')
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.readFile(await download.path())
-  expect(workbook.worksheets[0].getRow(1).values.slice(1)).toEqual(['Contract Number'])
-  const upload = card.locator('input[type="file"]')
-  for (const [file, error] of [
-    [await contractWorkbook(['00004110'], 'Wrong Header'), 'Contract Number'],
-    [{ name: 'corrupt.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.from('bad') }, 'Cannot read'],
-    [await contractWorkbook(['00004110', { formula: '1+1', result: 2 }]), 'Row 3'],
-  ]) {
-    await upload.setInputFiles(file)
-    await expect(card.getByRole('alert')).toContainText(error)
-    await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(1)
-  }
-  await page.evaluate(() => { window.__contractResolveError = 'Contract service unavailable' })
-  await upload.setInputFiles(await contractWorkbook(['00004110']))
-  await expect(card.getByRole('alert')).toContainText('Contract service unavailable')
-  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(1)
-  await page.evaluate(() => { window.__contractResolveError = undefined })
-  await upload.setInputFiles(await contractWorkbook(['00004110']))
-  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(2)
-})
-
-test('contract upload batches numbers and atomically rejects an over-budget equipment selection', async ({ page }) => {
-  const card = await openContractEquipment(page)
-  await page.evaluate(() => {
-    const unit = window.__contractMap['00004110'][1]
-    window.__contractMap = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`C${i}`, [unit]]))
-    window.__contractCalls = []
-  })
-  await card.locator('input[type="file"]').setInputFiles(await contractWorkbook(Array.from({ length: 60 }, (_, i) => `C${i}`)))
-  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(2)
-  expect(await page.evaluate(() => window.__contractCalls.filter(c => c.mode === 'contractresolve')
-    .map(c => c.contractNumbers.length))).toEqual([50, 10])
-  await page.evaluate(() => {
-    window.__contractMap['LARGE'] = Array.from({ length: 999 }, (_, i) => ({
-      id: `aaaaaaaa-aaaa-aaaa-aaaa-${String(i).padStart(12, '0')}`, number: `LARGE-${i}`,
-      name: 'Large contract unit', location: '', customer: '', oem: '', age: 0, matched: true,
-    }))
-  })
-  await card.locator('input[type="file"]').setInputFiles(await contractWorkbook(['LARGE']))
-  await expect(card.getByRole('alert')).toContainText('processing budget')
-  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(2)
-})
-
-test('contract late resolution cannot add equipment to a new draft and blocks saving during lookup', async ({ page }) => {
-  const card = await openContractEquipment(page)
-  await page.evaluate(() => { window.__contractResolveDelay = 1500 })
-  await card.locator('input[type="file"]').setInputFiles(await contractWorkbook(['00004110']))
-  await expect(page.locator('.draft-save-action')).toBeDisabled()
-  page.once('dialog', dialog => dialog.accept())
-  await page.locator('.draft-secondary-actions button').first().click()
-  await expect(page.locator('#estimate-title')).toHaveValue('')
-  await page.waitForTimeout(1700)
-  await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(0)
+  await expect(page.locator('.contract-equipment-card')).toHaveCount(0)
+  await expect(page.getByText('Add equipment by contract')).toHaveCount(0)
+  expect(await page.evaluate(() => window.__contractCalls ?? [])).toEqual([])
 })

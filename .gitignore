@@ -24,6 +24,7 @@ backend-pricing/*.snk
 backend-pricing-tests/bin
 backend-pricing-tests/obj
 *.local
+.env.production
 
 # Local business-data extracts and generated audit workbooks
 Audit_Track/CSTM_Material_Import_2026-11-01/

@@ -95,6 +95,22 @@ namespace RepairEstimator.Drafts
     }
 
     [DataContract]
+    public sealed class ExportSubmit
+    {
+        [DataMember] public string operation;
+        [DataMember] public string estimateId;
+        [DataMember] public string mode;
+    }
+
+    [DataContract]
+    public sealed class ExportDelivery
+    {
+        [DataMember] public string requestId;
+        [DataMember] public string state;
+        [DataMember(EmitDefaultValue = false)] public string workbookUrl;
+    }
+
+    [DataContract]
     public sealed class Draft
     {
         [DataMember] public string mode;
@@ -118,6 +134,7 @@ namespace RepairEstimator.Drafts
         [DataMember] public string phone;
         [DataMember] public string salesperson;
         [DataMember] public string pricingState;
+        [DataMember(EmitDefaultValue = false)] public ExportDelivery exportDelivery;
         [DataMember(EmitDefaultValue = false)] public List<string> contractNumbers;
         [DataMember] public int market;
         [DataMember] public List<Field> fields = new List<Field>();
@@ -219,7 +236,29 @@ namespace RepairEstimator.Drafts
                 Save(service, context.UserId, input, id);
                 // Recalculate once, after all snapshot rows exist, if the pricing assembly is registered.
                 service.Update(new Entity(Estimate, id) { ["re_numberofequipment"] = input.equipment.Count });
-                if (input.mode == "submit") Submit(service, id);
+                if (input.mode == "submit")
+                {
+                    var configs = new QueryExpression("re_exportconfiguration") {
+                        ColumnSet = new ColumnSet("re_enabled", "re_outputmode"), TopCount = 2
+                    };
+                    configs.Criteria.AddCondition("re_name", ConditionOperator.Equal, "RepairEstimator");
+                    configs.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
+                    var configuration = factory.CreateOrganizationService(null).RetrieveMultiple(configs).Entities;
+                    if (configuration.Count > 1) Fail("RE-146|EXPORT_CONFIGURATION_INVALID");
+                    if (configuration.Count == 1 && configuration[0].GetAttributeValue<bool>("re_enabled"))
+                    {
+                        var mode = configuration[0].GetAttributeValue<string>("re_outputmode");
+                        if (mode != "sample" && mode != "expanded") Fail("RE-146|EXPORT_CONFIGURATION_INVALID");
+                        service.Execute(new OrganizationRequest("re_EstimateExport") {
+                            ["InputJson"] = Serialize(new ExportSubmit { operation = "queue", estimateId = id.ToString("D"), mode = mode })
+                        });
+                    }
+                    else
+                    {
+                        trace.Trace("Submission export is disabled; using the existing submission lifecycle.");
+                        Submit(service, id);
+                    }
+                }
                 context.OutputParameters["ResultJson"] = Serialize(Read(service, id));
             }
             catch (InvalidPluginExecutionException) { throw; }
@@ -266,10 +305,11 @@ namespace RepairEstimator.Drafts
             Active(province);
             if (province.GetAttributeValue<EntityReference>("re_country")?.Id != country.Id) Fail("Building province/state does not belong to the branch country.");
             var old = string.IsNullOrEmpty(input.version) ? null : service.Retrieve(Estimate, id,
-                new ColumnSet("re_estimatestatus", "statecode", "re_salesperson", "re_branch", "transactioncurrencyid", "ownerid"));
+                new ColumnSet("re_estimatestatus", "statecode", "re_salesperson", "re_branch", "transactioncurrencyid", "ownerid", "re_exportrequest"));
             if (old != null)
             {
                 if (old.GetAttributeValue<OptionSetValue>("re_estimatestatus")?.Value != DraftStatus) Fail("Only Draft estimates can be edited.");
+                if (old.GetAttributeValue<EntityReference>("re_exportrequest") != null) Fail("RE-130|ESTIMATE_LOCKED");
                 Active(old);
                 if (old.GetAttributeValue<EntityReference>("re_branch")?.Id != branch.Id ||
                     old.GetAttributeValue<EntityReference>("transactioncurrencyid")?.Id != currency.Id)
@@ -722,6 +762,18 @@ namespace RepairEstimator.Drafts
                 pricingState = row.GetAttributeValue<string>("re_calculationversion"),
                 market = row.GetAttributeValue<OptionSetValue>("re_market").Value
             };
+            var export = row.GetAttributeValue<EntityReference>("re_exportrequest");
+            if (export != null && !forClone)
+            {
+                var request = service.Retrieve("re_estimateexport", export.Id,
+                    new ColumnSet("re_estimate", "re_deliverystate", "re_workbookurl"));
+                if (request.GetAttributeValue<EntityReference>("re_estimate")?.Id != id)
+                    Fail("RE-151|EXPORT_PARENT_INVALID");
+                result.exportDelivery = new ExportDelivery {
+                    requestId = export.Id.ToString("D"), state = request.GetAttributeValue<string>("re_deliverystate"),
+                    workbookUrl = request.GetAttributeValue<string>("re_workbookurl")
+                };
+            }
             foreach (var key in TextFields.Concat(DecimalFields).Concat(MoneyFields).Concat(ChoiceFields.Keys).Concat(new[] { "re_numberoftechs" }))
             {
                 object value;
