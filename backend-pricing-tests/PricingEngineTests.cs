@@ -161,7 +161,8 @@ namespace RepairEstimator.Tests
             Assert.Equal(18.40m, original.KoneMaterialCost);
             Assert.Equal(25.46m, original.CustomMaterialCost);
             var expected = Math.Round((original.TotalTrueCost - original.KoneMaterialCost) /
-                (1m - original.RecommendedCmii.Value) + 2m * 40.376m * (1.15m + markup / 100m), 2, MidpointRounding.AwayFromZero);
+                (1m - original.RecommendedCmii.Value) + 2m * 40.376m *
+                (1m + input.UseTaxPct + input.FreightPct + markup / 100m), 2, MidpointRounding.AwayFromZero);
             Assert.Equal(expected, original.SuggestedPriceWithKoneMaterial);
             input.MaterialLines[0].MarkupPercent = 100;
             var changed = PricingEngine.Calculate(input);
@@ -175,6 +176,25 @@ namespace RepairEstimator.Tests
             input.KoneSparesSalesPrice = 0;
             input.MaterialLines.Add(new MaterialLineInput { Vendor = "KONE", Quantity = 1, UnitCost = 1 });
             Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+        }
+
+        [Fact]
+        public void Entered_custom_material_rates_apply_to_catalog_cost_and_selling_without_changing_standard_packages()
+        {
+            var input = Baseline();
+            input.IsCustomPath = true;
+            input.UseTaxPct = 0.03m;
+            input.FreightPct = 0.12m;
+            input.MaterialLines.Add(new MaterialLineInput { Quantity = 2, UnitCost = 10,
+                IsKone = true, UnitSellingPrice = 20, MarkupPercent = 10,
+                TaxApplicable = true, FreightApplicable = true });
+            var result = PricingEngine.Calculate(input);
+            Assert.Equal(1519.55m, result.TotalTrueCost);
+            Assert.Equal(23m, result.KoneMaterialCost);
+            Assert.Equal(6.02m, result.UseTaxAmount);
+            Assert.Equal(17.57m, result.FreightAmount);
+            Assert.Equal(Math.Round((result.TotalTrueCost - 23m) / (1m - result.RecommendedCmii.Value)
+                + 40m * 1.25m, 2, MidpointRounding.AwayFromZero), result.SuggestedPriceWithKoneMaterial);
         }
 
         [Fact]

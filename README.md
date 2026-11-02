@@ -248,7 +248,7 @@ This does not change pricing semantics: pricing still interprets configured Engl
 choice labels and situational rules. Adding/renaming a choice requires reviewing
 those rules; a newly available choice does not create new pricing behavior.
 
-Submission uses `mode: "submit"` on the existing transactional Draft API. It saves
+With submission automation disabled, `mode: "submit"` on the transactional Draft API saves
 current inputs and child snapshots, recalculates pricing, then changes status to
 Submitted and records `re_submittedon` in the same synchronous transaction.
 Invalid pricing, missing positive selling price, required margin justification
@@ -257,12 +257,95 @@ The app retains local edits on failure. Submission is not approval, email delive
 or Salesforce integration. Submitted estimates can be opened from Requests in
 read-only Review; header and child edits remain blocked server-side.
 
-Deploy the updated Draft assembly before publishing this frontend. No new table,
-column or plug-in step is required. Existing synchronous pricing Update
+Deploy the submission-export schema below before this frontend or the latest Draft
+assembly: both now reference the reserved export columns/configuration table.
+Keep the automation configuration disabled until the complete flow is validated.
+Existing synchronous pricing Update
 registration must include `re_estimatestatus`, with its complete `pre` image;
 existing header/child locks and status-history registrations must remain enabled.
 Test with a non-System Administrator account before rollout, including rejected
 submission, status history, read-only reopening and recovery after a timeout.
+
+### Submission workbook automation (not live)
+
+The additive schema in `backend/submission-export-schema.json` is deployed in Dev,
+with active unique keys and the `RepairEstimator` configuration disabled. The
+new assemblies, export API, synchronous export locks and email flows are not yet
+deployed/enabled. A Connected connector is not evidence that a flow is authorized
+or that an attachment was delivered.
+
+The locally tested enabled path is:
+
+1. Save inputs/snapshots and reuse full pricing/submission validation.
+2. Atomically freeze a typed payload and create one `re_estimateexport` row.
+3. A Dataverse **Added** trigger on that table starts the selected flow. Never
+   trigger submission email on ordinary `re_repairestimate` creation or draft saves.
+4. Claim the request using `re_EstimateExport`; a competing run must stop when
+   `claimed=false`. Copy a clean SharePoint template to an independent workbook,
+   run `automation/office-scripts/FillEstimate.ts`, verify its identifiers, revision,
+   counts and frozen amounts, then fetch the generated file bytes.
+5. Persist `sending` before invoking Outlook, with automatic email retries
+   disabled. Only a successful Outlook action permits `accepted`, then `finalize`.
+   Finalization preserves frozen prices and sets Submitted/submission date.
+
+The estimate remains Draft plus a separate export lock while awaiting automation.
+The UI shows bilingual progress, disables editing, provides a validated workbook
+link and bounds automatic refresh; Reload remains available. Requests/recent lists
+label queued Draft records as submission-locked. Dashboard lifecycle counts are
+unchanged: an awaiting estimate is not counted as Submitted. Failed/uncertain
+requests remain locked and require flow-owner recovery, never another Submit click.
+
+`sample` and `expanded` are alternative request modes, not two sends per click.
+The sample output stays on `VBP Submission`; the expanded alternative adds
+Equipment, Packages, Labor, Materials and Costs detail tables. Frozen numeric
+values and formatted label/text are kept separately, identifiers remain text,
+formula-like text is escaped, and custom material/labor rows expand while moving
+named anchors and the print area. Original sample values, metadata, macros and
+unrelated attachments must never be copied into templates. The template builder
+accepts sanitized style-only layouts; without them its output is a clean prototype,
+not a claim of sample fidelity.
+
+Use the approved `Automation_Testing62` SharePoint site and dedicated
+`Shared Documents/RepairEstimator/{Templates,Scripts,Generated}` folders.
+Test emails must use the approved internal sender and fixed test-recipient list;
+customer fields must never supply To, CC or BCC.
+
+The Custom API main plugin cannot rely on an unsecure step configuration. It
+loads the unique active `re_exportconfiguration` row under the system service and
+checks its approved flow identity; absence/ambiguity/disabled configuration fails
+export closed. Administrators alone may write that configuration. Outbox records
+and reserved header fields must be protected by all synchronous export lock steps
+listed in the schema, including Create/Update/Delete and every child table.
+
+Dev schema tooling:
+
+```powershell
+node automation\deploy-schema.cjs
+node automation\deploy-schema.cjs --apply
+```
+
+The first command is read-only. The second only creates additive Dev schema and
+an explicitly disabled configuration; it does not register plugins, deploy flows,
+enable automation, modify existing estimates or send mail. Azure CLI authentication
+is used in memory; no access token is written into source or output. Never run it
+against production.
+
+Local validation:
+
+```powershell
+dotnet test backend-pricing-tests\RepairEstimator.Tests.csproj --configuration Release --no-restore
+dotnet run --project backend-tests\DraftTests.csproj --configuration Release --no-restore
+node --test tests\draft-contract.test.mjs tests\submission-export.test.mjs
+npx tsc -p automation\office-scripts\tsconfig.json
+```
+
+Before enabling: verify connection references in the solution flow designer,
+tenant Office Script execution, template appearance/merged-row expansion, protected
+role permissions, before-send failure recovery and uncertain-send review. Then
+test both mutually exclusive proposals end to end with internal recipients,
+including duplicate triggers, rejected submissions, overflow and reopened XLSX
+values. Outlook acceptance is not guaranteed inbox delivery. A lost send response
+must enter needs-review; do not automatically resend or unlock.
 
 This sequence uses the production MKO `KTOC PSR Estimator` header/cost/pricing
 sections and generated live `re_` fields/choices, not a new start-estimator form.
@@ -331,6 +414,16 @@ change server pricing or persist separate payment amounts.
 
 ### Clone requests and private Opportunity presets
 
+The **New Request** sidebar entry opens or resumes the current request workspace;
+it does not clear the request or prompt to discard changes. Sidebar navigation,
+Settings and header request search preserve the current request and wizard step
+in memory. Use **New draft** in the workspace or the dashboard's start action to
+create a blank request. These replacement actions still require confirmation
+when there are unsaved changes; Cancel leaves the existing request untouched.
+Reloading or opening another draft also requires confirmation before replacing
+unsaved edits. Save the draft before refreshing or closing the app; in-memory
+navigation retention is not persistent storage.
+
 If the UI reports **Unsupported draft operation**, the deployed
 `re_DraftEstimate` plugin does not recognize the new operation. Refreshing the
 browser alone cannot fix this version mismatch. Build/test Release using the
@@ -384,10 +477,16 @@ Activation is **not performed by this change**:
    masters before rollout. After a timeout, refresh presets before repeating
    a mutation; a lost response does not prove that the operation was rolled back.
 
-### Equipment selection by contract (deployment-gated)
+### Equipment selection by contract (UI removed)
 
-Step 2 has an alternative **Add equipment by contract** card alongside the
-existing equipment search and equipment Excel import. Browse/search a contract
+The **Add equipment by contract** card has been removed from Step 2 at business
+request, including its retry, search, template download and upload controls.
+The app no longer calls the contract API. Ordinary equipment search, list paste
+and equipment Excel import remain available. Backend contract operations and
+data preparation helpers are retained; the following describes that retained
+implementation, not a currently available UI workflow.
+
+The former card supported browsing/searching a contract
 number, or download/upload the one-column **Contract Number** Excel template
 (.xlsx, 5 MB maximum, 1000 unique identifiers maximum). Text formatting preserves
 leading zeros. Blank rows are ignored; malformed rows, formulas and extra
@@ -411,14 +510,9 @@ ambiguous equipment or paging errors are reported explicitly. Contract controls
 stay unavailable until their schema/backend mapping is deployed; ordinary
 equipment selection remains available.
 
-UI-only releases leave `VITE_CONTRACT_LOOKUP_ENABLED` unset (or `false`).
-The card and template remain visible, but no contract API operations are sent.
-This prevents older draft plugins from treating an unsupported read operation
-as a draft save and attempting to parse its absent draft ID. After the updated
-assembly, columns and approved mappings are verified, rebuild with
-`VITE_CONTRACT_LOOKUP_ENABLED=true` to enable lookup. Browser regression tests
-enable the flag against their mock backend; run the UI-only regression with
-the flag set to `false` to verify no contract calls and ordinary draft saving.
+`VITE_CONTRACT_LOOKUP_ENABLED` remains a gate in the retained repository helper;
+it does not restore the removed card. Browser regression coverage verifies that
+the equipment workspace renders no contract card and sends no contract calls.
 
 The reviewed local schema is
 [`backend/contract-equipment-schema.json`](backend/contract-equipment-schema.json):
@@ -466,10 +560,13 @@ $env:VITE_CONTRACT_LOOKUP_ENABLED = 'true'
 npm run build
 ```
 
-The parts-catalog tables, configuration and approved catalog import remain
-pending. Final live contract selection/save/reopen and non-admin verification
-remain rollout checks; do not treat successful local tests as proof that every
-live workflow is complete. Submission remains unconnected.
+The approved parts-catalog schema and 10,635 rows were deployed and independently
+verified in Dev on 2026-11-02. Enabled market configurations use the confirmed
+conversion and 10% markup; live capability/search/conversion checks passed for
+MKO, CKE and CKQ. Refresh timestamps use Dataverse second precision; source prices
+and costs retain their exact supported decimal values.
+Non-admin permission verification remains a rollout check; do not treat
+successful administrator checks as proof that every user's access is configured.
 
 Source workbooks, generated business-data extracts, live import backups and
 credentials are not included in the repository. Obtain approved data separately;
@@ -512,14 +609,15 @@ Saved historical rows keep their pricing source:
 
 The KONE final amount appears separately in package details and the server's
 KONE-specific suggested price; the entered proposal selling price is not changed.
-Standard packages and historical legacy/catalog drafts keep their existing
-formulas. Saved package prices
+Standard packages and historical legacy package-priced drafts keep their existing
+formulas. Saved catalog source snapshots remain unchanged; recalculation uses the
+entered CSTM tax/freight policy described below. Saved package prices
 remain immutable across ordinary edits; clones resolve current source values.
 Missing or negative package amounts fail explicitly (zero is allowed).
 The `_base` field is never used as a markup or selling amount.
 
 Deploy [package material snapshot columns](backend/package-material-pricing-schema.json),
-then **both** backend assemblies (pricing `2026.5`), then the frontend.
+then **both** backend assemblies (pricing `2026.6`), then the frontend.
 The saved package-amount route is separate from the spare-parts catalog and
 needs no spare-part import or catalog configuration. Do not mix package KONE pricing with
 catalog KONE lines, heuristic legacy KONE lines or the legacy aggregate VK13 price.
@@ -543,16 +641,27 @@ currently active KONE catalog number. Unclassified legacy rows retain their old
 behavior; saved typed rows cannot be silently downgraded by an older client.
 
 MKO retains USD; CKE/CKQ use versioned configuration matching the workbook:
-CAD cost = USD cost * 1.23 * 1.4; CAD VK13 = USD VK13 * 1.4. Source decimals
+CAD cost = USD cost * 1.23 * 1.4; CAD VK13 = USD VK13 * 1.23 * 1.4, as confirmed
+for the catalog rollout on 2026-11-02. Existing saved source snapshots are preserved.
+Source decimals
 retain six places and converted snapshots ten; unit amounts are not rounded to
 cents before quantity extension. Manual costs retain their two-decimal contract.
 Only approved pricing-unit-1 records are supported until the unit/cost-basis
 contract is confirmed. Invalid, expired or ambiguous source data fails explicitly.
 
 KONE markup defaults to the enabled market configuration and accepts 0–100%
-(at most two decimals). Pricing `2026.5` retains the `2026.4` aggregate-markup replacement for typed
+(at activation, the approved default is 10%). New CSTM selections default to
+5% tax and 10% freight. Enter exact percentage rates directly in the CSTM card:
+`3` means 3%, `12` means 12%. These shared estimate rates apply to custom material
+costs and catalog selling contributions, not labor. Standard packages remain at
+5% tax and 14% freight; legacy package-priced KONE snapshots are not charged again.
+The catalog selling contribution uses the same entered tax/freight rates plus
+the separate markup, additively rather than compounded.
+
+The markup input accepts 0–100%
+(at most two decimals). Pricing `2026.6` retains the itemized-markup replacement for typed
 KONE lines with:
-`sum(quantity * convertedVK13 * (1 + configuredKoneTax + configuredKoneFreight + markupPercent/100))`.
+`sum(quantity * convertedVK13 * (1 + enteredUseTax/100 + enteredFreight/100 + markupPercent/100))`.
 It does not change internal material cost. The legacy header VK13 must be blank
 or zero when using itemized KONE; mixing heuristic legacy KONE lines with typed
 KONE also requires explicit classification first. Ordinary suggested price and
@@ -561,10 +670,10 @@ not overwritten. Unrelated edits and quantity changes preserve saved catalog
 snapshots, even when the catalog is disabled. Reselecting a part explicitly
 refreshes it; new selections and markup changes require enabled configuration.
 
-Activation is **not performed by this change**:
+Production activation remains separate from the verified Dev rollout:
 1. Review/deploy the schema below, including package lookups and decimal precision,
    choice values, currencies and reader permissions.
-2. Deploy both updated draft API and pricing `2026.5` assemblies.
+2. Deploy both updated draft API and pricing `2026.6` assemblies.
 3. Approve/load the effective source extract, per-unit contract, conversion
    configuration, zero-amount policy and refresh policy.
 4. Test with non-admin users, then explicitly set configuration `re_isenabled`

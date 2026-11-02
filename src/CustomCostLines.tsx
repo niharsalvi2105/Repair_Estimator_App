@@ -4,6 +4,7 @@ import type { Market } from './data/estimateQuery'
 import { getPartCatalog, type CatalogResult } from './data/partCatalogRepository'
 import { MaterialPartSelect } from './MaterialPartSelect'
 import { calculateCustomMaterialTotal, materialEntryError } from './data/customMaterialCosts'
+import { RequestFields, type RequestInputs } from './RequestFields'
 
 type Props = {
   language: 'en' | 'fr'
@@ -18,10 +19,12 @@ type Props = {
   activePackageId?: string
   market: Market
   currency?: string
+  requestInputs: RequestInputs
+  updateRequestInput: (key: keyof RequestInputs, value: string) => void
 }
 
 export function CustomCostLines({ language, labor, materials, setLabor, setMaterials, canAdd, enabled, readOnly = false,
-  packages = [], activePackageId, market, currency }: Props) {
+  packages = [], activePackageId, market, currency, requestInputs, updateRequestInput }: Props) {
   const fr = language === 'fr'
   const [laborPage, setLaborPage] = useState(0)
   const [materialPage, setMaterialPage] = useState(0)
@@ -69,8 +72,10 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
     {activePackageId && <h3>{packages.find((p) => p.id === activePackageId)?.name}</h3>}
     <p>{fr ? 'Main-d’œuvre et matériaux ajoutés une seule fois au devis. Matériau = somme des coûts unitaires × quantités, avant taxe et fret. Les pièces KONE proviennent du catalogue approuvé. Les taux sont déterminés par le serveur.'
       : 'Labor and materials are added once per estimate. Material = sum of unit cost × quantity, before tax and freight. KONE parts come from the approved catalog. Labor rates are resolved by the server.'}</p>
-    <p className="field-help">{fr ? 'La taxe, le fret et les ajouts au devis sont définis dans l’écran Coûts après la sélection des forfaits.'
-      : 'Tax, freight and estimate-wide additions are configured on the Costs screen after package selection.'}</p>
+    {enabled && <RequestFields stage="materialrates" language={language} value={requestInputs}
+      onChange={updateRequestInput} readOnly={readOnly} custom />}
+    <p className="field-help">{fr ? 'Saisissez les taux exacts : 3 signifie 3 %, 12 signifie 12 %. Ces taux sont partagés par les forfaits CSTM et appliqués aux matériaux, pas à la main-d’œuvre.'
+      : 'Enter exact percentage rates: 3 means 3%, 12 means 12%. These rates are shared by CSTM packages and apply to materials, not labor.'}</p>
     <label className="field-label">{fr ? 'Matériau' : 'Material'}
       <input className="text-input custom-material-total" readOnly aria-live="polite"
         value={materialTotal == null ? (fr ? 'Indisponible' : 'Unavailable') : money(materialTotal)} />

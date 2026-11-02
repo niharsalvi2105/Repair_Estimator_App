@@ -230,9 +230,15 @@ function buildPackageQuery(branchCountryId: string, skipToken?: string): IGetAll
 
 export type EstimateSummary = Pick<Re_repairestimates,
   're_repairestimateid' | 're_name' | 're_estimatename' | 're_customername'
-  | 're_buildingname' | 're_estimatestatus' | 'createdon'>
+  | 're_buildingname' | 're_estimatestatus' | 'createdon'> & { exportRequestId?: string }
 
 export async function listEstimates(options: EstimateQuery): Promise<{ records: EstimateSummary[]; skipToken?: string }> {
   const result = await withTimeout(Re_repairestimatesService.getAll(buildEstimateQuery(options)))
-  return { records: unwrap(result), skipToken: result.skipToken }
+  const records = unwrap(result).map(row => {
+    const request = '_re_exportrequest_value' in row ? row._re_exportrequest_value : undefined
+    if (request != null && (typeof request !== 'string' || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(request)))
+      throw new Error('Invalid submission request reference in estimate list.')
+    return { ...row, exportRequestId: typeof request === 'string' ? request : undefined }
+  })
+  return { records, skipToken: result.skipToken }
 }

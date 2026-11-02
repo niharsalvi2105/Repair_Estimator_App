@@ -16,6 +16,7 @@ const text = {
     ownScope: 'Only your own requests are shown.',
     open: 'Open draft',
     view: 'View estimate',
+    automation: 'Submission locked — check automation',
   },
   fr: {
     search: 'Rechercher par début de numéro, client ou immeuble',
@@ -29,6 +30,7 @@ const text = {
     ownScope: 'Seules vos propres demandes sont affichées.',
     open: 'Ouvrir le brouillon',
     view: 'Consulter le devis',
+    automation: 'Soumission verrouillée — vérifier le flux',
   },
 }
 
@@ -124,10 +126,11 @@ function PagedEstimateList({ language, market, ownerId, onOpen, onClone, busy = 
                   <div className="request-record-heading">
                     <h3>{record.re_estimatename || '—'}</h3>
                     <div className="request-record-actions">
-                      <span className={`preview-badge ${statusClasses[record.re_estimatestatus] ?? ''}`}>{statuses[record.re_estimatestatus] ?? t.unknown}</span>
+                      <span className={`preview-badge ${statusClasses[record.re_estimatestatus] ?? ''}`}>{record.exportRequestId && record.re_estimatestatus === 126110000
+                        ? t.automation : statuses[record.re_estimatestatus] ?? t.unknown}</span>
                       {[126110000, 126110002].includes(record.re_estimatestatus) && onOpen && (
                         <button className="button secondary" disabled={busy}
-                          onClick={() => onOpen(record.re_repairestimateid)}>{record.re_estimatestatus === 126110000 ? t.open : t.view}</button>
+                          onClick={() => onOpen(record.re_repairestimateid)}>{record.re_estimatestatus === 126110000 && !record.exportRequestId ? t.open : t.view}</button>
                       )}
                       {!recent && onClone && <button className="button secondary" disabled={busy}
                         onClick={() => onClone(record.re_repairestimateid, record.re_estimatename || '—')}>

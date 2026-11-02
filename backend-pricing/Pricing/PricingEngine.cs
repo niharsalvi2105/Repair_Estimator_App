@@ -10,7 +10,7 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.5";
+        public const string Version = "2026.6";
 
         public static PricingResult Calculate(EstimateInput i)
         {
@@ -110,7 +110,7 @@ namespace RepairEstimator.Plugins.Pricing
                         ? packageKone.Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment
                         : itemizedKone.Count > 0
                         ? itemizedKone.Sum(m => m.Quantity * m.UnitSellingPrice.Value *
-                            (1m + p.Get(ParamCode.KoneSparesTax) + p.Get(ParamCode.KoneSparesFreight) + m.MarkupPercent.Value / 100m))
+                            (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m) + m.MarkupPercent.Value / 100m))
                         : i.KoneSparesSalesPrice * (1m + p.Get(ParamCode.KoneSparesTax) +
                             p.Get(ParamCode.KoneSparesFreight) + p.Get(ParamCode.KoneSparesMarkup));
                     r.SuggestedPriceWithKoneMaterial = R2((r.TotalTrueCost - r.KoneMaterialCost) / (1m - rec) + selling);

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseDraft, draftInputs, serializeDraft } from '../src/data/draftContract.ts'
+import { parseDraft, draftInputs, serializeDraft, EXPORT_DELIVERY_STATES } from '../src/data/draftContract.ts'
+import { submissionDeliveryMessage } from '../src/data/submissionDelivery.ts'
 
 const fixture = () => ({
   mode: 'save', id: 'draft-id', version: '17', number: '0000000042', title: 'Repair',
@@ -33,6 +34,23 @@ test('submitted snapshots carry explicit status and reject unsupported statuses'
   assert.equal(parseDraft({ ...fixture(), status: 126110001 }).status, 126110001)
   for (const status of ['126110002', false, 126110003, -1])
     assert.throws(() => parseDraft({ ...fixture(), status }), /draft/i)
+})
+
+test('delivery states retain a locked Draft until Outlook acceptance has been finalized', () => {
+  const requestId = '11111111-1111-4111-8111-111111111111'
+  for (const state of EXPORT_DELIVERY_STATES) {
+    const status = state === 'completed' ? 126110002 : 126110000
+    const data = { ...fixture(), status, exportDelivery: { requestId, state } }
+    assert.equal(parseDraft(data).exportDelivery.state, state)
+    assert.ok(submissionDeliveryMessage(state, 'en'))
+    assert.ok(submissionDeliveryMessage(state, 'fr'))
+    assert.throws(() => parseDraft({ ...data, status: status === 126110000 ? 126110002 : 126110000 }), /delivery/i)
+  }
+  for (const delivery of [{ requestId, state: 'unknown' }, { requestId: 'bad', state: 'pending' },
+    { requestId, state: 'generated', workbookUrl: 'https://example.com/file.xlsx' },
+    { requestId, state: 'generated', workbookUrl: 'https://kone.sharepoint.com/sites/Other/file.xlsx' }]) {
+    assert.throws(() => parseDraft({ ...fixture(), status: 126110000, exportDelivery: delivery }), /delivery|workbook/i)
+  }
 })
 
 test('missing versions, header values and unknown market fail explicitly', () => {

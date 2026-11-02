@@ -1,0 +1,81 @@
+{
+  "status": "dev-schema-deployed-automation-disabled",
+  "tables": [
+    {
+      "logicalName": "re_estimateexport",
+      "ownership": "UserOwned",
+      "optimisticConcurrency": true,
+      "alternateKey": ["re_submissionkey"],
+      "columns": {
+        "re_name": { "type": "String", "maxLength": 100, "required": true, "primaryName": true },
+        "re_estimate": { "type": "Lookup", "target": "re_repairestimate", "required": true },
+        "re_submissionkey": { "type": "String", "maxLength": 100, "required": true },
+        "re_revision": { "type": "String", "maxLength": 30, "required": true },
+        "re_payload": { "type": "Memo", "maxLength": 900000, "required": true },
+        "re_payloadhash": { "type": "String", "maxLength": 64, "required": true },
+        "re_outputmode": { "type": "String", "maxLength": 20, "required": true },
+        "re_deliverystate": { "type": "String", "maxLength": 20, "required": true },
+        "re_flowrun": { "type": "String", "maxLength": 100 },
+        "re_workbookurl": { "type": "String", "maxLength": 2000 },
+        "re_sendreceipt": { "type": "String", "maxLength": 200 },
+        "re_sendingon": { "type": "DateTime" },
+        "re_acceptedon": { "type": "DateTime" },
+        "re_completedon": { "type": "DateTime" }
+      }
+    },
+    {
+      "logicalName": "re_exportconfiguration",
+      "ownership": "OrganizationOwned",
+      "alternateKey": ["re_name"],
+      "columns": {
+        "re_name": { "type": "String", "maxLength": 100, "required": true, "primaryName": true },
+        "re_enabled": { "type": "Boolean", "default": false, "required": true },
+        "re_flowuser": { "type": "Lookup", "target": "systemuser", "required": true },
+        "re_outputmode": { "type": "String", "maxLength": 20, "required": true }
+      }
+    }
+  ],
+  "extendTables": [
+    {
+      "logicalName": "re_repairestimate",
+      "optimisticConcurrency": true,
+      "columns": {
+        "re_exportrequest": { "type": "Lookup", "target": "re_estimateexport" },
+        "re_exportlockversion": { "type": "Integer", "min": 0, "max": 2147483647 }
+      }
+    }
+  ],
+  "relationships": { "delete": "Restrict", "assign": "NoCascade", "share": "NoCascade", "unshare": "NoCascade", "reparent": "NoCascade" },
+  "customApi": {
+    "name": "re_EstimateExport",
+    "binding": "Global",
+    "isFunction": false,
+    "pluginType": "RepairEstimator.Plugins.Automation.ExportRequestPlugin",
+    "inputs": { "InputJson": "String" },
+    "outputs": { "ResultJson": "String" },
+    "allowedCustomProcessingStepType": "None"
+  },
+  "pluginSteps": {
+    "pluginType": "RepairEstimator.Plugins.Automation.ExportLockPlugin",
+    "stage": "PreOperation",
+    "mode": "Synchronous",
+    "messages": ["Create", "Update", "Delete"],
+    "entities": ["re_repairestimate", "re_estimateexport", "re_estimateequipment", "re_estimatepackage", "re_estimatelaborline", "re_estimatematerialline", "re_estimatecostline"],
+    "filteringAttributes": null,
+    "ordering": "Before existing estimate locks and calculation plugins"
+  },
+  "permissions": [
+    "Estimator roles: Read owned export requests; no direct Create, Update, Delete, Assign or Share.",
+    "Flow identity: Read all requests and their linked estimates; state writes only through re_EstimateExport.",
+    "Administrators alone may Create, Update or Delete re_exportconfiguration; flow/estimator roles need no configuration write.",
+    "ExportLockPlugin must reject direct outbox and reserved estimate-column writes even for administrative callers.",
+    "The main Custom API plugin has no unsecure step configuration. It reads the active unique RepairEstimator configuration record using the system service. Do not rely on its test-only constructor override for tenant configuration."
+  ],
+  "activation": [
+    "Create and verify additive schema, alternate keys, restrictive relationships and optimistic concurrency.",
+    "Create exactly one active RepairEstimator configuration row with re_enabled=false, approved flow user and sample output mode.",
+    "Do not enable configuration or change live Submit until templates, scripts, both mutually exclusive flow proposals, recovery and pending UI have passed validation.",
+    "Register API and all synchronous lock steps, verify transaction context and permissions with non-admin and flow identities.",
+    "Protect generated workbooks with inherited site permissions; never grant anonymous sharing."
+  ]
+}

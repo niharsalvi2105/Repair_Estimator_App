@@ -25,7 +25,8 @@ import { useUserPreferences } from './useUserPreferences'
 import { UserAvatar } from './UserAvatar'
 import koneLogo from './assets/kone-logo-small.jpg?no-inline'
 import { draftOperation, draftInputs, type DraftRecord } from './data/draftRepository'
-import { serializeDraft, MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial } from './data/draftContract'
+import { serializeDraft, MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial, type ExportDelivery } from './data/draftContract'
+import { submissionDeliveryMessage } from './data/submissionDelivery'
 import { EQUIPMENT_LOOKUP_BATCH_SIZE, isEquipmentList, parseEquipmentList, planEquipmentAdd } from './data/equipmentPaste'
 import { cloneRequest, DEFAULT_CLONE_SECTIONS, opportunityValues, type CloneSections, type OpportunityValues } from './data/requestClone'
 import { revalidateClone } from './data/cloneValidation'
@@ -33,9 +34,6 @@ import { getDraftChoices } from './data/draftChoiceRepository'
 import { CloneRequestWorkspace } from './CloneRequestWorkspace'
 import { CloneRequestDialog } from './CloneRequestDialog'
 import { requestReuseErrorMessage } from './data/dataverseOperation'
-import { getContractEquipment } from './data/contractEquipmentRepository'
-import { contractEquipmentRecords } from './data/contractEquipment'
-import type { ContractAddSummary } from './ContractEquipmentCard'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -461,6 +459,7 @@ function App() {
   const [equipmentTypeId, setEquipmentTypeId] = useState('')
   const [jobTypeId, setJobTypeId] = useState('')
   const [editableRequestInputs, setRequestInputs] = useState<RequestInputs>({})
+  const customRatesInitialized = useRef(false)
   const requestInputs = useMemo<RequestInputs>(() => selectedPackages.some((p) => p.re_iscustompackage)
     ? editableRequestInputs
     : { ...editableRequestInputs, re_usetax: '5', re_freight: '14' }, [editableRequestInputs, selectedPackages])
@@ -482,9 +481,40 @@ function App() {
   const [savedSalesperson, setSavedSalesperson] = useState('')
   const [pricingUnavailable, setPricingUnavailable] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [exportDelivery, setExportDelivery] = useState<ExportDelivery>()
   const draftInFlight = useRef(false)
   const requestSection = useRef<HTMLElement>(null)
+  const deliveryState = exportDelivery?.state
+  useEffect(() => {
+    if (view !== 'new' || !deliveryState || ['completed', 'failed', 'needs-review'].includes(deliveryState)) return
+    let cancelled = false
+    let attempts = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const refresh = async () => {
+      if (cancelled) return
+      if (draftInFlight.current) { timer = setTimeout(() => void refresh(), 5000); return }
+      try {
+        const record = await draftOperation({ mode: 'load', id: draftId })
+        if (cancelled) return
+        if (!record.exportDelivery) throw new Error('Submission delivery information is missing. Reload before retrying.')
+        setExportDelivery(record.exportDelivery)
+        setSubmitted(record.status === 126110002)
+        setDraftVersion(record.version)
+        if (!['completed', 'failed', 'needs-review'].includes(record.exportDelivery.state)) {
+          if (++attempts < 60) timer = setTimeout(() => void refresh(), 5000)
+          else setDraftError(language === 'fr'
+            ? 'Le suivi automatique est arrêté. Utilisez Recharger pour vérifier la soumission. Ne soumettez pas à nouveau.'
+            : 'Automatic refresh stopped. Use Reload to check the submission. Do not resubmit.')
+        }
+      } catch (reason) {
+        if (!cancelled) setDraftError(`${language === 'fr' ? 'Suivi de soumission indisponible.' : 'Submission refresh failed.'} ${message(reason)}`)
+      }
+    }
+    timer = setTimeout(() => void refresh(), 5000)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [draftId, deliveryState, language, view])
   function updateRequestInput(key: keyof RequestInputs, value: string) {
+    if (key === 're_usetax' || key === 're_freight') customRatesInitialized.current = true
     setRequestInputs((current) => ({ ...current, [key]: value }))
   }
 
@@ -647,7 +677,7 @@ function App() {
   }
 
   async function addEquipmentList(text: string, file?: File) {
-    if (!branchId || draftInFlight.current || submitted) return
+    if (!branchId || draftInFlight.current || submitted || exportDelivery) return
     const request = ++equipmentPasteRequest.current
     const requestBranch = branchId
     setEquipmentQuery('')
@@ -729,45 +759,6 @@ function App() {
     setEquipmentQuery('')
   }
 
-  async function addContractEquipment(numbers: string[], file?: File): Promise<ContractAddSummary | undefined> {
-    if (!branchId || draftInFlight.current || submitted || equipmentBulkBusy) return
-    const request = ++equipmentPasteRequest.current
-    const requestBranch = branchId
-    setEquipmentPasteResult(undefined); setEquipmentBulkError(''); setEquipmentBulkBusy(true)
-    try {
-      let duplicates: string[] = []
-      if (file) {
-        const { readContractExcel, MAX_CONTRACT_EXCEL_BYTES } = await import('./data/contractExcel')
-        if (!/\.xlsx$/i.test(file.name)) throw new Error('Upload a contract Excel .xlsx file.')
-        if (file.size > MAX_CONTRACT_EXCEL_BYTES) throw new Error('Contract Excel files must be no larger than 5 MB.')
-        const upload = await readContractExcel(await file.arrayBuffer())
-        numbers = upload.numbers; duplicates = upload.duplicates
-      }
-      const matches: Equipment[] = []
-      const notFound: string[] = []
-      for (let offset = 0; offset < numbers.length; offset += 50) {
-        if (request !== equipmentPasteRequest.current) return
-        const result = await getContractEquipment(requestBranch, market, 'contractresolve', numbers.slice(offset, offset + 50))
-        if (result.more) throw new Error('Contract equipment returned incomplete results. Nothing was added.')
-        matches.push(...contractEquipmentRecords(result)); notFound.push(...result.notFound)
-        if (matches.length > MAX_DRAFT_CHILD_OPERATIONS) throw new Error('Contract equipment exceeds the estimate processing budget. Split the request.')
-      }
-      if (request !== equipmentPasteRequest.current) return
-      const identifiers = [...new Set(matches.map((e) => e.re_equipment.toLowerCase()))]
-      const plan = planEquipmentAdd(selectedEquipment.map((e) => e.number), identifiers, matches)
-      if (selectedEquipment.length + plan.add.length + selectedPackages.length + laborLines.length +
-        materialLines.length > MAX_DRAFT_CHILD_OPERATIONS)
-        throw new Error('Contract equipment would exceed the estimate processing budget. Nothing was added; split the request.')
-      setSelectedEquipment((current) => {
-        const selected = new Set(current.map((e) => e.number.toLowerCase()))
-        return [...current, ...plan.add.filter((e) => !selected.has(e.re_equipment.toLowerCase())).map(toSelectedEquipment)]
-      })
-      return { added: plan.add.length, alreadySelected: plan.alreadySelected.length, notFound, duplicates }
-    } finally {
-      if (request === equipmentPasteRequest.current) setEquipmentBulkBusy(false)
-    }
-  }
-
   function resetBranch(nextBranchId: string) {
     equipmentPasteRequest.current++
     setEquipmentPasteResult(undefined)
@@ -787,6 +778,7 @@ function App() {
     if (nextBranchId === branchId) return
     if ((selectedEquipment.length > 0 || selectedPackages.length > 0) && !window.confirm(t.branchChangeWarning)) return
     resetBranch(nextBranchId)
+    customRatesInitialized.current = false
     const branch = branches.find((row) => row.re_branchid === nextBranchId)
     setStateId(branch?._re_stateprovince_value ?? '')
     const province = draftReferences?.states.find((s) => s.id === branch?._re_stateprovince_value)
@@ -837,6 +829,10 @@ function App() {
       return
     }
     setPackageError('')
+    if (repairPackage.re_iscustompackage && !customRatesInitialized.current && !draftVersion) {
+      customRatesInitialized.current = true
+      setRequestInputs((current) => ({ ...current, re_usetax: '5', re_freight: '10' }))
+    }
     setSelectedPackages((current) => [...current, repairPackage])
   }
 
@@ -899,10 +895,12 @@ function App() {
     setSavedSalesperson(record.salesperson ?? '')
     setPricingUnavailable(record.pricingState === 'unavailable')
     setSubmitted(record.status === 126110002)
+    setExportDelivery(record.exportDelivery ?? undefined)
     setEstimateTitle(record.title); setBranchId(record.branchId); setStateId(record.stateId)
     setBuildingName(record.building); setCustomerName(record.customer)
     setCustomerEmail(record.email ?? ''); setCustomerPhone(record.phone ?? '')
     setEquipmentTypeId(record.equipmentTypeId); setJobTypeId(record.jobTypeId ?? '')
+    customRatesInitialized.current = true
     setMarket(record.market); setRequestInputs(inputs); setSelectedEquipment(equipment); setSelectedPackages(packages)
     setEquipmentQuery('')
     setSavedSnapshot(JSON.stringify({
@@ -926,7 +924,7 @@ function App() {
   }
 
   async function saveDraft(submit = false) {
-    if (draftInFlight.current || submitted || equipmentBulkBusy) return
+    if (draftInFlight.current || submitted || exportDelivery || equipmentBulkBusy) return
     setDraftError(''); setDraftNotice('')
     const customError = customCostsError(selectedPackages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid),
       laborLines, materialLines, language)
@@ -967,23 +965,28 @@ function App() {
       if (missingDetails) {
         setDraftVersion(record.version); setDraftNumber(record.number || '')
         setSubmitted(record.status === 126110002)
+        setExportDelivery(record.exportDelivery ?? undefined)
         throw new Error(language === 'fr'
           ? 'Le devis a été enregistré, mais le serveur n’a pas conservé les détails des équipements non répertoriés. Vos détails restent à l’écran. Conservez le fichier Excel et contactez votre administrateur pour déployer le plug-in de brouillon mis à jour et récupérer les détails.'
           : 'The draft was saved, but the server did not retain unlisted equipment details. Your details remain on screen. Keep the Excel file and contact your administrator to deploy the updated draft plugin and recover the details.')
       }
-      if (submit && record.status !== 126110002) throw new Error(language === 'fr'
+      if (submit && record.status !== 126110002 && !record.exportDelivery) throw new Error(language === 'fr'
         ? 'La soumission n’a pas été confirmée par le serveur. Rechargez le devis avant de réessayer.'
         : 'Submission was not confirmed by the server. Reload the estimate before retrying.')
-      applyDraft(record); setDraftNotice(`${submit ? language === 'fr' ? 'Devis soumis' : 'Estimate submitted' : dt.saved}: ${record.number || record.id}`)
+      applyDraft(record); setDraftNotice(record.exportDelivery
+        ? `${submissionDeliveryMessage(record.exportDelivery.state, language)} ${record.number || record.id}`
+        : `${submit ? language === 'fr' ? 'Devis soumis' : 'Estimate submitted' : dt.saved}: ${record.number || record.id}`)
     } catch (reason) { setDraftError(`${dt.error} ${submit ? submissionErrorMessage(message(reason), language) : message(reason)}`) }
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
 
   function resetDraftWorkspace() {
+    customRatesInitialized.current = false
     setDraftId(crypto.randomUUID()); setDraftVersion(null); setDraftNumber(''); setSavedSnapshot('')
     setSavedSalesperson('')
     setPricingUnavailable(false)
     setSubmitted(false)
+    setExportDelivery(undefined)
     setEstimateTitle(''); resetBranch(''); setStateId(''); setEquipmentTypeId(''); setJobTypeId('')
     setBuildingName(''); setCustomerName(''); setCustomerEmail(''); setCustomerPhone('')
     setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1)
@@ -1008,7 +1011,7 @@ function App() {
 
   function navigate(next: View) {
     if (next === view || reuseBusy || !leaveMaster()) return
-    if (next === 'clone') setReferencesNeeded(true)
+    if (next === 'new' || next === 'clone') setReferencesNeeded(true)
     if (next === 'settings') settingsReturnView.current = view
     setView(next)
   }
@@ -1075,7 +1078,7 @@ function App() {
           </button>
           <button
             className={`nav-item ${view === 'new' ? 'active' : ''}`}
-            onClick={newDraft}
+            onClick={() => navigate('new')}
             disabled={!canStart || draftBusy}
           >
             <NavigationIcon name="new" />
@@ -1123,7 +1126,6 @@ function App() {
             onSubmit={(event) => {
               event.preventDefault()
               if (!session?.canReadEstimates || draftBusy || reuseBusy) return
-              if (view === 'new' && draftDirty && !window.confirm(dt.warning)) return
               if (!leaveMaster()) return
               setRequestSearch(searchInput.trim()); setView('requests')
             }}>
@@ -1268,7 +1270,7 @@ function App() {
               draftId,
               canWork,
               draftComplete,
-              saveDraft, submitted,
+              saveDraft, submitted, exportDelivery,
               step,
               estimateTitle,
               setEstimateTitle,
@@ -1309,7 +1311,6 @@ function App() {
               addUnlistedEquipment,
               addEquipmentList,
               uploadEquipmentExcel: (file: File) => addEquipmentList('', file),
-              addContractEquipment,
               equipmentPasteResult,
               setSelectedEquipment,
               selectedPackages,
