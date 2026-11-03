@@ -350,8 +350,9 @@ must enter needs-review; do not automatically resend or unlock.
 This sequence uses the production MKO `KTOC PSR Estimator` header/cost/pricing
 sections and generated live `re_` fields/choices, not a new start-estimator form.
 The transcript adjusts the workbook: supervisor is optional and customer contact
-is entered on the first page and confirmed read-only at review. Building name has
-one editable input in Opportunity details. Proposal language is independent of the UI language.
+is entered on the first page and confirmed read-only at review. Functional Location
+Description has one editable input in Opportunity details and is still stored in
+`re_buildingname`; no Dataverse schema change is required. Proposal language is independent of the UI language.
 Equipment quantity is derived from selections, not a second conflicting input.
 Equipment search accepts pasted lists separated by commas, semicolons, spaces,
 or new lines. Each paste trims whitespace, removes duplicates, and checks all distinct values against active equipment
@@ -840,7 +841,10 @@ and team scopes in Dataverse. Sharing the Code App is separate from table/row
 access. Security-role privileges from all assigned roles are cumulative.
 
 The Requests list (including header search) and dashboard Recent Requests apply
-estimate titles as row headings instead of displaying request numbers. Numbers
+opportunity names as row headings instead of displaying request numbers. The form
+labels this field Opportunity Name (Nom de l’opportunité in French); it still
+uses the existing `re_estimatename` column, so no Dataverse schema change is
+required. Numbers
 remain stored and searchable. Both lists apply
 an explicit owner filter for the Estimator app role, using the signed-in
 Dataverse system user ID. Admins see all estimates readable under their Dataverse

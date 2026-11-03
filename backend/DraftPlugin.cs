@@ -317,8 +317,8 @@ namespace RepairEstimator.Drafts
             }
 
             var header = new Entity(Estimate, id);
-            header["re_estimatename"] = Required(input.title, 100, "Estimate title");
-            header["re_buildingname"] = Required(input.building, 300, "Building name");
+            header["re_estimatename"] = Required(input.title, 100, "Opportunity Name");
+            header["re_buildingname"] = Required(input.building, 300, "Functional Location Description");
             header["re_customername"] = Required(input.customer, 300, "Customer name");
             header["re_customeremail"] = Required(input.email, 100, "Customer email");
             header["re_customerphone"] = Optional(input.phone, 100);
