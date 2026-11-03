@@ -199,7 +199,7 @@ const copy = {
     customerName: 'Customer name',
     customerEmail: 'Customer email',
     customerPhone: 'Customer phone',
-    buildingName: 'Building name',
+    buildingName: 'Functional Location Description',
     customerHint:
       'Review customer and building details. To edit them, return to Opportunity details.',
     draftUnavailable:
@@ -353,7 +353,7 @@ const copy = {
     customerName: 'Nom du client',
     customerEmail: 'Courriel du client',
     customerPhone: 'Téléphone du client',
-    buildingName: 'Nom de l’immeuble',
+    buildingName: 'Description de l’emplacement fonctionnel',
     customerHint:
       'Vérifiez les renseignements du client et de l’immeuble. Pour les modifier, revenez aux détails de l’opportunité.',
     draftUnavailable:
@@ -837,20 +837,20 @@ function App() {
   }
 
   const dt = language === 'fr' ? {
-    title: 'Nom du devis', province: 'Province / État du bâtiment', currency: 'Devise',
+    title: 'Nom de l’opportunité', province: 'Province / État du bâtiment', currency: 'Devise',
     save: 'Enregistrer le brouillon', saving: 'Enregistrement…', saved: 'Brouillon enregistré',
     open: 'Ouvrir le brouillon', working: 'Opération en cours…', new: 'Nouveau brouillon',
     warning: 'Des modifications ne sont pas enregistrées. Les abandonner ?',
-    required: 'Renseignez le nom du devis, le client, le courriel du client, le bâtiment, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
+    required: 'Renseignez le nom de l’opportunité, le client, le courriel du client, la description de l’emplacement fonctionnel, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
     note: 'Enregistrez un brouillon ou soumettez le devis depuis la vérification finale. La soumission valide les prix et verrouille les modifications, sans envoyer de courriel.',
     error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
     reload: 'Recharger le brouillon', locked: 'La succursale et le marché sont fixes pour un brouillon enregistré.',
   } : {
-    title: 'Estimate title', province: 'Building province / state', currency: 'Currency',
+    title: 'Opportunity Name', province: 'Building province / state', currency: 'Currency',
     save: 'Save draft', saving: 'Saving…', saved: 'Draft saved',
     open: 'Open draft', working: 'Operation in progress…', new: 'New draft',
     warning: 'There are unsaved changes. Discard them?',
-    required: 'Complete estimate title, customer, customer email, building, province, equipment, packages, proposal language, time category, use tax and freight.',
+    required: 'Complete opportunity name, customer, customer email, functional location description, province, equipment, packages, proposal language, time category, use tax and freight.',
     note: 'Save a draft or submit from Review. Submission validates pricing and locks editing; no email is sent.',
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
@@ -1037,8 +1037,8 @@ function App() {
       applyDraft(fresh)
       setSavedSnapshot(''); setDraftError(''); setCloneError(''); setCloneSource(undefined)
       setDraftNotice(language === 'fr'
-        ? 'Nouvelle copie non enregistrée. Vérifiez les détails, donnez un nom au devis et enregistrez pour recalculer les coûts.'
-        : 'New unsaved copy. Review the details, enter an estimate title, and save to recalculate costs.')
+        ? 'Nouvelle copie non enregistrée. Vérifiez les détails, renseignez le nom de l’opportunité et enregistrez pour recalculer les coûts.'
+        : 'New unsaved copy. Review the details, enter an opportunity name, and save to recalculate costs.')
       setReferencesNeeded(true); setStep(1); setView('new')
     } catch (reason) { setCloneError(message(reason)) }
     finally { reuseInFlight.current = false; setReuseBusy(false) }

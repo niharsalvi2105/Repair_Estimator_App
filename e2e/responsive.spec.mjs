@@ -1069,6 +1069,10 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await page.goto('/')
   await expect(page.locator('.market-control select')).toBeEnabled()
   await page.locator('.main-nav .nav-item').nth(1).click()
+  await expect(page.locator('#estimate-title')).toHaveAccessibleName(
+    language === 'fr' ? 'Nom de l’opportunité*' : 'Opportunity Name*')
+  await expect(page.locator('#opportunity-building')).toHaveAccessibleName(
+    language === 'fr' ? 'Description de l’emplacement fonctionnel*' : 'Functional Location Description*')
   await page.locator('#estimate-title').fill('Motor repair draft')
   await page.locator('#branch-select').fill('020')
   await page.locator('#branch-select').press('ArrowDown')
