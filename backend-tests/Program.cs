@@ -20,8 +20,21 @@ class Program
         catch (TargetInvocationException e) when (e.InnerException is InvalidPluginExecutionException) { return; }
         throw new Exception("Invalid field input was accepted.");
     }
-    static void Main()
+    static void Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--customer-defaults")
+        {
+            DraftServiceTests.TestCustomerDefaults();
+            Console.WriteLine("Customer defaults, eligibility, scope and truncation cases passed.");
+            return;
+        }
+        if (args.Length == 1 && args[0] == "--package-equipment")
+        {
+            DraftServiceTests.TestPackageEquipment();
+            Console.WriteLine("Package equipment persistence and validation cases passed.");
+            return;
+        }
+        if (args.Length != 0) throw new ArgumentException("Unknown test selector.");
         var header = new Entity();
         Apply.Invoke(null, new object[] { header, Valid(), true });
         Assert((decimal)header["re_usetax"] == .05m && (decimal)header["re_freight"] == .14m, "Percentage conversion");

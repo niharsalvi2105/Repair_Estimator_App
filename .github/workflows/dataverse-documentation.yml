@@ -1,0 +1,26 @@
+name: Dataverse documentation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check app, Dataverse and plugin documentation updates
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE=$(git hash-object -w -t tree /dev/null)
+          fi
+          node automation/check-dataverse-doc.cjs "$BASE" "$HEAD"

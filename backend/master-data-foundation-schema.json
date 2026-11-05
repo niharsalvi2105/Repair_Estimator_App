@@ -1,0 +1,115 @@
+{
+  "status": "dev-foundation-published-record-import-blocked",
+  "verifiedLocalDate": "2026-11-04",
+  "solutionUniqueName": "RepairEstimatorApp",
+  "scope": "Published additive identity, Account/Contact source mapping columns and Equipment Account relationship. No record import or application autofill activation.",
+  "extendTables": [
+    {
+      "logicalName": "account",
+      "columns": {
+        "re_salesforceaccountid": {
+          "type": "String",
+          "maxLength": 18,
+          "required": false,
+          "source": "Account Master Id"
+        },
+        "re_salesorganizations": { "type": "String", "maxLength": 20, "source": "Sales_Organizations__c" },
+        "re_konecountry": { "type": "String", "maxLength": 100, "source": "Kone_Country__c" },
+        "re_ownersalesoffice": { "type": "String", "maxLength": 50, "source": "Owner.Sales_Office__c" },
+        "re_ownerbranchoffice": { "type": "String", "maxLength": 100, "source": "Owner.Branch_Office__c" },
+        "re_activekonecustomer": { "type": "Boolean", "source": "Active_KONE_Customer__c" },
+        "re_industrysegment": { "type": "String", "maxLength": 100, "source": "Industry_Segment__c" },
+        "re_customertype": { "type": "String", "maxLength": 100, "source": "Customer_Type__c" },
+        "re_customergroup": { "type": "String", "maxLength": 100, "source": "Customer_Group__c" },
+        "re_customerlanguage": { "type": "String", "maxLength": 10, "source": "Customer_Language__c" },
+        "re_ownername": { "type": "String", "maxLength": 200, "source": "Owner.Name" },
+        "re_ownertitle": { "type": "String", "maxLength": 200, "source": "Owner.Title" },
+        "re_equipmentcount": { "type": "Integer", "minValue": 0, "maxValue": 2147483647, "source": "AmountofEquipments__c" },
+        "re_liocount": { "type": "Integer", "minValue": 0, "maxValue": 2147483647, "source": "Number_of_LIO__c" },
+        "re_dataqualitydescription": { "type": "String", "maxLength": 4000, "source": "Data_Quality_Description__c" },
+        "re_dataqualityscore": { "type": "Decimal", "precision": 6, "minValue": -1000000000, "maxValue": 1000000000, "source": "Data_Quality_Score__c" },
+        "re_mainbusinesstype": { "type": "String", "maxLength": 200, "source": "Main_Business_Type__c" },
+        "re_topparentaccount": { "type": "String", "maxLength": 300, "source": "Top_Parent_Account__c; preserve source text, no inferred parent lookup" },
+        "re_sourceexportmetadata": { "type": "String", "maxLength": 2000, "source": "Preserve raw Salesforce export wrapper columns _ and Owner as JSON" }
+      },
+      "alternateKey": ["re_salesforceaccountid"],
+      "verifiedKeyStatus": "Active"
+    },
+    {
+      "logicalName": "contact",
+      "columns": {
+        "re_salesforcecontactid": {
+          "type": "String",
+          "maxLength": 18,
+          "required": false,
+          "source": "Contact Master Id"
+        },
+        "re_salesforcename": { "type": "String", "maxLength": 300, "source": "Name; preserve combined name without guessing first/last" },
+        "re_primarycontact": { "type": "Boolean", "source": "Primary_Contact__c" },
+        "re_sourceactive": { "type": "Boolean", "source": "Active__c" },
+        "re_linkedtoactivekonecustomer": { "type": "Boolean", "source": "Linked_to_Active_KONE_customer__c" },
+        "re_sourcesalesorganization": { "type": "String", "maxLength": 20, "source": "Account.Sales_Organizations__c" },
+        "re_sourceaccountnumber": { "type": "String", "maxLength": 100, "source": "Account.AccountNumber" },
+        "re_sourceexportmetadata": { "type": "String", "maxLength": 2000, "source": "Preserve raw Salesforce export wrapper columns _ and Account as JSON" }
+      },
+      "alternateKey": ["re_salesforcecontactid"],
+      "verifiedKeyStatus": "Active"
+    },
+    {
+      "logicalName": "re_repairestimate",
+      "columns": {
+        "re_customeraccount": {
+          "type": "Lookup",
+          "target": "account",
+          "relationship": "re_customeraccount_re_repairestimate",
+          "referencedAttribute": "accountid",
+          "deleteBehavior": "Restrict",
+          "displayName": "Customer Account",
+          "required": false,
+          "source": "Selected Account Master record; validated against the selected Contact"
+        },
+        "re_customercontact": {
+          "type": "Lookup",
+          "target": "contact",
+          "relationship": "re_customercontact_re_repairestimate",
+          "referencedAttribute": "contactid",
+          "deleteBehavior": "Restrict",
+          "displayName": "Customer Contact",
+          "required": false,
+          "source": "Selected Contact Master record; must belong to re_customeraccount"
+        }
+      }
+    },
+    {
+      "logicalName": "re_equipment",
+      "columns": {
+        "re_customeraccount": {
+          "type": "Lookup",
+          "target": "account",
+          "required": false,
+          "source": "Equipment Account.Id resolved through account.re_salesforceaccountid",
+          "relationship": "re_customeraccount_re_equipment",
+          "referencedAttribute": "accountid",
+          "deleteBehavior": "Restrict",
+          "namingReason": "Proposed re_account lookup failed because generated re_accountName would collide with existing re_accountname text. Existing text was preserved."
+        }
+      }
+    }
+  ],
+  "preserved": [
+    "Native contact.parentcustomerid relationship",
+    "Existing Equipment re_accountname and re_accountnumber text columns",
+    "Existing Equipment global unique key on re_equipment",
+    "Existing master, draft, snapshot, history and pricing records",
+    "Sharing/security roles and disabled export configuration"
+  ],
+  "importGates": [
+    "Equipment links must resolve exact source Account.Id, not normalized account numbers. All 122537 number disagreements are formatting-equivalent; preserve original values. Quarantine 17006 nonempty Account.Id values absent from Account Master.",
+    "Approve source organization, market, country, branch and eligibility crosswalk; do not infer MKOF/MKOM equivalence.",
+    "Resolve duplicate Equipment composite identities and global-number key compatibility.",
+    "Pricing profile complete: reject invalid cost cells, preserve historical effectivity and zero prices; approve source organization mapping and activation separately.",
+    "Validate identifier representation and cached formulas before importing text and contact data.",
+    "Verify lengths and required native Contact naming policy without inventing first/last names.",
+    "Produce non-destructive create/update/unchanged/rejected reconciliation and idempotency proof."
+  ]
+}

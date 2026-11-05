@@ -4,6 +4,188 @@ React/TypeScript Power Apps Code App using generated Dataverse services. No
 browser SQL connection, separate authentication flow, local operational record
 store, or selectable demo roles.
 
+## App and Dataverse references and change tracking
+
+See [Audit_Track/app.md](Audit_Track/app.md) for UI controls, navigation,
+frontend preview/payment/chart calculations, server-result boundaries and UX gaps.
+Update it in the same change as frontend code, styles, assets or configuration.
+See [Audit_Track/plugin.md](Audit_Track/plugin.md) for backend API/plugin triggers,
+authoritative formulas, snapshots, locks, errors and registration requirements.
+Update it in the same change as backend/plugin code, schema or test projects.
+See [Audit_Track/dataverse.md](Audit_Track/dataverse.md) for table/column mappings,
+read/write flows, UI-only fields, pricing behavior, known gaps and dated Dev
+verification. Update it in the same change as related application/data code.
+The Dataverse documentation workflow checks all relevant references; branch protection
+must require the check to enforce it before merges. It does not automatically
+monitor live Dataverse changes or validate the document's factual accuracy.
+
+### Verified Dev real-data test (2026-11-05)
+
+The approved currency-aware package key and assignment/provenance Memo columns
+are published. Three exact CKE CAD package references were added without changing
+the 280 existing packages. Both signed assemblies were updated in place and their
+uploaded hashes verified; the frontend was pushed and its matching entry asset
+observed in the running app. A real source-linked draft was saved, reopened and
+saved through the published UI, with CAD calculation version `2026.7` and exact
+source-snapshot/live-rate cost reconciliation. Missing customer and wrong-currency
+inputs remain rejected without partial writes. No Submit/email was attempted.
+This verifies the small admin Dev sample, not the full import, non-admin access,
+external workbook rendering or a production five-unit test. See the references
+above for local-test limitations and remaining work.
+
+The Pricing & CMII summary now uses the supplied dashboard design: four price
+cards, a non-double-counting cost composition, CMII gauge, breakdown and incentives.
+Its frontend-only Dev publication was verified against the existing saved draft.
+Pricing formulas and submission rules are unchanged; missing values are not zero.
+
+The Opportunity page now bundles its logo inline, generates an editable default
+title, displays the selected Account number/name, and fetches eligible linked
+Contact details and functional-location numbers without a second search. The
+final Dev runtime was verified with the real source-backed sample. Location
+numbers are not building descriptions: missing site-description and signed-in
+organization mappings still need authoritative data, not guessed defaults.
+
+## Exact customer-master bulk import
+
+[Customer staging](automation/import-customer-masters-bulk.py) validates the
+Account/Contact workbooks and stores every source column, including unmapped
+export markers, in `re_sourceexportmetadata`. It rejects source errors, ambiguous
+numeric-to-text values, overlength fields and unimportable parents rather than
+truncating or inventing data. Repeated Contact emails do not merge source IDs.
+Use local private paths **outside this repository** for both staging and report.
+Staging contains customer data: never commit, upload or expose it.
+
+```powershell
+python .\automation\import-customer-masters-bulk.py `
+  --source-dir 'C:\Private\Source' `
+  --state 'C:\Private\customer-state.sqlite' `
+  --report 'C:\Private\customer-report.json'
+python .\automation\apply-customer-masters.py `
+  --source-dir 'C:\Private\Source' `
+  --state 'C:\Private\customer-state.sqlite' `
+  --report 'C:\Private\customer-report.json' `
+  --apply --batch-size 1000 --max-batches 1
+```
+
+The first command makes no business-record writes. The second uses the separate
+`CreateMultiple`/`UpdateMultiple` transport: multi-record `UpsertMultiple` failed
+in Dev with HTTP 400, whereas direct 10/500/1,000-Account pilots passed full
+read-back verification. Do not bypass the existing staging contract/hash checks
+to resume: the apply entry point reuses the unchanged staging implementation,
+source fingerprints, metadata guards, collision checks and exclusive lock.
+Existing source-key matches retain native GUIDs; active alternate keys protect
+creates. Accounts are verified before Contacts can bind their parent GUIDs.
+This does not change plugin registration or access permissions.
+
+Start with one verified batch, then omit `--max-batches` to process all remaining
+Account and Contact candidates. The sanitized report contains counts and
+quarantined worksheet row numbers/reasons, not customer payloads. A batch is
+checkpointed only after **every mapped field and parent relationship** matches.
+Resume with the same arguments and unchanged files; already exact records are
+not rewritten. HTTP/transport failures leave rows inflight, not successful.
+Only explicit HTTP 429 throttling is retried, bounded and with backoff; uncertain
+writes must be reconciled on resume. An expired-token HTTP 401 on a read
+refreshes authentication and retries that read once; writes are not replayed
+by that recovery. Never delete the state to retry uncertain
+creates, run simultaneous importers, or remove a lock while one is running.
+If preparation was interrupted, retain its evidence and use a fresh staging
+file; an incomplete preparation cannot be applied.
+
+[Accelerated customer entry point](automation/apply-customer-masters-fast.py)
+uses four bounded parallel **read-only** verification requests, with independent
+authentication/header state per read. Writes remain sequential and retain the
+same CreateMultiple/UpdateMultiple, staging lock, collision, source/contract
+fingerprint, exact-field, parent and checkpoint safeguards. This adapter leaves
+the prepared staging contract files unchanged. Use the same source/state/report/
+checklist arguments, explicit `--apply`, and a verified pilot before removing
+`--max-batches`. Do not run the regular and accelerated importers together.
+A live read-only 500-Account comparison returned identical mapped values in
+8.67 seconds serial versus3.54 seconds parallel; this is a read benchmark,
+not a promised full-import throughput or completion time.
+
+To keep the requested checklist synchronized, add
+`--checklist 'C:\Private\dataverse-import-checklist.md'` to the apply command.
+[Checklist renderer](automation/customer-import-checklist.py) updates it after
+each report checkpoint. Only fully verified Account/Contact candidates receive
+a completed check; rejected source rows remain a separate correction item.
+Other datasets remain unchecked until their own imports and reconciliation
+are verified. Refresh the checklist without writes with:
+
+```powershell
+python .\automation\customer-import-checklist.py `
+  --report 'C:\Private\customer-report.json' `
+  --checklist 'C:\Private\dataverse-import-checklist.md'
+```
+
+[Remaining Equipment preflight](automation/preflight-remaining-masters.py)
+matches source filename, sheet, position and actual header to the v4.0 mapping,
+deduplicates identical contract rows and fails on conflicting exact contracts.
+It reads live table/column metadata and emits a sanitized mapping-gap report.
+It does not read customer row values into its output or perform imports.
+
+### Equipment preparation and existing-record pilot
+
+[Equipment importer](automation/import-equipment-master.py) stages the complete
+60-column export in private SQLite, validates mapped types/lengths/precision and
+date-only semantics, and quarantines every row in duplicate Equipment-key
+groups. Raw XML storage/value pairs for every column, including rejected rows,
+remain private source evidence. Source, mapping, implementation and writable
+metadata contracts must match on resume. Incomplete staging cannot be applied.
+
+```powershell
+python .\automation\import-equipment-master.py `
+  --source 'C:\Private\Equipment Master v3Nov2026 1.xlsx' `
+  --mapping 'C:\Private\remaining-equipment-preflight.json' `
+  --state 'C:\Private\equipment-state.sqlite' `
+  --report 'C:\Private\equipment-import-report.json'
+```
+
+Preparation does not write Dataverse. `--deploy-schema` explicitly publishes
+and verifies Equipment `re_sourceexportmetadata` Memo(100000) and `re_koltype`
+String(100). `--apply --customer-state 'C:\Private\customer-state.sqlite'`
+processes one bounded existing-record batch (default50, maximum100).
+It preserves Equipment GUID, branch and functional-location context, does not
+overwrite Account classifications from the Equipment export, and binds only
+verified source Account identities. Source errors, missing required context,
+new Equipment without an authoritative branch and unverified parents are
+deferred/rejected, not silently created or labelled imported. Existing conflicting
+Account links stop the batch. Exact mapped-field/raw-metadata/parent read-back
+precedes checkpointing; timeouts leave attempted rows inflight for reconciliation.
+It does not yet provide full Equipment creation or missing-mapping writeback.
+
+Keep the Equipment report beside the customer report with the filename
+`equipment-import-report.json`. The checklist renderer reads it and separates
+local full-source staging, schema deployment and actual verified Equipment rows.
+Every rejected/deferred row keeps the Equipment import unchecked.
+
+This imports only the approved customer masters, not all 40 solution tables.
+Equipment, pricing and reference reconciliation and missing employee/planner/
+site crosswalks remain separate gates. Importing data does not publish the app
+or its lookup API. See the dated [Dataverse evidence](Audit_Track/dataverse.md)
+and [plugin runtime evidence](Audit_Track/plugin.md) before claiming readiness.
+
+### Requested manual-completion workflow (not yet implemented)
+
+Local source now allows first-step Continue without Account/Contact/email so
+later steps can be reviewed during customer import. Branch, building and
+equipment type remain required; Save/Submit and the server retain complete
+customer validation. An English/French notice explains the boundary. This
+navigation-only change creates no records, supplies no mock customer fallback
+and does not unlock saved pricing without a valid save. Five focused mocked
+EN/FR browser tests and build passed; publication to the shared app is pending.
+
+The user approved autofetch when data exists and blank/editable inputs when it
+is genuinely missing. Manually supplied data should persist to the appropriate
+Dataverse master, including explicit branch/organisation mappings. Edits to
+populated shared master values require explicit confirmation; a successful
+estimate save must not silently overwrite them. Existing source-export metadata
+must remain original evidence, not be relabelled as manually edited values.
+This approval does not resolve ambiguous identities, grant user permissions,
+or justify guessing relationships. Invalid source rows remain quarantined.
+Current customer details are read-only and require imported Account/Contact
+selections; the requested workflow needs coordinated frontend/API/schema changes
+and live acceptance before it is available.
+
 ## Local development
 
 ```powershell
@@ -414,6 +596,21 @@ Other plans refer to notes instead of assuming percentages. This preview does no
 change server pricing or persist separate payment amounts.
 
 ### Clone requests and private Opportunity presets
+
+Opportunity Customer details includes optional **Account number** (50 characters)
+and **Account name** (300 characters), separate from customer/contact details.
+These are UI-only manual inputs, not verified account lookups. Account numbers
+remain text to preserve leading zeros. Values remain in the current request's
+in-memory workspace during navigation and saves, but are not sent to Dataverse,
+saved in presets, copied to clones or restored after a page refresh. The page
+labels this limitation explicitly. No backend/schema or live deployment changes
+are required or performed for these fields.
+
+Calculate errors are displayed directly in the Pricing & CMII summary as well as
+the workspace alert. A failed save or invalid pricing input must not leave only
+the initial "Select Calculate" instruction visible. Correct the reported field or
+service error and retry Calculate; prices are still read from the saved Dataverse
+calculation, never substituted with browser-generated amounts.
 
 The **New Request** sidebar entry opens or resumes the current request workspace;
 it does not clear the request or prompt to discard changes. Sidebar navigation,
@@ -1405,3 +1602,19 @@ Microsoft documentation:
 - [Dataverse actions/functions](https://learn.microsoft.com/en-us/power-apps/developer/code-apps/how-to/add-dataverse-action-function)
 - [Role discovery](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/reference/retrieveaaduserroles)
 - [Dataverse security roles](https://learn.microsoft.com/en-us/power-platform/admin/security-roles-privileges)
+# Package equipment assignments and local preview
+
+Selected packages now support actual-equipment checkboxes, defaulting to all units.
+Each package's quantity drives its cost cards, saved totals, KONE package selling
+contribution and stated-rate calculation. Custom lines and estimate additions
+remain counted once. A separate local cost preview works without Account/Contact,
+does not write Dataverse, and is not official pricing or CMII.
+
+Deployment requires publishing the optional estimate-package Memo in
+[package-equipment-schema.json](backend/package-equipment-schema.json) and deploy
+both backend assemblies together before the app. This order was completed in Dev
+on 2026-11-05; a real source-linked draft Save/Recalculate and saved assignments
+were verified. The live sample uses one unit; the five-unit 4/3/5 case remains
+local synthetic-test evidence, not a live five-unit certification.
+See [app reference](Audit_Track/app.md), [plugin reference](Audit_Track/plugin.md)
+and [Dataverse reference](Audit_Track/dataverse.md) for semantics and evidence.

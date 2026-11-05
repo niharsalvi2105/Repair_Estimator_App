@@ -78,6 +78,54 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
+        public void PackageSubsetsScaleIndependentlyAndPreserveLegacyDefaults()
+        {
+            var input = Baseline();
+            input.EquipmentLineCount = 5;
+            input.MechanicLaborRate = 100m;
+            input.Packages.Clear();
+            foreach (var quantity in new int?[] { 4, 3, null })
+                input.Packages.Add(new PackageInput { EquipmentQuantity = quantity, MechanicHoursPerUnit = 1m, MaterialCostPerUnit = 100m });
+            var result = PricingEngine.Calculate(input);
+            Assert.Equal(5, result.NumberOfEquipment);
+            Assert.Equal(12m, result.PackageLaborHours);
+            Assert.Equal(1200m, result.PackageMaterialCost);
+            Assert.Equal(2628m, result.TotalTrueCost);
+            input.AdditionalEquipmentCount = 2;
+            result = PricingEngine.Calculate(input);
+            Assert.Equal(14m, result.PackageLaborHours);
+            foreach (var invalid in new[] { 0, -1, 6 })
+            {
+                input.Packages[0].EquipmentQuantity = invalid;
+                Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+            }
+
+        }
+
+        [Fact]
+        public void PackageSubsetControlsKoneSellingContributionAndStatedRateMargin()
+        {
+            var input = Baseline();
+            input.EquipmentLineCount = 5;
+            input.IsCustomPath = true;
+            input.MechanicLaborRate = 100m;
+            input.StatedLaborRate = 200m;
+            input.FixedTargetCmii = .5m;
+            input.Packages.Clear();
+            input.Packages.Add(new PackageInput {
+                IsCustom = true, EquipmentQuantity = 3, PackagePricedKone = true,
+                MechanicHoursPerUnit = 2m, MaterialBeforeMarkup = 100m, MaterialCostPerUnit = 200m
+            });
+            var result = PricingEngine.Calculate(input);
+            Assert.Equal(6m, result.PackageLaborHours);
+            Assert.Equal(900m, result.TotalTrueCost);
+            Assert.Equal(300m, result.KoneMaterialCost);
+            Assert.Equal(600m, result.SuggestedPriceWithKoneMaterial.Value -
+                decimal.Round(600m / (1m - result.RecommendedCmii.Value), 2, MidpointRounding.AwayFromZero));
+            Assert.Equal((1200m + 300m / .35m - 900m) / (1200m + 300m / .35m), result.StatedRateMargin.Value);
+        }
+
+        [Fact]
         public void Package_kone_is_counted_once_per_equipment_without_additional_markup_tax_or_freight()
         {
             var input = Baseline();

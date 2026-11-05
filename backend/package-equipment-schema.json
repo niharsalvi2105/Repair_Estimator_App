@@ -1,0 +1,20 @@
+{
+  "status": "design-only-not-deployed",
+  "tables": {
+    "re_estimatepackage": {
+      "re_equipmentnumbers": {
+        "type": "Memo",
+        "maximumLength": 32700,
+        "required": false,
+        "description": "Draft-API-owned JSON array of exact selected equipment snapshot numbers. Null means all equipment (legacy behavior). An explicit nonempty unique subset must agree with re_quantity."
+      }
+    }
+  },
+  "deployment": [
+    "Publish the optional column before deploying either assembly or the app.",
+    "Deploy Drafts and pricing together, retaining existing snapshot guards, locks and all-column images.",
+    "Never backfill explicit subsets on historical packages. Null retains the global equipment plus additional-equipment pricing behavior.",
+    "Test as an estimator: save, reopen, clone, 4/3/5 package quantities, invalid subsets, currency/rates and export snapshot.",
+    "Export snapshots include all package attributes and freeze assignments and calculated totals. Workbook rendering must honor per-package re_quantity."
+  ]
+}

@@ -1,3 +1,4 @@
+import { packageContextFilter } from './packageQuery'
 import {
   Re_branchsService,
   Re_equipmentsService,
@@ -71,7 +72,7 @@ export type RepairPackage = Pick<
   | 're_effectiveto'
   | 're_iscustompackage'
   | 're_istimematerial'
->
+> & { equipmentNumbers?: string[] | null }
 
 export type ReferenceOption = { id: string; en: string; fr?: string }
 
@@ -182,12 +183,12 @@ export async function findEquipmentByNumbers(branchId: string, numbers: string[]
   return unwrap(result)
 }
 
-export async function listPackages(branchCountryId: string): Promise<RepairPackage[]> {
+export async function listPackages(branchCountryId: string, branchCurrencyId: string): Promise<RepairPackage[]> {
   const records: RepairPackage[] = []
   const seenTokens = new Set<string>()
   let skipToken: string | undefined
   do {
-    const result = await withTimeout(Re_repairpackagesService.getAll(buildPackageQuery(branchCountryId, skipToken)))
+    const result = await withTimeout(Re_repairpackagesService.getAll(buildPackageQuery(branchCountryId, branchCurrencyId, skipToken)))
     records.push(...unwrap(result))
     skipToken = result.skipToken
     if (skipToken) {
@@ -204,7 +205,7 @@ export async function listPackages(branchCountryId: string): Promise<RepairPacka
   })
 }
 
-function buildPackageQuery(branchCountryId: string, skipToken?: string): IGetAllOptions {
+function buildPackageQuery(branchCountryId: string, branchCurrencyId: string, skipToken?: string): IGetAllOptions {
   return {
     select: [
       're_repairpackageid',
@@ -221,7 +222,7 @@ function buildPackageQuery(branchCountryId: string, skipToken?: string): IGetAll
       're_iscustompackage',
       're_istimematerial',
     ],
-    filter: `statecode eq 0 and (_re_country_value eq ${branchCountryId} or _re_country_value eq null)`,
+    filter: packageContextFilter(branchCountryId, branchCurrencyId),
     orderBy: ['re_packagenumber asc', 're_repairpackageid asc'],
     maxPageSize: 500,
     skipToken,

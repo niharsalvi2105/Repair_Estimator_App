@@ -18,6 +18,29 @@ namespace RepairEstimator.Tests
     public class PluginIntegrationTests
     {
         [Fact]
+        public void Package_equipment_subset_is_loaded_calculated_and_frozen_in_export()
+        {
+            var db = new Pipeline();
+            var account = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account"));
+            var contact = db.Add("contact", ("re_salesforcecontactid", "source-contact"), ("re_sourceactive", true),
+                ("parentcustomerid", account.ToEntityReference()), ("re_salesforcename", "Customer"),
+                ("emailaddress1", "customer@example.invalid"));
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = account.Id.ToString(); request.contactId = contact.Id.ToString();
+            request.equipment = Enumerable.Range(1, 5).Select(n => new EquipmentInput { number = "E" + n, matched = false }).ToList();
+            request.packages[0].equipmentNumbers = new List<string> { "E1", "E2", "E3", "E4" };
+            var response = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal(request.packages[0].equipmentNumbers, response.packages[0].equipmentNumbers);
+            Assert.Equal("2026.7", response.pricingState);
+            Assert.Equal(1276m, db.Rows[db.EstimateId].GetAttributeValue<Money>("re_totaltruecost").Value);
+            var snapshot = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
+            var package = Assert.Single(snapshot.packages);
+            Assert.Equal(4m, package.cells.Single(c => c.key == "re_quantity").number);
+            Assert.Contains("E4", package.cells.Single(c => c.key == "re_equipmentnumbers").text);
+        }
+
+        [Fact]
         public void Draft_submit_uses_enabled_configuration_and_returns_locked_pending_delivery_not_submitted()
         {
             var db = new Pipeline(true);
@@ -435,7 +458,7 @@ namespace RepairEstimator.Tests
             var response = db.Save(json);
             Assert.Contains("\"materialBeforeMarkup\":617.45", response);
             Assert.Contains("\"pricingSource\":\"package\"", response);
-            Assert.Contains("\"pricingState\":\"2026.6\"", response);
+            Assert.Contains("\"pricingState\":\"2026.7\"", response);
             var header = db.Rows[db.EstimateId];
             Assert.Equal(941.25m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
             Assert.Equal(1497.37m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value);

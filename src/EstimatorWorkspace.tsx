@@ -6,7 +6,9 @@ import type { AppCopy, EquipmentPasteResult, SelectedEquipment } from './App'
 import { RequestFields, type RequestInputs } from './RequestFields'
 import { PricingSummary } from './PricingSummary'
 import { BranchSelect } from './BranchSelect'
-import { CustomerNameSelect } from './CustomerNameSelect'
+import { CustomerMasterSelect } from './CustomerMasterSelect'
+import { packageEquipmentNumbers, validPackageEquipment } from './data/packageEquipment'
+import type { AccountMasterOption, ContactMasterOption } from './data/customerMasterRepository'
 import { CustomCostLines } from './CustomCostLines'
 import { PackageSelect } from './PackageSelect'
 import { EquipmentSelect } from './EquipmentSelect'
@@ -32,9 +34,14 @@ type Props = {
   newDraft: () => void
   onSaveOpportunity: () => void
   draftBusy: boolean
+  draftError: string
   canStart: boolean
   openDraft: (id: string) => Promise<void>
   draftId: string
+  selectedAccount: AccountMasterOption | null
+  selectedContact: ContactMasterOption | null
+  onSelectAccount: (account: AccountMasterOption | null) => void
+  onSelectContact: (contact: ContactMasterOption | null) => void
   canWork: boolean
   draftComplete: boolean
   saveDraft: (submit?: boolean) => Promise<void>
@@ -92,11 +99,8 @@ type Props = {
   setSelectedPackages: Dispatch<SetStateAction<Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>[]>>
   marketName: 'MKO' | 'CKE' | 'CKQ'
   customerName: string
-  setCustomerName: Dispatch<SetStateAction<string>>
   customerEmail: string
-  setCustomerEmail: Dispatch<SetStateAction<string>>
   customerPhone: string
-  setCustomerPhone: Dispatch<SetStateAction<string>>
   setStep: Dispatch<SetStateAction<number>>
   onDashboard: () => void
   laborLines: DraftLabor[]
@@ -107,8 +111,9 @@ type Props = {
 
 export default function EstimatorWorkspace({
   requestSection, t, draftVersion, draftDirty, dt,
-  draftNumber, newDraft, onSaveOpportunity, draftBusy, canStart, openDraft,
-  draftId, canWork, draftComplete, saveDraft, submitted, exportDelivery, step,
+  draftNumber, newDraft, onSaveOpportunity, draftBusy, draftError, canStart, openDraft,
+  draftId, selectedAccount, selectedContact, onSelectAccount, onSelectContact,
+  canWork, draftComplete, saveDraft, submitted, exportDelivery, step,
   estimateTitle, setEstimateTitle, draftReferences, selectedBranch, draftReferenceError,
   setReferenceAttempt, branchLoading, branchError, loadBranches, market,
   marketBranches, branchId, changeBranch, language, referenceError,
@@ -118,13 +123,14 @@ export default function EstimatorWorkspace({
   changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, equipmentBulkBusy, toggleEquipment,
   selectedEquipment, addUnlistedEquipment, addEquipmentList, uploadEquipmentExcel, equipmentPasteResult, setSelectedEquipment,
   selectedPackages, packageLoading, packageError, packageResults, togglePackage, retryPackages,
-  selectedPackageIds, setSelectedPackages, marketName, customerName, setCustomerName,
-  customerEmail, setCustomerEmail, customerPhone, setCustomerPhone, setStep,
+  selectedPackageIds, setSelectedPackages, marketName, customerName,
+  customerEmail, customerPhone, setStep,
   onDashboard, laborLines, materialLines, setLaborLines, setMaterialLines,
 }: Props) {
   const [packagePage, setPackagePage] = useState(0)
   const [activeCustom, setActiveCustom] = useState<string>()
   const [customError, setCustomError] = useState('')
+  const [preview, setPreview] = useState<{ signature: string; total?: number; error?: string }>()
   const [rateResult, setRateResult] = useState<{ branchId: string; rates?: CostRate[]; error?: string }>()
   const [rateAttempt, setRateAttempt] = useState(0)
   const needsRates = step >= 2 && selectedPackages.length > 0
@@ -140,13 +146,54 @@ export default function EstimatorWorkspace({
   const rates = rateResult?.branchId === branchId ? rateResult.rates ?? [] : []
   const customPackages = selectedPackages.filter((p) => p.re_iscustompackage)
   const customValidation = customCostsError(customPackages.map((p) => p.re_repairpackageid), laborLines, materialLines, language)
-  const currency = draftReferences?.currencies.find((c) => c.id === selectedBranch?._re_currency_value)?.code
+  const marketCurrencyId = marketBranches.length > 0 &&
+    marketBranches.every(branch => branch._re_currency_value === marketBranches[0]._re_currency_value)
+    ? marketBranches[0]._re_currency_value : undefined
+  const currency = draftReferences?.currencies.find((c) => c.id ===
+    (selectedBranch?._re_currency_value ?? marketCurrencyId))?.code
   const costInputs = {
     quantity: selectedEquipment.length, rates, time: Number(requestInputs.re_timecategory || NaN),
     tax: requestInputs.re_usetax?.trim() ? Number(requestInputs.re_usetax) : NaN,
     freight: requestInputs.re_freight?.trim() ? Number(requestInputs.re_freight) : NaN,
     labor: laborLines, materials: materialLines, language, currency,
   }
+  const quantityFor = (p: RepairPackage | Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>) =>
+    packageEquipmentNumbers(p, selectedEquipment).length
+  const assignmentValid = selectedPackages.every((p) => validPackageEquipment(p, selectedEquipment))
+  const previewSignature = JSON.stringify({ selectedPackages, selectedEquipment, requestInputs, rates, laborLines, materialLines, currency })
+  function calculatePreview() {
+    try {
+      if (customValidation) throw new Error(customValidation)
+      if (!currency || !assignmentValid || !selectedPackages.length) throw new Error(language === 'fr'
+        ? 'Sélectionnez la devise et au moins un équipement par forfait.' : 'Select a currency and at least one equipment unit per package.')
+      let total = selectedPackages.reduce((sum, p) => sum + calculatePackageCost(p,
+        quantityFor(p), rates, costInputs.time, costInputs.tax, costInputs.freight, laborLines, materialLines).total, 0)
+      const mechanic = rates.filter((rate) => rate.role === 126110000 && rate.time === costInputs.time)
+      if (mechanic.length !== 1) throw new Error(language === 'fr' ? 'Taux mécanicien manquant ou ambigu.' : 'Mechanic cost rate is missing or ambiguous.')
+      const additional = ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous'].map((field) => {
+        const text = requestInputs[field as keyof RequestInputs]
+        const value = text?.trim() ? Number(text) : 0
+        if (!Number.isFinite(value) || value < 0) throw new Error(language === 'fr' ? 'Coûts supplémentaires invalides.' : 'Additional cost inputs are invalid.')
+        return value
+      })
+      total += additional[0] * mechanic[0].rate + (additional[1] + additional[2]) * (1 + costInputs.tax / 100 + costInputs.freight / 100)
+      if (!Number.isFinite(total)) throw new Error(language === 'fr' ? 'Coût indisponible.' : 'Cost is unavailable.')
+      setPreview({ signature: previewSignature, total })
+    } catch (reason) { setPreview({ signature: previewSignature, error: reason instanceof Error ? reason.message : String(reason) }) }
+  }
+  const localPreview = <section className="form-card local-cost-preview">
+    <h2>{language === 'fr' ? 'Aperçu local des coûts — non enregistré' : 'Local cost preview — not saved'}</h2>
+    <p className="field-help">{language === 'fr'
+      ? 'Estimation des coûts des forfaits et ajouts, pas un prix de vente ni un CMII. Aucune écriture Dataverse. La tarification officielle exige un compte, un contact et un enregistrement valide.'
+      : 'Estimated package and additional costs, not selling prices or CMII. No Dataverse writes. Authoritative pricing requires an Account, Contact and valid save.'}</p>
+    <button type="button" className="button secondary local-calculate-action" disabled={!canWork || draftBusy}
+      onClick={calculatePreview}>{language === 'fr' ? 'Calculer l’aperçu des coûts' : 'Calculate cost preview'}</button>
+    {preview?.signature === previewSignature ? preview.error
+      ? <p className="error-box" role="alert">{preview.error}</p>
+      : <output className="local-cost-total">{preview.total?.toLocaleString(language === 'fr' ? 'fr-CA' : 'en-CA',
+        { style: 'currency', currency })}</output>
+      : preview && <p role="status">{language === 'fr' ? 'Aperçu obsolète : recalculez après les modifications.' : 'Preview is out of date: recalculate after changes.'}</p>}
+  </section>
   function choosePackage(p: RepairPackage) {
     const adding = !selectedPackageIds.has(p.re_repairpackageid)
     togglePackage(p)
@@ -158,7 +205,7 @@ export default function EstimatorWorkspace({
     if (controls && !Array.from(controls).every((input) => input.reportValidity())) return
     try {
       // Validate the entered package costs before estimate-wide tax/freight are configured.
-      for (const p of customPackages) calculatePackageCost(p, costInputs.quantity, rates, costInputs.time,
+      for (const p of customPackages) calculatePackageCost(p, quantityFor(p), rates, costInputs.time,
         0, 0, laborLines, materialLines)
       setCustomError(''); setActiveCustom(undefined); setStep(2)
     } catch (reason) { setCustomError(reason instanceof Error ? reason.message : String(reason)) }
@@ -173,7 +220,7 @@ export default function EstimatorWorkspace({
   if (step >= 3 && !activeCustom) {
     try {
       packageTotal = selectedPackages.reduce((total, p) => total + calculatePackageCost(p,
-        costInputs.quantity, rates, costInputs.time, costInputs.tax, costInputs.freight, laborLines, materialLines).total, 0)
+        quantityFor(p), rates, costInputs.time, costInputs.tax, costInputs.freight, laborLines, materialLines).total, 0)
     } catch (reason) { packageTotalError = reason instanceof Error ? reason.message : String(reason) }
   }
   const packagePaging = selectedPackages.length > pageSize && <div className="custom-line-actions">
@@ -190,7 +237,7 @@ export default function EstimatorWorkspace({
         <article className="package-overview-card" key={p.re_repairpackageid}>
           <h3>{p.re_packagenumber}</h3>
           <p>{localizePackage(p, language)}</p>
-          <PackageCostDetails repairPackage={p} {...costInputs} />
+          <PackageCostDetails repairPackage={p} {...costInputs} quantity={quantityFor(p)} />
           {step === 3 && p.re_iscustompackage && <button className="button secondary small" onClick={() => {
             setActiveCustom(p.re_repairpackageid); setCustomError('')
           }}>{language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs'}</button>}
@@ -294,11 +341,17 @@ export default function EstimatorWorkspace({
                   <label htmlFor="estimate-title">{dt.title}<span className="required">*</span></label>
                   <input id="estimate-title" className="text-input" value={estimateTitle} maxLength={100}
                     aria-required="true" onChange={(event) => setEstimateTitle(event.target.value)} />
+                  <p className="field-help">{language === 'fr'
+                    ? 'Nom généré automatiquement ; vous pouvez le personnaliser.'
+                    : 'Automatically generated; you can customize it.'}</p>
                 </div>
                 <div className="field-label">
                   <label htmlFor="draft-currency">{dt.currency}</label>
                   <input id="draft-currency" className="text-input" readOnly
-                    value={draftReferences?.currencies.find((c) => c.id === selectedBranch?._re_currency_value)?.code ?? '—'} />
+                    value={currency ?? '—'} />
+                  <p className="field-help">{language === 'fr'
+                    ? 'Devise Dataverse du marché, confirmée par la succursale.'
+                    : 'Dataverse market currency, confirmed by the selected Branch.'}</p>
                 </div>
               </div>
               {draftReferenceError && <div className="error-box" role="alert">
@@ -323,6 +376,25 @@ export default function EstimatorWorkspace({
                 </>
               )}
 
+              </fieldset>
+              <fieldset className="opportunity-group">
+              <legend>{language === 'fr' ? 'Coordonnées du client' : 'Customer details'}</legend>
+              <CustomerMasterSelect key={`${market}:${branchId}:${selectedAccount?.id ?? 'no-account'}`}
+                market={market} branchId={branchId} account={selectedAccount} contact={selectedContact}
+                building={buildingName} onBuilding={setBuildingName}
+                onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted} />
+              <div className="input-grid">
+                <div className="field-label">
+                  <label htmlFor="customer-email">{t.customerEmail}<span className="required" aria-hidden="true">*</span></label>
+                  <input id="customer-email" type="email" className="text-input" maxLength={100}
+                    required aria-required="true" readOnly value={customerEmail} />
+                </div>
+                <div className="field-label">
+                  <label htmlFor="customer-phone">{t.customerPhone}</label>
+                  <input id="customer-phone" type="tel" className="text-input" maxLength={100}
+                    readOnly value={customerPhone} />
+                </div>
+              </div>
               <div className="request-options">
                 {referenceError ? (
                   <div className="error-box" role="alert">
@@ -355,11 +427,6 @@ export default function EstimatorWorkspace({
                   <label htmlFor="salesperson">{t.salesperson}</label>
                   <input id="salesperson" className="text-input" value={draftVersion ? savedSalesperson : session?.displayName ?? ''} readOnly />
                 </div>
-                <div className="field-label">
-                  <label htmlFor="opportunity-building">{t.buildingName}<span className="required">*</span></label>
-                  <input id="opportunity-building" className="text-input" aria-required="true" value={buildingName}
-                    maxLength={300} onChange={(event) => setBuildingName(event.target.value)} />
-                </div>
               </div>
               <div className="field-label">
                 <label htmlFor="draft-province">{dt.province}<span className="required">*</span></label>
@@ -375,27 +442,12 @@ export default function EstimatorWorkspace({
                   {!branchId || stateId ? t.provinceFromBranch : t.missingProvince}
                 </p>
               </div>
-              </fieldset>
-              <fieldset className="opportunity-group">
-              <legend>{language === 'fr' ? 'Coordonnées du client' : 'Customer details'}</legend>
-              <div className="input-grid">
-                <div className="field-label">
-                  <label htmlFor="customer-name">{t.customerName}<span className="required" aria-hidden="true">*</span></label>
-                  <CustomerNameSelect key={`${draftId}:${branchId}`} branchId={branchId} value={customerName}
-                    onChange={setCustomerName} language={language} />
-                </div>
-                <div className="field-label">
-                  <label htmlFor="customer-email">{t.customerEmail}<span className="required" aria-hidden="true">*</span></label>
-                  <input id="customer-email" type="email" className="text-input" maxLength={100}
-                    required aria-required="true"
-                    value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
-                </div>
-                <label className="field-label" htmlFor="customer-phone">
-                  {t.customerPhone}
-                  <input id="customer-phone" type="tel" className="text-input" maxLength={100}
-                    value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
-                </label>
-              </div>
+              {(!selectedAccount?.id || !selectedContact?.id || !customerEmail.trim()) &&
+                <p id="customer-navigation-help" className="field-help" role="status">
+                  {language === 'fr'
+                    ? 'Vous pouvez continuer pour consulter les autres étapes. Sélectionnez un compte et un contact avec un courriel avant d’enregistrer ou de soumettre.'
+                    : 'You can continue to review the other steps. Select an Account and Contact with an email before saving or submitting.'}
+                </p>}
               </fieldset>
               <fieldset className="opportunity-group">
               <legend>{t.requestDetails}</legend>
@@ -476,7 +528,11 @@ export default function EstimatorWorkspace({
                       <button
                         className="icon-button remove-button"
                         aria-label={`${t.remove} ${equipment.number}`}
-                        onClick={() => setSelectedEquipment((current) => current.filter((item) => item.id !== equipment.id))}
+                        onClick={() => {
+                          setSelectedEquipment((current) => current.filter((item) => item.id !== equipment.id))
+                          setSelectedPackages((current) => current.map((p) => ({ ...p,
+                            equipmentNumbers: p.equipmentNumbers?.filter((number) => number !== equipment.number) })))
+                        }}
                       >
                         ×
                       </button>
@@ -545,7 +601,29 @@ export default function EstimatorWorkspace({
                 <div className="selected-list">
                   {selectedPackages.slice(currentPackagePage * pageSize, (currentPackagePage + 1) * pageSize).map((repairPackage) => (
                     <div className="selected-package-group" key={repairPackage.re_repairpackageid}>
-                    <EquipmentPackageCosts equipment={selectedEquipment} repairPackage={repairPackage} {...costInputs} />
+                    <details className="package-equipment-selection">
+                      <summary>{repairPackage.re_packagenumber} — {language === 'fr' ? 'Personnaliser les équipements' : 'Customize equipment'} — {quantityFor(repairPackage)} / {selectedEquipment.length}</summary>
+                      <button type="button" className="button secondary" onClick={() => setSelectedPackages((current) =>
+                        current.map((p) => p.re_repairpackageid === repairPackage.re_repairpackageid ? { ...p, equipmentNumbers: undefined } : p))}>
+                        {language === 'fr' ? 'Tous les équipements' : 'All equipment'}
+                      </button>
+                      {selectedEquipment.map((unit) => <label key={unit.number}>
+                        <input type="checkbox" checked={packageEquipmentNumbers(repairPackage, selectedEquipment).includes(unit.number)}
+                          onChange={(event) => {
+                            const checked = event.target.checked
+                            setSelectedPackages((current) => current.map((p) => {
+                              if (p.re_repairpackageid !== repairPackage.re_repairpackageid) return p
+                              const numbers = packageEquipmentNumbers(p, selectedEquipment)
+                              return { ...p, equipmentNumbers: checked ? [...numbers, unit.number] : numbers.filter((number) => number !== unit.number) }
+                            }))
+                          }} /> {unit.number}
+                      </label>)}
+                      {!validPackageEquipment(repairPackage, selectedEquipment) && <p role="alert" className="error-box">
+                        {language === 'fr' ? 'Sélectionnez au moins un équipement et corrigez les équipements retirés.' : 'Select at least one equipment unit and resolve any removed equipment.'}
+                      </p>}
+                    </details>
+                    <EquipmentPackageCosts equipment={selectedEquipment.filter((unit) => packageEquipmentNumbers(repairPackage, selectedEquipment).includes(unit.number))}
+                      repairPackage={repairPackage} {...costInputs} />
                     <article className="equipment-card selected-package-card">
                       <div className="equipment-index">PK</div>
                       <div className="equipment-info selected-package-description">
@@ -563,7 +641,7 @@ export default function EstimatorWorkspace({
                         }}>{language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs'}</button>}
                       </div>
                       <div className="selected-package-pricing">
-                        <PackageCostDetails repairPackage={repairPackage} {...costInputs} />
+                        <PackageCostDetails repairPackage={repairPackage} {...costInputs} quantity={quantityFor(repairPackage)} />
                       </div>
                       <button
                         className="icon-button remove-button selected-package-remove"
@@ -635,20 +713,24 @@ export default function EstimatorWorkspace({
             {step === 3 && customError && <p role="alert" className="error-box">{customError}</p>}
             {step === 4 && (laborLines.length > 0 || materialLines.length > 0) &&
               <p>{language === 'fr' ? 'Lignes personnalisées' : 'Custom lines'}: {laborLines.length} / {materialLines.length}</p>}
+            {step === 4 && localPreview}
             {step === 4 && <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
               language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted}
-              calculate={saveDraft} calculating={draftBusy} canCalculate={canWork && draftComplete} />}
+              calculate={saveDraft} calculating={draftBusy} calculationError={draftError}
+              canCalculate={canWork && draftComplete} />}
           </div>
         </div>
       )}
 
       {step === 5 && (
-        <div className="form-layout">
+        <div className="form-layout single-column">
           <div className="form-main">
             {packageCostSummary}
+            {localPreview}
             <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
               language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted}
-              calculate={saveDraft} calculating={draftBusy} canCalculate={canWork && draftComplete} />
+              calculate={saveDraft} calculating={draftBusy} calculationError={draftError}
+              canCalculate={canWork && draftComplete} />
             {(hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
                 requestInputs={requestInputs} updateRequestInput={updateRequestInput}
@@ -664,8 +746,10 @@ export default function EstimatorWorkspace({
                 </div>
                 </div>
               <dl className="summary-grid customer-summary">
-                {[[t.customerName, customerName], [t.buildingName, buildingName],
-                  [t.customerEmail, customerEmail], [t.customerPhone, customerPhone]].map(([label, value]) => (
+                  {[[language === 'fr' ? 'Numéro de compte' : 'Account number', selectedAccount?.number ?? ''],
+                    [language === 'fr' ? 'Nom du compte' : 'Account name', selectedAccount?.name ?? ''],
+                    [t.customerName, customerName], [t.buildingName, buildingName],
+                    [t.customerEmail, customerEmail], [t.customerPhone, customerPhone]].map(([label, value]) => (
                   <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>
                 ))}
               </dl>
@@ -740,11 +824,15 @@ export default function EstimatorWorkspace({
                 if (step === 3 && activeCustom) { finishCustomPackage(); return }
                 if (step === 3 && customValidation) { setCustomError(customValidation); return }
                 const inputs = requestSection.current?.querySelectorAll<HTMLInputElement>('input')
-                if (inputs && !Array.from(inputs).every((input) => input.reportValidity())) return
+                if (inputs && !Array.from(inputs).every((input) =>
+                  step === 1 && input.id === 'customer-email' || input.reportValidity())) return
                 setActiveCustom(undefined); setCustomError('')
                 setStep((current) => current + 1)
               }}
-              disabled={step === 1 ? !branchId || !buildingName.trim() || !equipmentTypeId || !customerEmail.trim() : step === 2 ? selectedEquipment.length === 0 || selectedPackages.length === 0 : false}
+              aria-describedby={step === 1 && (!selectedAccount?.id || !selectedContact?.id || !customerEmail.trim())
+                ? 'customer-navigation-help' : undefined}
+              disabled={step === 1 ? !branchId || !buildingName.trim() || !equipmentTypeId
+                : step === 2 ? selectedEquipment.length === 0 || selectedPackages.length === 0 || !assignmentValid : false}
             >
               {step === 3 && activeCustom
                 ? language === 'fr' ? 'Calculer et retourner aux forfaits' : 'Calculate and return to packages'

@@ -9,7 +9,7 @@ export async function revalidateClone(record: DraftRecord, transport: {
   locations: () => Promise<DraftReferences>
   choices: (keys: string[]) => Promise<DraftChoices>
   equipment: (branchId: string, numbers: string[]) => Promise<Equipment[]>
-  packages: (countryId: string) => Promise<RepairPackage[]>
+  packages: (countryId: string, currencyId: string) => Promise<RepairPackage[]>
 }): Promise<DraftRecord> {
   const [branches, references, locations] = await Promise.all([
     transport.branches(), transport.references(), transport.locations(),
@@ -50,7 +50,7 @@ export async function revalidateClone(record: DraftRecord, transport: {
       location: item.re_functionallocation ?? '', customer: item.re_soldtoname ?? '', oem: item.re_oem ?? '',
       age: item.re_equipmentage, matched: true }
   })
-  const catalog = record.packages.length ? await transport.packages(branch._re_country_value) : []
+  const catalog = record.packages.length ? await transport.packages(branch._re_country_value, branch._re_currency_value) : []
   const packages = record.packages.map(row => {
     const current = catalog.find(item => item.re_repairpackageid === row.id)
     if (!current) throw new Error(`Package ${row.number} is no longer available for this branch.`)
@@ -58,7 +58,8 @@ export async function revalidateClone(record: DraftRecord, transport: {
       nameFr: current.re_packagenamefr, scopeEn: current.re_proposalscopeen ?? '', scopeFr: current.re_proposalscopefr,
       hours: current.re_mechanichours, material: current.re_materialmisctaxcost,
       materialBeforeMarkup: current.re_materialbeforemarkup,
-      isCustom: current.re_iscustompackage, isTimeMaterial: current.re_istimematerial }
+      isCustom: current.re_iscustompackage, isTimeMaterial: current.re_istimematerial,
+      equipmentNumbers: row.equipmentNumbers?.slice() }
   })
   const customIds = new Set(packages.filter(row => row.isCustom).map(row => row.id))
   if ([...(record.laborLines ?? []), ...(record.materialLines ?? [])].some(row => !customIds.has(row.packageId ?? '')))

@@ -47,6 +47,8 @@ namespace RepairEstimator.Drafts
         [DataMember(EmitDefaultValue = false)] public decimal? materialBeforeMarkup;
         [DataMember] public bool isCustom;
         [DataMember] public bool isTimeMaterial;
+        [DataMember(EmitDefaultValue = false)] public List<string> equipmentNumbers;
+        [DataMember(EmitDefaultValue = false)] public bool allEquipment;
     }
 
     [DataContract]
@@ -90,8 +92,30 @@ namespace RepairEstimator.Drafts
         [DataMember] public string customer;
         [DataMember] public string email;
         [DataMember] public string phone;
+        [DataMember(EmitDefaultValue = false)] public string accountId;
+        [DataMember(EmitDefaultValue = false)] public string accountNumber;
+        [DataMember(EmitDefaultValue = false)] public string accountName;
+        [DataMember(EmitDefaultValue = false)] public string contactId;
         [DataMember] public int market;
         [DataMember] public List<Field> fields;
+    }
+
+    [DataContract]
+    public sealed class AccountSearchResult
+    {
+        [DataMember] public string id;
+        [DataMember] public string number;
+        [DataMember] public string name;
+    }
+
+    [DataContract]
+    public sealed class ContactSearchResult
+    {
+        [DataMember] public string id;
+        [DataMember] public string name;
+        [DataMember] public string email;
+        [DataMember] public string phone;
+        [DataMember] public bool primary;
     }
 
     [DataContract]
@@ -118,6 +142,8 @@ namespace RepairEstimator.Drafts
         [DataMember(EmitDefaultValue = false)] public string partType;
         [DataMember(EmitDefaultValue = false)] public string presetName;
         [DataMember(EmitDefaultValue = false)] public string nextToken;
+        [DataMember(EmitDefaultValue = false)] public string accountId;
+        [DataMember(EmitDefaultValue = false)] public string contactId;
         [DataMember(EmitDefaultValue = false)] public OpportunityValues opportunity;
         [DataMember] public int status;
         [DataMember] public string id;
@@ -132,6 +158,13 @@ namespace RepairEstimator.Drafts
         [DataMember] public string customer;
         [DataMember] public string email;
         [DataMember] public string phone;
+        [DataMember(EmitDefaultValue = false)] public string accountNumber;
+        [DataMember(EmitDefaultValue = false)] public string accountName;
+        [DataMember(EmitDefaultValue = false)] public List<AccountSearchResult> accounts;
+        [DataMember(EmitDefaultValue = false)] public List<ContactSearchResult> contacts;
+        [DataMember(EmitDefaultValue = false)] public bool contactsTruncated;
+        [DataMember(EmitDefaultValue = false)] public List<string> locations;
+        [DataMember(EmitDefaultValue = false)] public bool locationsTruncated;
         [DataMember] public string salesperson;
         [DataMember] public string pricingState;
         [DataMember(EmitDefaultValue = false)] public ExportDelivery exportDelivery;
@@ -188,6 +221,7 @@ namespace RepairEstimator.Drafts
             bool catalogOperation = false;
             bool presetOperation = false;
             bool contractOperation = false;
+            bool masterSearchOperation = false;
             try
             {
                 var input = Deserialize<Draft>((string)context.InputParameters["InputJson"]);
@@ -215,6 +249,13 @@ namespace RepairEstimator.Drafts
                 if (choiceOperation)
                 {
                     context.OutputParameters["ResultJson"] = Serialize(ReadChoices(service));
+                    return;
+                }
+                masterSearchOperation = input.mode == "accountsearch" || input.mode == "contactsearch";
+                if (masterSearchOperation)
+                {
+                    context.OutputParameters["ResultJson"] = Serialize(SearchMasterRecords(
+                        factory.CreateOrganizationService(context.InitiatingUserId), input));
                     return;
                 }
                 dashboardOperation = input.mode == "dashboard";
@@ -266,7 +307,8 @@ namespace RepairEstimator.Drafts
             {
                 trace.Trace("{0} operation failed: {1}", contractOperation ? "Contract equipment" : dashboardOperation ? "Dashboard" : presetOperation ? "Opportunity presets" : catalogOperation ? "Parts catalog" : "Draft", ex);
                 throw new InvalidPluginExecutionException(
-                    (contractOperation ? "Contract equipment could not be loaded. " : dashboardOperation ? "Dashboard could not be loaded. " :
+                    (contractOperation ? "Contract equipment could not be loaded. " : masterSearchOperation ? "Customer master data could not be loaded. " :
+                        dashboardOperation ? "Dashboard could not be loaded. " :
                         choiceOperation ? "Choices could not be loaded. " :
                         catalogOperation ? "Parts catalog could not be loaded. " :
                         presetOperation ? "Opportunity preset operation failed. " : "The draft was not saved. ") + ex.Message, ex);
@@ -292,6 +334,14 @@ namespace RepairEstimator.Drafts
             if (input.equipment.Select(x => x.number?.Trim().ToUpperInvariant()).Distinct().Count() != input.equipment.Count)
                 Fail("Equipment numbers must be unique.");
             if (input.packages.Select(x => x.id).Distinct().Count() != input.packages.Count) Fail("Packages must be unique.");
+            foreach (var package in input.packages)
+            {
+                if (package.allEquipment && package.equipmentNumbers != null)
+                    Fail("Conflicting package equipment selection.");
+                RepairEstimator.Shared.PackageEquipmentSnapshot.Validate(package.equipmentNumbers,
+                    input.equipment.Select(e => e.number));
+                RepairEstimator.Shared.PackageEquipmentSnapshot.Write(package.equipmentNumbers);
+            }
             if (input.materialLines.Any(m => m.pricingSource != null))
                 PackageMaterialPricing.RequireSchema(service);
             var branch = service.Retrieve("re_branch", Guid.Parse(input.branchId),
@@ -319,9 +369,6 @@ namespace RepairEstimator.Drafts
             var header = new Entity(Estimate, id);
             header["re_estimatename"] = Required(input.title, 100, "Opportunity Name");
             header["re_buildingname"] = Required(input.building, 300, "Functional Location Description");
-            header["re_customername"] = Required(input.customer, 300, "Customer name");
-            header["re_customeremail"] = Required(input.email, 100, "Customer email");
-            header["re_customerphone"] = Optional(input.phone, 100);
             header["re_branch"] = branch.ToEntityReference();
             header["re_country"] = country;
             header["re_buildingprovincestate"] = province.ToEntityReference();
@@ -332,6 +379,12 @@ namespace RepairEstimator.Drafts
             header["re_numberofequipment"] = input.equipment.Count;
             header["re_estimatepath"] = new OptionSetValue(126110000);
             header["re_estimatetype"] = new OptionSetValue(126110000);
+            var selection = ResolveCustomerSelection(service, input.accountId, input.contactId, input.market);
+            header["re_customeraccount"] = selection.Item1.ToEntityReference();
+            header["re_customercontact"] = selection.Item2.ToEntityReference();
+            header["re_customername"] = Required(selection.Item3, 100, "Customer name");
+            header["re_customeremail"] = Required(selection.Item4, 100, "Customer email");
+            header["re_customerphone"] = Optional(selection.Item5, 50);
             ApplyFields(header, input.fields);
             ValidateChoices(service, header);
             if (province.GetAttributeValue<bool>("re_frenchrequired") &&
@@ -478,10 +531,16 @@ namespace RepairEstimator.Drafts
                 row["transactioncurrencyid"] = currency;
                 row["re_packagerole"] = new OptionSetValue(126110000 + Math.Min(i, 2));
                 row["re_sequence"] = i + 1;
-                row["re_quantity"] = input.equipment.Count;
-                row["re_totalhours"] = row.GetAttributeValue<decimal>("re_mechanichoursperunit") * input.equipment.Count;
+                if (previous?.GetAttributeValue<string>(RepairEstimator.Shared.PackageEquipmentSnapshot.Attribute) != null &&
+                    input.packages[i].equipmentNumbers == null && !input.packages[i].allEquipment)
+                    Fail("This package has equipment assignments. Reload with the current app before editing.");
+                var quantity = input.packages[i].equipmentNumbers?.Count ?? input.equipment.Count;
+                row[RepairEstimator.Shared.PackageEquipmentSnapshot.Attribute] = input.packages[i].equipmentNumbers == null
+                    ? null : RepairEstimator.Shared.PackageEquipmentSnapshot.Write(input.packages[i].equipmentNumbers);
+                row["re_quantity"] = quantity;
+                row["re_totalhours"] = row.GetAttributeValue<decimal>("re_mechanichoursperunit") * quantity;
                 row["re_totalmaterial"] = new Money(row.GetAttributeValue<Money>(packagePriced
-                    ? PackageMaterialPricing.Cost : "re_materialcostperunit").Value * input.equipment.Count);
+                    ? PackageMaterialPricing.Cost : "re_materialcostperunit").Value * quantity);
                 packageRows.Add(row);
             }
             bool custom = packageRows.Any(p => p.GetAttributeValue<bool>("re_iscustompackage"));
@@ -744,6 +803,142 @@ namespace RepairEstimator.Drafts
                 if (!header.Contains(key) || header[key] == null) Fail("Required input is missing: " + key);
         }
 
+        static Draft SearchMasterRecords(IOrganizationService service, Draft input)
+        {
+            var search = input.search?.Trim() ?? "";
+            var defaults = input.mode == "contactsearch" && search.Length == 0;
+            if (!defaults && (search.Length < 2 || search.Length > 100))
+                Fail("Enter at least two characters to search customer master data.");
+
+            var result = new Draft();
+            if (input.mode == "accountsearch")
+            {
+                var organization = SourceOrganizationForMarket(input.market);
+                if (organization == null) Fail("Select a valid market before searching Accounts.");
+                var query = new QueryExpression("account") {
+                    ColumnSet = new ColumnSet("accountid", "accountnumber", "name"),
+                    TopCount = 20
+                };
+                query.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
+                query.Criteria.AddCondition("re_salesforceaccountid", ConditionOperator.NotNull);
+                query.Criteria.AddCondition("re_salesorganizations", ConditionOperator.Equal, organization);
+                query.Criteria.AddCondition("accountnumber", ConditionOperator.NotNull);
+                query.Criteria.AddCondition("name", ConditionOperator.NotNull);
+                var match = new FilterExpression(LogicalOperator.Or);
+                match.AddCondition("accountnumber", ConditionOperator.BeginsWith, search);
+                match.AddCondition("name", ConditionOperator.BeginsWith, search);
+                query.Criteria.AddFilter(match);
+                query.AddOrder("name", OrderType.Ascending);
+                query.AddOrder("accountid", OrderType.Ascending);
+                result.accounts = service.RetrieveMultiple(query).Entities.Select(row => new AccountSearchResult {
+                    id = row.Id.ToString("D"),
+                    number = row.GetAttributeValue<string>("accountnumber"),
+                    name = row.GetAttributeValue<string>("name")
+                }).ToList();
+                return result;
+            }
+
+            Guid accountId = Guid.Empty;
+            if (input.mode != "contactsearch" || !Guid.TryParse(input.accountId, out accountId))
+                Fail("Select a valid Account before searching Contacts.");
+            var account = service.Retrieve("account", accountId,
+                new ColumnSet("statecode", "re_salesforceaccountid", "re_salesorganizations"));
+            Active(account);
+            if (string.IsNullOrEmpty(account.GetAttributeValue<string>("re_salesforceaccountid")))
+                Fail("The selected Account is not an imported source master.");
+            var contactQuery = new QueryExpression("contact") {
+                ColumnSet = new ColumnSet("contactid", "re_salesforcename", "fullname", "emailaddress1",
+                    "telephone1", "mobilephone", "re_primarycontact"),
+                TopCount = 21
+            };
+            contactQuery.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
+            contactQuery.Criteria.AddCondition("parentcustomerid", ConditionOperator.Equal, accountId);
+            contactQuery.Criteria.AddCondition("re_salesforcecontactid", ConditionOperator.NotNull);
+            contactQuery.Criteria.AddCondition("re_sourceactive", ConditionOperator.Equal, true);
+            contactQuery.Criteria.AddCondition("emailaddress1", ConditionOperator.NotNull);
+            if (!defaults)
+            {
+                var contactMatch = new FilterExpression(LogicalOperator.Or);
+                contactMatch.AddCondition("re_salesforcename", ConditionOperator.BeginsWith, search);
+                contactMatch.AddCondition("emailaddress1", ConditionOperator.BeginsWith, search);
+                contactQuery.Criteria.AddFilter(contactMatch);
+            }
+            contactQuery.AddOrder("re_primarycontact", OrderType.Descending);
+            contactQuery.AddOrder("re_salesforcename", OrderType.Ascending);
+            contactQuery.AddOrder("contactid", OrderType.Ascending);
+            var contactRows = service.RetrieveMultiple(contactQuery).Entities;
+            result.contactsTruncated = contactRows.Count > 20;
+            result.contacts = contactRows.Take(20).Select(row => new ContactSearchResult {
+                id = row.Id.ToString("D"),
+                name = row.GetAttributeValue<string>("re_salesforcename") ?? row.GetAttributeValue<string>("fullname"),
+                email = row.GetAttributeValue<string>("emailaddress1"),
+                phone = row.GetAttributeValue<string>("telephone1") ?? row.GetAttributeValue<string>("mobilephone") ?? "",
+                primary = row.GetAttributeValue<bool>("re_primarycontact")
+            }).Where(row => !string.IsNullOrWhiteSpace(row.name) && row.name.Length <= 100 &&
+                !string.IsNullOrWhiteSpace(row.email)).ToList();
+            if (defaults && !string.IsNullOrEmpty(input.branchId))
+            {
+                Guid branchId;
+                if (!Guid.TryParse(input.branchId, out branchId)) Fail("Select a valid Branch.");
+                var branch = service.Retrieve("re_branch", branchId, new ColumnSet("statecode", "re_market"));
+                Active(branch);
+                if (branch.GetAttributeValue<OptionSetValue>("re_market")?.Value != input.market ||
+                    account.GetAttributeValue<string>("re_salesorganizations") != SourceOrganizationForMarket(input.market))
+                    Fail("Account and Branch must belong to the selected market.");
+                var locations = new QueryExpression("re_equipment") {
+                    ColumnSet = new ColumnSet("re_functionallocation"), Distinct = true, TopCount = 21
+                };
+                locations.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
+                locations.Criteria.AddCondition("re_branch", ConditionOperator.Equal, branchId);
+                locations.Criteria.AddCondition("re_customeraccount", ConditionOperator.Equal, accountId);
+                locations.Criteria.AddCondition("re_functionallocation", ConditionOperator.NotNull);
+                locations.AddOrder("re_functionallocation", OrderType.Ascending);
+                var rows = service.RetrieveMultiple(locations).Entities;
+                result.locationsTruncated = rows.Count > 20;
+                result.locations = rows.Take(20).Select(row => row.GetAttributeValue<string>("re_functionallocation"))
+                    .Where(location => !string.IsNullOrWhiteSpace(location)).ToList();
+            }
+            return result;
+        }
+
+        static string SourceOrganizationForMarket(int market)
+        {
+            return market == 126110000 ? "MKOF" :
+                market == 126110001 ? "CKE" :
+                market == 126110002 ? "CKQ" : null;
+        }
+
+        internal static Tuple<Entity, Entity, string, string, string, string, string> ResolveCustomerSelection(
+            IOrganizationService service, string accountId, string contactId, int market)
+        {
+            Guid accountGuid = Guid.Empty;
+            Guid contactGuid = Guid.Empty;
+            if (!Guid.TryParse(accountId, out accountGuid) || !Guid.TryParse(contactId, out contactGuid))
+                Fail("Select both an Account and Contact from Dataverse.");
+            var account = service.Retrieve("account", accountGuid,
+                new ColumnSet("statecode", "re_salesforceaccountid", "re_salesorganizations", "accountnumber", "name"));
+            Active(account);
+            if (string.IsNullOrEmpty(account.GetAttributeValue<string>("re_salesforceaccountid")) ||
+                account.GetAttributeValue<string>("re_salesorganizations") != SourceOrganizationForMarket(market))
+                Fail("The selected Account is not an imported source master.");
+            var contact = service.Retrieve("contact", contactGuid,
+                new ColumnSet("statecode", "parentcustomerid", "re_salesforcecontactid", "re_sourceactive",
+                    "re_salesforcename", "fullname", "emailaddress1", "telephone1", "mobilephone"));
+            Active(contact);
+            var parent = contact.GetAttributeValue<EntityReference>("parentcustomerid");
+            if (string.IsNullOrEmpty(contact.GetAttributeValue<string>("re_salesforcecontactid")) ||
+                !contact.GetAttributeValue<bool>("re_sourceactive") || parent == null ||
+                parent.LogicalName != "account" || parent.Id != accountGuid)
+                Fail("The selected Contact is not active under the selected Account.");
+            var name = contact.GetAttributeValue<string>("re_salesforcename") ?? contact.GetAttributeValue<string>("fullname");
+            var email = contact.GetAttributeValue<string>("emailaddress1");
+            if (string.IsNullOrWhiteSpace(name) || name.Length > 100 || string.IsNullOrWhiteSpace(email))
+                Fail("The selected Contact does not have valid name and email details.");
+            return Tuple.Create(account, contact, name, email,
+                contact.GetAttributeValue<string>("telephone1") ?? contact.GetAttributeValue<string>("mobilephone"),
+                account.GetAttributeValue<string>("accountnumber"), account.GetAttributeValue<string>("name"));
+        }
+
         static Draft Read(IOrganizationService service, Guid id, bool forClone = false)
         {
             var row = service.Retrieve(Estimate, id, new ColumnSet(true));
@@ -762,6 +957,26 @@ namespace RepairEstimator.Drafts
                 pricingState = row.GetAttributeValue<string>("re_calculationversion"),
                 market = row.GetAttributeValue<OptionSetValue>("re_market").Value
             };
+            var linkedAccount = row.GetAttributeValue<EntityReference>("re_customeraccount");
+            if (linkedAccount != null)
+            {
+                var account = service.Retrieve("account", linkedAccount.Id, new ColumnSet("accountnumber", "name"));
+                result.accountId = linkedAccount.Id.ToString("D");
+                result.accountNumber = account.GetAttributeValue<string>("accountnumber");
+                result.accountName = account.GetAttributeValue<string>("name");
+            }
+            var linkedContact = row.GetAttributeValue<EntityReference>("re_customercontact");
+            if (linkedContact != null)
+            {
+                var contact = service.Retrieve("contact", linkedContact.Id,
+                    new ColumnSet("re_salesforcename", "fullname", "emailaddress1", "telephone1", "mobilephone"));
+                result.contactId = linkedContact.Id.ToString("D");
+                result.customer = contact.GetAttributeValue<string>("re_salesforcename") ??
+                    contact.GetAttributeValue<string>("fullname") ?? result.customer;
+                result.email = contact.GetAttributeValue<string>("emailaddress1") ?? result.email;
+                result.phone = contact.GetAttributeValue<string>("telephone1") ??
+                    contact.GetAttributeValue<string>("mobilephone") ?? result.phone;
+            }
             var export = row.GetAttributeValue<EntityReference>("re_exportrequest");
             if (export != null && !forClone)
             {
@@ -835,6 +1050,7 @@ namespace RepairEstimator.Drafts
                     hours = p.GetAttributeValue<decimal>("re_mechanichoursperunit"),
                     material = p.GetAttributeValue<Money>("re_materialcostperunit").Value,
                     materialBeforeMarkup = p.GetAttributeValue<Money>(PackageMaterialPricing.Cost)?.Value,
+                    equipmentNumbers = RepairEstimator.Shared.PackageEquipmentSnapshot.Read(p, result.equipment.Select(e => e.number)),
                     isCustom = p.GetAttributeValue<bool>("re_iscustompackage"), isTimeMaterial = p.GetAttributeValue<bool>("re_istimematerial")
                 });
             if (Encoding.UTF8.GetByteCount(Serialize(result)) > 1000000)

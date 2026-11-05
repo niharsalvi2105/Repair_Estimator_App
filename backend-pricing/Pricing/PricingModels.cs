@@ -179,6 +179,7 @@ namespace RepairEstimator.Plugins.Pricing
     public sealed class PackageInput
     {
         public Guid Id { get; set; }
+        public int? EquipmentQuantity { get; set; }
         public bool PackagePricedKone { get; set; }
         public decimal? MaterialBeforeMarkup { get; set; }
         public bool IsCustom { get; set; }

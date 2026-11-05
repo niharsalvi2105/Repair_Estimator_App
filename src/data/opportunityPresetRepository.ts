@@ -41,6 +41,8 @@ export async function listOpportunityPresets(market: Market) {
   return rows
 }
 export async function saveOpportunityPreset(name: string, opportunity: OpportunityValues) {
+  if (!opportunity.accountId || !opportunity.contactId)
+    throw new Error('Select an Account and Contact before saving this preset.')
   return operation({ mode: 'presetsave', presetName: name.trim(), opportunity: parseOpportunityValues(opportunity) })
 }
 export async function deleteOpportunityPreset(id: string) {
