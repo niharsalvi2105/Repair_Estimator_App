@@ -104,6 +104,7 @@ async function mockData(page, language, theme, state = 'records') {
             const packagePriced = input.materialLines?.some(m => m.packageId === p.id && m.pricingSource === 'package');
             const source = window.__extraPackages?.find(master => master.re_repairpackageid === p.id);
             return {...p,nameEn:'Persisted package snapshot',nameFr:'Forfait enregistré',scopeEn:'Persisted scope',
+              ...(window.__dropPackageEquipment ? {equipmentNumbers:null} : {}),
               hours:packagePriced ? source.re_mechanichours : 2.5,
               material:packagePriced ? source.re_materialmisctaxcost : 125,
               ...(packagePriced ? {materialBeforeMarkup:source.re_materialbeforemarkup} : {})};
@@ -120,6 +121,26 @@ async function mockData(page, language, theme, state = 'records') {
     body: `export class Re_DraftEstimateService {
       static async re_DraftEstimate(json) {
         const input = JSON.parse(json);
+        if (input.mode === 'accountsearch' || input.mode === 'contactsearch') {
+          window.__masterSearchCalls ??= [];
+          window.__masterSearchCalls.push(structuredClone(input));
+          if (window.__masterSearchError) throw new Error(window.__masterSearchError);
+          if (window.__masterSearchDelay) await new Promise(resolve => setTimeout(resolve, window.__masterSearchDelay));
+          const account = {id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',number:'00042',name:'Acme Corporation',market:126110000};
+          const contact = {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',name:'Draft customer',
+            email:'draft@example.invalid',phone:'1234567890',accountId:account.id};
+          const starts = (value, query) => (value || '').toLowerCase().startsWith((query || '').toLowerCase());
+          const result = input.mode === 'accountsearch'
+            ? {accounts:(window.__accountMasterRecords || [account]).filter(row => row.market === input.market &&
+                (starts(row.number,input.search) || starts(row.name,input.search))).slice(0,20)}
+            : {contacts:(window.__contactMasterRecords || [contact]).filter(row => row.accountId === input.accountId &&
+                (starts(row.name,input.search) || starts(row.email,input.search))).slice(0,20),
+                contactsTruncated:!!window.__contactsTruncated,
+                locations:window.__accountLocations?.[input.accountId] || [],
+                locationsTruncated:!!window.__locationsTruncated};
+          (window.__masterSearchCompleted ??= []).push(structuredClone(input));
+          return {success:true,data:{ResultJson:JSON.stringify(result)}};
+        }
         if (input.mode.startsWith('contract')) {
           (window.__contractCalls ??= []).push(structuredClone(input));
           if (window.__contractError) throw new Error(window.__contractError);
@@ -352,6 +373,16 @@ async function next(page) {
   await page.locator('.footer-actions .button').click()
 }
 
+async function selectCustomerMasters(page, accountQuery = 'Acme', contactQuery = 'Draft') {
+  await page.locator('#account-master-search').fill(accountQuery)
+  await page.locator('#account-master-options button').first().click()
+  await expect(page.locator('.customer-defaults-state')).not.toContainText(/Fetching linked|Chargement des données/)
+  if (await page.locator('#customer-name').getAttribute('readonly') !== null)
+    await page.getByRole('button', { name: /^(Change Contact|Changer de contact)$/ }).click()
+  await page.locator('#customer-name').fill(contactQuery)
+  await page.locator('#customer-name-options button').first().click()
+}
+
 for (const viewport of viewports) {
   for (const { language, theme } of modes) {
     test(`${viewport.width}x${viewport.height} ${language} ${theme}: dashboard, lists and full form`, async ({ page }) => {
@@ -364,7 +395,7 @@ for (const viewport of viewports) {
       await expect(page.locator('.request-record')).toHaveCount(1)
       await expect(page.locator('.dashboard-stats strong').first()).toHaveText('125')
       const logo = page.locator('.brand-logo')
-      await expect(logo).toHaveAttribute('src', /kone-logo-small\.jpg/)
+      await expect(logo).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
       await expect.poll(() => logo.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true)
       await checkLayout(page, viewport, 'dashboard')
 
@@ -396,8 +427,8 @@ for (const viewport of viewports) {
       await branch.press('Enter')
       await page.locator('#equipment-type').selectOption('test-type')
       await page.locator('#opportunity-building').fill('Test building / Immeuble de démonstration')
-      await page.locator('#customer-name').fill('Test customer')
-      await page.locator('#customer-email').fill('test@example.invalid')
+      await selectCustomerMasters(page)
+      await expect(page.locator('#customer-email')).toHaveValue('draft@example.invalid')
       await checkLayout(page, viewport, 'opportunity')
       await next(page)
 
@@ -421,10 +452,10 @@ for (const viewport of viewports) {
       await page.locator('#request-re_margincomments').fill('Representative margin comment / Commentaire représentatif.')
       await checkLayout(page, viewport, 'pricing')
       await next(page)
-      await expect(page.locator('.customer-summary')).toContainText('Test customer')
+      await expect(page.locator('.customer-summary')).toContainText('Draft customer')
       await page.locator('details').evaluateAll((details) => details.forEach((el) => { el.open = true }))
       await checkLayout(page, viewport, 'expanded review')
-      await expect(page.locator('.footer-actions .button')).toBeDisabled()
+      await expect(page.locator('.footer-actions .button')).toBeEnabled()
       await page.locator('.form-footer > button').click()
       await expect(page.locator('#request-re_sellprice')).toHaveValue('1500.00')
     })
@@ -450,7 +481,7 @@ test('form references are deferred until an estimate opens and reused across wor
   await expect(page.locator('.recent-card .request-record')).toHaveCount(1)
   expect(await page.evaluate(() => window.__referenceCalls ?? [])).toEqual([])
   const logo = page.locator('.brand-logo')
-  await expect(logo).toHaveAttribute('src', /kone-logo-small\.jpg/)
+  await expect(logo).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
   expect(await logo.evaluate((image) => image.complete && image.naturalWidth === 576)).toBe(true)
   await page.getByRole('button', { name: 'New repair request', exact: true }).click()
   await expect(page.locator('#branch-select')).toBeVisible()
@@ -1079,8 +1110,7 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await page.locator('#branch-select').press('Enter')
   await page.locator('#equipment-type').selectOption('test-type')
   await page.locator('#opportunity-building').fill('Building 42')
-  await page.locator('#customer-name').fill('Draft customer')
-  await page.locator('#customer-email').fill('draft@example.invalid')
+  await selectCustomerMasters(page)
   await next(page)
   await pickEquipmentAndPackage(page)
   await next(page)
@@ -1115,7 +1145,7 @@ for (const width of [320, 1366]) {
       for (const box of (await modal.getByRole('checkbox').all()).slice(1)) await expect(box).not.toBeChecked()
       await modal.getByRole('button', { name: fr ? 'Ouvrir une nouvelle copie' : 'Open new copy' }).click()
       await expect(modal).not.toBeVisible()
-      await expect(page.locator('#estimate-title')).toHaveValue('')
+      await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
       await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
       await expect(page.locator('#branch-select')).toBeEnabled()
       await expect(page.locator('#salesperson')).toHaveValue('Responsive Test User')
@@ -1141,7 +1171,7 @@ test('request clone selected sections use current masters, reset selling price a
   await modal.getByRole('checkbox', { name: 'Custom labor, materials and scope', exact: true }).check()
   await expect(modal.getByRole('checkbox', { name: 'Package selection', exact: true })).toBeChecked()
   await modal.getByRole('button', { name: 'Open new copy' }).click()
-  await expect(page.locator('#estimate-title')).toHaveValue('')
+  await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
   await page.locator('#estimate-title').fill('New repair copy')
   await next(page)
   await expect(page.locator('.selected-card')).toHaveCount(2)
@@ -1201,7 +1231,7 @@ for (const width of [320, 1366]) {
     await expect(page.locator('.clone-preset-card')).toContainText('Frequent customer')
     page.once('dialog', dialog => dialog.accept())
     await page.getByRole('button', { name: 'Use preset', exact: true }).click()
-    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
     await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
     expect(await page.evaluate(() => window.__draftCalls || [])).toEqual([])
     await page.locator('.main-nav').getByRole('button', { name: 'Clone request', exact: true }).click()
@@ -1665,6 +1695,8 @@ for (const width of [320, 1366]) {
     await summary.screenshot({ path: testInfo.outputPath('all-package-costs.png') })
     await next(page)
     await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
+    await page.locator('.local-calculate-action').click()
+    await expect(page.locator('.local-cost-total')).toContainText('861.70')
     await next(page)
     await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
     await page.locator('.draft-save-action').click()
@@ -1829,7 +1861,7 @@ test('equipment selection exceeds fourteen for catalog and unlisted units and su
   await expect(page.locator('.selected-card').first().locator('.equipment-card')).toHaveCount(22)
 })
 
-test('customer email is required before continuing or saving a draft', async ({ page }) => {
+test('Account and Contact are required for saving and Contact details are read-only', async ({ page }) => {
   await mockData(page, 'en', 'light')
   await page.goto('/')
   await page.locator('.main-nav .nav-item').nth(1).click()
@@ -1838,11 +1870,12 @@ test('customer email is required before continuing or saving a draft', async ({ 
   await page.locator('#branch-select').press('Enter')
   await page.locator('#equipment-type').selectOption('test-type')
   await page.locator('#opportunity-building').fill('Building 42')
-  await page.locator('#customer-name').fill('Test customer')
 
   const email = page.locator('#customer-email')
   await expect(email).toHaveAttribute('required', '')
   await expect(email).toHaveAttribute('aria-required', 'true')
+  await expect(email).toHaveJSProperty('readOnly', true)
+  await expect(page.locator('#customer-phone')).toHaveJSProperty('readOnly', true)
   for (const width of [320, 1366]) {
     await page.setViewportSize({ width, height: 900 })
     const label = page.locator('label[for="customer-email"]')
@@ -1856,61 +1889,226 @@ test('customer email is required before continuing or saving a draft', async ({ 
     expect(Math.abs(alignment.captionTop - alignment.starTop)).toBeLessThan(2)
     expect(alignment.starLeft).toBeGreaterThanOrEqual(alignment.captionRight)
   }
-  await expect(page.locator('.footer-actions .button')).toBeDisabled()
+  await expect(page.locator('.footer-actions .button')).toBeEnabled()
+  await expect(page.locator('#customer-navigation-help')).toBeVisible()
   await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
 
-  await email.fill('not-an-email')
+  await page.locator('#account-master-search').fill('Acme')
+  await page.locator('#account-master-options button').first().click()
+  await expect(page.locator('#customer-name')).toBeEnabled()
+  await expect(email).toHaveValue('draft@example.invalid')
+  await page.getByRole('button', { name: 'Change Contact', exact: true }).click()
+  await expect(email).toHaveValue('')
   await expect(page.locator('.footer-actions .button')).toBeEnabled()
-  await page.locator('.footer-actions .button').click()
-  await expect(page.locator('#equipment-search')).toHaveCount(0)
-
-  await email.fill('test@example.invalid')
+  await page.locator('#customer-name').fill('Draft')
+  await page.locator('#customer-name-options button').first().click()
+  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  await expect(email).toHaveValue('draft@example.invalid')
+  await expect(page.locator('.footer-actions .button')).toBeEnabled()
   await page.locator('.footer-actions .button').click()
   await expect(page.locator('#equipment-search')).toBeVisible()
 })
 
 for (const language of ['en', 'fr']) {
-  test(`customer combobox uses branch names, supports keyboard and manual entry in ${language}`, async ({ page }) => {
+  test(`Missing customer masters do not block local navigation in ${language}`, async ({ page }) => {
+    await mockData(page, language, 'light')
+    await page.goto('/')
+    await page.locator('.main-nav .nav-item').nth(1).click()
+    const nextButton = page.locator('.footer-actions .button')
+    await expect(nextButton).toBeDisabled()
+    await page.locator('#branch-select').fill('020')
+    await page.locator('#branch-select').press('ArrowDown')
+    await page.locator('#branch-select').press('Enter')
+    await expect(nextButton).toBeDisabled()
+    await page.locator('#equipment-type').selectOption('test-type')
+    await expect(nextButton).toBeDisabled()
+    await page.locator('#opportunity-building').fill('Synthetic building')
+    await expect(page.locator('#customer-email')).toHaveValue('')
+    await expect(page.locator('#customer-navigation-help')).toContainText(
+      language === 'fr' ? 'avant d’enregistrer ou de soumettre' : 'before saving or submitting')
+    await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
+    await next(page)
+    await expect(page.locator('#equipment-search')).toBeVisible()
+    await expect(nextButton).toBeDisabled()
+    await page.locator('#equipment-search').fill('TEST')
+    await page.locator('#equipment-options button').first().click()
+    await page.locator('#package-search').fill('PK')
+    await page.locator('#package-options button').first().click()
+    await page.locator('#package-search').press('Escape')
+    await next(page)
+    await expect(page.locator('#request-re_additionallaborhours')).toBeVisible()
+    await next(page)
+    await expect(page.locator('#request-re_sellprice')).toBeVisible()
+    await next(page)
+    await expect(page.locator('.customer-summary')).toBeVisible()
+    await expect(nextButton).toBeDisabled()
+    await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
+    expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+    for (let step = 5; step > 1; step--) await page.locator('.form-footer > button').click()
+    await expect(page.locator('#opportunity-building')).toHaveValue('Synthetic building')
+    await expect(page.locator('#customer-email')).toHaveValue('')
+  })
+}
+
+for (const dropAssignments of [false, true]) {
+  test(`Package assignments survive save or report an outdated backend (${dropAssignments})`, async ({ page }) => {
+    await page.addInitScript((drop) => {
+      window.__dropPackageEquipment = drop
+      window.__equipmentResults = ['TEST123', 'TEST456'].map((number, i) => ({
+        re_equipmentid: `unit-${i}`, re_equipment: number, re_equipmentname: `Equipment ${number}`,
+        re_functionallocation: 'Test location', re_oem: 'OEM', re_equipmentage: 20,
+      }))
+    }, dropAssignments)
+    await completeDraft(page)
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    await page.locator('#equipment-search').fill('TEST456')
+    await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+    await page.locator('#equipment-search').press('Escape')
+    const group = page.locator('.selected-package-group')
+    await group.locator('summary').click()
+    await group.getByRole('checkbox', { name: 'TEST456', exact: true }).uncheck()
+    await page.locator('.draft-save-action').click()
+    if (dropAssignments) {
+      await expect(page.locator('.draft-error')).toContainText('did not retain package equipment assignments')
+      await expect(page.locator('.draft-saved')).toHaveCount(0)
+    } else {
+      await expect(page.locator('.draft-saved')).toBeVisible()
+      expect(await page.evaluate(() => window.__draftSaved.packages[0].equipmentNumbers)).toEqual(['TEST123'])
+    }
+    await expect(group.locator('.equipment-package-card h4')).toHaveText(['TEST123'])
+    await expect(group.locator('summary')).toContainText('1 / 2')
+  })
+}
+
+for (const [language, width] of [['en', 1366], ['fr', 320]]) {
+  test(`Package equipment subsets and customer-free local preview in ${language}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.addInitScript(() => {
+      window.__equipmentResults = Array.from({ length: 5 }, (_, i) => ({
+        re_equipmentid: `unit-${i}`, re_equipment: `TEST${i + 1}`, re_equipmentname: `Unit ${i + 1}`,
+        re_functionallocation: 'Test location', re_oem: 'OEM', re_equipmentage: 20,
+      }))
+      window.__extraPackages = ['PIT', 'MR', 'DOOR'].map((number) => ({
+        re_repairpackageid: number, re_packagenumber: number, re_packagenameen: number, re_packagenamefr: number,
+        re_mechanichours: 1, re_materialmisctaxcost: 100, re_effectivefrom: '2020-01-01',
+      }))
+    })
+    await mockData(page, language, 'light')
+    await page.goto('/')
+    await page.locator('.main-nav .nav-item').nth(1).click()
+    await page.locator('#branch-select').fill('020')
+    await page.locator('#branch-select').press('ArrowDown')
+    await page.locator('#branch-select').press('Enter')
+    await page.locator('#equipment-type').selectOption('test-type')
+    await page.locator('#opportunity-building').fill('Synthetic building')
+    await next(page)
+    for (let i = 1; i <= 5; i++) {
+      await page.locator('#equipment-search').fill(`TEST${i}`)
+      await page.locator('#equipment-options button').filter({ hasText: `TEST${i}` }).first().click()
+    }
+    for (const number of ['PIT', 'MR', 'DOOR']) {
+      await page.locator('#package-search').fill(number)
+      await page.locator('#package-options button').filter({ hasText: number }).first().click()
+    }
+    await page.locator('#package-search').press('Escape')
+    const groups = page.locator('.selected-package-group')
+    const pit = groups.nth(0), mr = groups.nth(1), door = groups.nth(2)
+    await pit.locator('summary').click()
+    await pit.getByRole('checkbox', { name: 'TEST5', exact: true }).uncheck()
+    await mr.locator('summary').click()
+    for (const number of ['TEST4', 'TEST5']) await mr.getByRole('checkbox', { name: number, exact: true }).uncheck()
+    await expect(pit.locator('summary')).toContainText('4 / 5')
+    await expect(mr.locator('summary')).toContainText('3 / 5')
+    await expect(door.locator('summary')).toContainText('5 / 5')
+    for (const [index, count] of [4, 3, 5].entries())
+      await expect(groups.nth(index).locator('.equipment-package-card')).toHaveCount(count)
+    for (const number of ['TEST1', 'TEST2', 'TEST3', 'TEST4'])
+      await pit.getByRole('checkbox', { name: number, exact: true }).uncheck()
+    await expect(page.locator('.footer-actions .button')).toBeDisabled()
+    await pit.getByRole('button', { name: language === 'fr' ? 'Tous les équipements' : 'All equipment', exact: true }).click()
+    await pit.getByRole('checkbox', { name: 'TEST5', exact: true }).uncheck()
+    await checkLayout(page, { width, height: 900 }, 'equipment assignment controls')
+    await next(page)
+    await next(page)
+    await expect(page.locator('.pricing-calculate-action')).toBeDisabled()
+    await page.locator('.local-calculate-action').click()
+    await expect(page.locator('.local-cost-total')).toContainText(language === 'fr' ? '2 628,00' : '2,628.00')
+    expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+    await page.locator('#request-re_sellprice').fill('9000')
+    await expect(page.locator('.local-cost-total')).toHaveCount(0)
+    await page.locator('.local-calculate-action').click()
+    await expect(page.locator('.local-cost-total')).toBeVisible()
+    await next(page)
+    await page.locator('.local-calculate-action').click()
+    await expect(page.locator('.local-cost-total')).toBeVisible()
+    await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
+    expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    await page.getByRole('button', { name: /^(Remove|Retirer) TEST1$/ }).click()
+    await expect(pit.locator('summary')).toContainText('3 / 4')
+    await expect(mr.locator('summary')).toContainText('2 / 4')
+    await expect(door.locator('summary')).toContainText('4 / 4')
+    await page.locator('#equipment-search').fill('TEST1')
+    await page.locator('#equipment-options button').filter({ hasText: 'TEST1' }).first().click()
+    await expect(pit.locator('summary')).toContainText('3 / 5')
+    await expect(mr.locator('summary')).toContainText('2 / 5')
+    await expect(door.locator('summary')).toContainText('5 / 5')
+  })
+}
+
+for (const [width, language] of [[320, 'fr'], [1366, 'en']]) {
+  test(`new request autofetches identity and linked customer defaults at ${width}px ${language}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
     await mockData(page, language, 'light')
     await page.goto('/')
     await expect(page.locator('.market-control select')).toBeEnabled()
     await page.evaluate(() => {
-      window.__branches = [
-        { re_branchid: 'branch-a', re_branchname: 'Alpha branch', re_branchnumber: '020', re_market: 126110000 },
-        { re_branchid: 'branch-b', re_branchname: 'Beta branch', re_branchnumber: '030', re_market: 126110000 },
+      window.__accountLocations = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Source functional location'] }
+      window.__contactMasterRecords = [
+        { id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',name:'Primary customer',email:'primary@example.invalid',
+          phone:'12345',primary:true,accountId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        { id:'dddddddd-dddd-4ddd-8ddd-dddddddddddd',name:'Other customer',email:'other@example.invalid',
+          phone:'67890',primary:false,accountId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
       ]
     })
     await page.locator('.main-nav .nav-item').nth(1).click()
-    const customer = page.locator('#customer-name')
-    await expect(customer).toBeDisabled()
+    await expect(page.locator('.brand-logo')).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
+    await expect.poll(() => page.locator('.brand-logo').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true)
+    await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - MKO - [0-9a-f]{8}$/)
+    await expect(page.locator('#draft-currency')).toHaveValue('USD')
     await page.locator('#branch-select').fill('020')
     await page.locator('#branch-select').press('ArrowDown')
     await page.locator('#branch-select').press('Enter')
-    await customer.click()
-    await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(2)
-    await expect.poll(() => page.evaluate(() => window.__customerCalls)).toEqual(['branch-a'])
-    await customer.fill('acme')
-    await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(1)
-    await customer.press('ArrowDown')
-    await customer.press('Enter')
-    await expect(customer).toHaveValue('Acme Customer')
-    await expect(customer).toHaveAttribute('aria-expanded', 'false')
-    await customer.fill('New unlisted customer')
-    await customer.press('Escape')
-    await expect(customer).toHaveValue('New unlisted customer')
-    await page.evaluate(() => { window.__customerNames = ['Other branch customer'] })
-    await page.locator('#branch-select').fill('030')
-    await page.locator('#branch-select').press('ArrowDown')
-    await page.locator('#branch-select').press('Enter')
-    await expect(customer).toHaveValue('')
-    await customer.click()
-    await expect(page.locator('#customer-name-options')).toContainText('Other branch customer')
-    await expect(page.locator('#customer-name-options')).not.toContainText('Acme Customer')
-    await expect.poll(() => page.evaluate(() => window.__customerCalls)).toEqual(['branch-a', 'branch-b'])
+    await expect(page.locator('#draft-province')).toHaveValue(language === 'fr' ? 'Province test' : 'Test province')
+    await expect(page.locator('#salesperson')).toHaveValue('Responsive Test User')
+    await page.locator('#account-master-search').fill('00042')
+    await page.locator('#account-master-options button').click()
+    await expect(page.locator('#account-master-search')).toHaveValue('00042')
+    await expect(page.locator('#account-master-name')).toHaveValue('Acme Corporation')
+    await expect(page.locator('#account-master-name')).not.toBeEditable()
+    await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - Acme Corporation - /)
+    await expect(page.locator('#customer-name')).toHaveValue('Primary customer')
+    await expect(page.locator('#customer-email')).toHaveValue('primary@example.invalid')
+    await expect(page.locator('#customer-phone')).toHaveValue('12345')
+    await expect(page.locator('#account-functional-locations')).toHaveValue('Source functional location')
+    await expect(page.locator('#account-functional-locations')).not.toBeEditable()
+    await expect(page.locator('#opportunity-building')).toHaveValue('')
+    await page.getByRole('button', { name: /^(Change Contact|Changer de contact)$/ }).click()
+    await page.locator('.customer-linked-options button').filter({ hasText: 'Other customer' }).click()
+    await expect(page.locator('#customer-email')).toHaveValue('other@example.invalid')
+    await expect(page.locator('#customer-phone')).toHaveValue('67890')
+    await checkLayout(page, { width, height: 900 }, 'customer autofetch')
+    await page.getByRole('button', { name: /^(Change account|Changer de compte)$/ }).click()
+    await expect(page.locator('#account-master-name')).toHaveValue('')
+    await expect(page.locator('#customer-email')).toHaveValue('')
+    await expect(page.locator('#customer-phone')).toHaveValue('')
+    await expect(page.locator('#opportunity-building')).toHaveValue('')
+    await expect(page.locator('#account-functional-locations')).toHaveValue('')
+    expect(await page.evaluate(() => window.__draftCalls?.length || 0)).toBe(0)
   })
 }
 
-test('customer combobox exposes loading errors, retries and searches beyond the displayed suggestions', async ({ page }) => {
+test('superseded customer defaults cannot overwrite a new Account or a customized opportunity title', async ({ page }) => {
   await mockData(page, 'en', 'light')
   await page.goto('/')
   await expect(page.locator('.market-control select')).toBeEnabled()
@@ -1918,26 +2116,134 @@ test('customer combobox exposes loading errors, retries and searches beyond the 
   await page.locator('#branch-select').fill('020')
   await page.locator('#branch-select').press('ArrowDown')
   await page.locator('#branch-select').press('Enter')
-  await page.evaluate(() => { window.__customerError = 'Equipment access denied' })
-  const customer = page.locator('#customer-name')
-  await customer.click()
-  await expect(page.locator('.branch-popup [role=alert]')).toContainText('Equipment access denied')
-  await customer.fill('Manual customer despite error')
-  await expect(customer).toHaveValue('Manual customer despite error')
-  await customer.fill('')
+  await page.locator('#estimate-title').fill('My confirmed opportunity')
   await page.evaluate(() => {
-    window.__customerError = ''
-    window.__customerDelay = 300
-    window.__customerNames = Array.from({ length: 60 }, (_, i) => `Customer ${String(i).padStart(2, '0')}`)
+    window.__accountMasterRecords = [
+      {id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',number:'00042',name:'Alpha',market:126110000},
+      {id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',number:'00043',name:'Beta',market:126110000},
+    ]
+    window.__contactMasterRecords = [
+      {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',name:'Alpha Contact',email:'alpha@example.invalid',phone:'111',accountId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'},
+      {id:'dddddddd-dddd-4ddd-8ddd-dddddddddddd',name:'Beta Contact',email:'beta@example.invalid',phone:'222',accountId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'},
+    ]
+    window.__accountLocations = {
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Alpha location'],
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc': ['Beta location'],
+    }
   })
-  await page.locator('.branch-popup button', { hasText: 'Retry' }).click()
-  await expect(page.getByText('Loading customers…', { exact: true })).toBeVisible()
-  await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(50)
-  await expect(page.getByText('Showing 50 results.', { exact: false })).toBeVisible()
-  await customer.fill('Customer 59')
-  await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(1)
-  await page.locator('#customer-name-options button').click()
-  await expect(customer).toHaveValue('Customer 59')
+  await page.locator('#account-master-search').fill('00042')
+  await expect(page.locator('#account-master-options button')).toBeVisible()
+  await page.evaluate(() => { window.__masterSearchDelay = 1500 })
+  await page.locator('#account-master-options button').click()
+  await expect.poll(() => page.evaluate(() => window.__masterSearchCalls.some(call =>
+    call.mode === 'contactsearch' && call.accountId === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'))).toBe(true)
+  await page.getByRole('button', { name: 'Change account', exact: true }).click()
+  await page.evaluate(() => { window.__masterSearchDelay = 0 })
+  await page.locator('#account-master-search').fill('00043')
+  await page.locator('#account-master-options button').click()
+  await expect(page.locator('#customer-email')).toHaveValue('beta@example.invalid')
+  await expect.poll(() => page.evaluate(() => window.__masterSearchCompleted.some(call =>
+    call.mode === 'contactsearch' && call.accountId === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'))).toBe(true)
+  await expect(page.locator('#customer-email')).toHaveValue('beta@example.invalid')
+  await expect(page.locator('#customer-phone')).toHaveValue('222')
+  await expect(page.locator('#account-functional-locations')).toHaveValue('Beta location')
+  await expect(page.locator('#opportunity-building')).toHaveValue('')
+  await expect(page.locator('#estimate-title')).toHaveValue('My confirmed opportunity')
+})
+
+test('customer defaults do not guess ambiguous or truncated data and recover explicitly from read errors', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await expect(page.locator('.market-control select')).toBeEnabled()
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.locator('#branch-select').fill('020')
+  await page.locator('#branch-select').press('ArrowDown')
+  await page.locator('#branch-select').press('Enter')
+  await page.evaluate(() => {
+    window.__accountLocations = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Site A', 'Site B'] }
+    window.__contactsTruncated = true
+  })
+  await page.locator('#account-master-search').fill('00042')
+  await page.locator('#account-master-options button').click()
+  await expect(page.locator('.customer-defaults-state')).toContainText('More Contacts exist')
+  await expect(page.locator('#customer-name')).toHaveValue('')
+  await expect(page.locator('#customer-email')).toHaveValue('')
+  await expect(page.locator('#opportunity-building')).toHaveValue('')
+  await expect(page.locator('#account-functional-locations')).toHaveValue('Site A, Site B')
+  await page.getByRole('button', { name: 'Change account', exact: true }).click()
+  await page.locator('#account-master-search').fill('00042')
+  await expect(page.locator('#account-master-options button')).toBeVisible()
+  await page.evaluate(() => { window.__masterSearchError = 'Customer defaults access denied' })
+  await page.locator('#account-master-options button').click()
+  await expect(page.locator('.customer-defaults-state [role=alert]')).toContainText('Customer defaults access denied')
+  await page.evaluate(() => {
+    window.__masterSearchError = ''; window.__contactsTruncated = false
+    window.__accountLocations = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Site A'] }
+  })
+  await page.locator('.customer-defaults-state').getByRole('button', { name: 'Retry' }).click()
+  await expect(page.locator('#customer-email')).toHaveValue('draft@example.invalid')
+  await expect(page.locator('#account-functional-locations')).toHaveValue('Site A')
+  await expect(page.locator('#opportunity-building')).toHaveValue('')
+})
+
+for (const language of ['en', 'fr']) {
+  test(`Account and Contact search preserve their relationship in ${language}`, async ({ page }) => {
+    await mockData(page, language, 'light')
+    await page.goto('/')
+    await expect(page.locator('.market-control select')).toBeEnabled()
+    await page.evaluate(() => {
+      const market = 126110000;
+      window.__accountMasterRecords = [
+        {id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',number:'00042',name:'Alpha Account',market},
+        {id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',number:'00043',name:'Beta Account',market},
+      ];
+      window.__contactMasterRecords = [
+        {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',name:'Alex Alpha',email:'alex.alpha@example.invalid',phone:'111',accountId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'},
+        {id:'dddddddd-dddd-4ddd-8ddd-dddddddddddd',name:'Alex Beta',email:'alex.beta@example.invalid',phone:'222',accountId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'},
+      ];
+    })
+    await page.locator('.main-nav .nav-item').nth(1).click()
+    await page.locator('#account-master-search').fill('Alpha')
+    await expect(page.locator('#account-master-options [role=option]')).toHaveCount(1)
+    await page.locator('#account-master-options button').click()
+    const contact = page.locator('#customer-name')
+    await contact.fill('Alex')
+    await expect(page.locator('#customer-name-options [role=option]')).toHaveCount(1)
+    await expect(page.locator('#customer-name-options')).toContainText('alex.alpha@example.invalid')
+    await page.locator('#customer-name-options button').click()
+    await expect(contact).toHaveValue('Alex Alpha')
+    await expect(page.locator('#customer-email')).toHaveValue('alex.alpha@example.invalid')
+    await page.getByRole('button', { name: language === 'fr' ? 'Changer de compte' : 'Change account' }).click()
+    await expect(contact).toBeDisabled()
+    await expect(contact).toHaveValue('')
+    await page.locator('#account-master-search').fill('Beta')
+    await page.locator('#account-master-options button').click()
+    await contact.fill('Alex')
+    await expect(page.locator('#customer-name-options')).toContainText('alex.beta@example.invalid')
+    await expect(page.locator('#customer-name-options')).not.toContainText('alex.alpha@example.invalid')
+  })
+}
+
+test('customer master search shows errors, recovers on a new query and respects result limits', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await expect(page.locator('.market-control select')).toBeEnabled()
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.evaluate(() => { window.__masterSearchError = 'Account access denied' })
+  const account = page.locator('#account-master-search')
+  await account.fill('Acme')
+  await expect(page.locator('.branch-popup [role=alert]')).toContainText('Account access denied')
+  await page.evaluate(() => {
+    window.__masterSearchError = '';
+    window.__masterSearchDelay = 300;
+    window.__accountMasterRecords = Array.from({length:25}, (_,i) => ({
+      id:`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`,
+      number:`A${String(i).padStart(3,'0')}`,name:`Account ${String(i).padStart(2,'0')}`,market:126110000
+    }));
+  })
+  await account.fill('Account')
+  await expect(page.getByText('Searching…', { exact: true })).toBeVisible()
+  await expect(page.locator('#account-master-options [role=option]')).toHaveCount(20)
 })
 
 test('bulk equipment paste can select more than fourteen matched units', async ({ page }) => {
@@ -2009,8 +2315,7 @@ test('bulk equipment paste warns about missing numbers and typed search still wo
   await page.locator('#branch-select').press('Enter')
   await page.locator('#equipment-type').selectOption('test-type')
   await page.locator('#opportunity-building').fill('Building 42')
-  await page.locator('#customer-name').fill('Paste customer')
-  await page.locator('#customer-email').fill('paste@example.invalid')
+  await selectCustomerMasters(page)
   await next(page)
   await page.locator('#equipment-search').focus()
   await page.evaluate(() => {
@@ -2039,14 +2344,21 @@ for (const language of ['en', 'fr']) {
     await completeDraft(page, { width: 1366, height: 768 }, language)
     for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
     const geometry = await page.locator('label[for=customer-name]').evaluate((label) => {
-      const caption = label.getBoundingClientRect()
+      const captionText = document.createRange()
+      captionText.selectNodeContents(label.firstChild)
+      const caption = captionText.getBoundingClientRect()
       const marker = label.querySelector('.required').getBoundingClientRect()
+      const account = document.querySelector('#account-master-search').getBoundingClientRect()
       const input = document.querySelector('#customer-name').getBoundingClientRect()
       const email = document.querySelector('#customer-email').getBoundingClientRect()
-      return { inline: marker.top >= caption.top && marker.bottom <= caption.bottom + 1,
-        aligned: Math.abs(input.top - email.top) <= 1 }
+      const phone = document.querySelector('#customer-phone').getBoundingClientRect()
+      return {
+        inline: Math.abs(marker.top - caption.top) <= 2 && marker.left >= caption.right,
+        aligned: Math.abs(account.top - input.top) <= 1,
+        detailsAligned: Math.abs(email.top - phone.top) <= 1,
+      }
     })
-    expect(geometry).toEqual({ inline: true, aligned: true })
+    expect(geometry).toEqual({ inline: true, aligned: true, detailsAligned: true })
   })
 }
 
@@ -2237,7 +2549,7 @@ test('submission failure preserves edits and permits correction without claiming
   await expect(page.locator('.customer-summary')).toContainText('Draft customer')
 })
 
-test('customer details edit only on opportunity page and survive save and reopen', async ({ page }) => {
+test('selected Contact details are read-only and survive save and reopen', async ({ page }) => {
   await completeDraft(page, { width: 320, height: 700 })
   await expect(page.locator('#customer-name')).toHaveCount(0)
   await expect(page.locator('#building-name')).toHaveCount(0)
@@ -2248,11 +2560,14 @@ test('customer details edit only on opportunity page and survive save and reopen
   const customer = page.getByRole('group', { name: 'Customer details', exact: true })
   await expect(customer.locator('#customer-name')).toHaveValue('Draft customer')
   await expect(customer.locator('#customer-email')).toHaveValue('draft@example.invalid')
+  await expect(customer.locator('#customer-name')).toHaveJSProperty('readOnly', true)
+  await expect(customer.locator('#customer-email')).toHaveJSProperty('readOnly', true)
   await expect(page.locator('#opportunity-building')).toHaveCount(1)
-  await customer.locator('#customer-phone').fill('1234567890')
+  await expect(customer.locator('#customer-phone')).toHaveValue('1234567890')
   await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 320)
   await page.locator('.draft-save-action').click()
   await expect.poll(() => page.evaluate(() => window.__draftCalls.at(-1).phone)).toBe('1234567890')
+  await expect.poll(() => page.evaluate(() => window.__draftCalls.at(-1).contactId)).toBe('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
 })
 
 test('sidebar title stays visible across short-screen breakpoints after startup', async ({ page }) => {
@@ -2363,12 +2678,12 @@ for (const { language, theme } of modes) {
     await expect(page.locator('.custom-cost-lines fieldset').first().locator('input')).toHaveValue('3.25')
     await expect(page.locator('.custom-cost-lines fieldset').nth(1).locator('textarea')).toHaveValue('Custom motor')
     await page.locator('.draft-toolbar .draft-secondary-actions button').first().click()
-    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
     await page.locator('#branch-select').fill('020')
     await page.locator('#branch-select').press('ArrowDown'); await page.locator('#branch-select').press('Enter')
     await page.locator('#equipment-type').selectOption('test-type')
     await page.locator('#opportunity-building').fill('New building')
-    await page.locator('#customer-email').fill('new@example.invalid')
+    await selectCustomerMasters(page)
     await next(page)
     await expect(page.locator('.selected-card .equipment-card')).toHaveCount(0)
   })
@@ -2472,7 +2787,7 @@ for (const width of [320, 1366]) {
     await expect(page.locator('.operations-dashboard h1')).toContainText('CKE')
     await expect.poll(() => page.evaluate(() => window.__estimateQueries?.at(-1)?.market)).toBe(126110001)
     await page.locator('.main-nav .nav-item').nth(1).click()
-    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
     await expect(page.locator('#customer-name')).toHaveValue('')
     await expect(page.locator('#opportunity-building')).toHaveValue('')
     await expect(page.locator('#branch-select')).toBeEnabled()
@@ -2499,7 +2814,7 @@ test('dashboard market change confirms unsaved edits and cancellation keeps the 
   await market.selectOption('126110001')
   await expect(market).toHaveValue('126110001')
   await page.locator('.main-nav .nav-item').nth(1).click()
-  await expect(page.locator('#estimate-title')).toHaveValue('')
+  await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
   await expect(market).toBeEnabled()
 })
 
@@ -2541,7 +2856,7 @@ for (const [width, language] of [[1366, 'en'], [320, 'fr']]) {
     await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
     page.once('dialog', dialog => dialog.accept())
     await page.locator('.draft-secondary-actions button').first().click()
-    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
     await expect(page.locator('#customer-name')).toHaveValue('')
   })
 }
@@ -2598,7 +2913,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 
     expect(update.id).toBe(first.id)
     expect(update.version).toBe('1')
     await page.locator('.draft-toolbar').getByRole('button', { name: 'New draft', exact: true }).click()
-    await expect(page.locator('#estimate-title')).toHaveValue('')
+    await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
     await page.locator('.main-nav .nav-item').nth(2).click()
     await page.locator('.request-record').getByRole('button', { name: 'Open draft' }).click()
     await expect(page.locator('#estimate-title')).toHaveValue('Updated draft')
@@ -2656,7 +2971,7 @@ for (const width of [320, 1366]) {
         ? page.locator('.operations-dashboard .page-heading .primary')
         : page.locator('.draft-secondary-actions button').first()
       await start.click()
-      await expect(page.locator('#estimate-title')).toHaveValue('')
+      await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
       await expect(page.locator('#opportunity-building')).toHaveValue('')
       await expect(page.locator('#branch-select')).toBeEnabled()
       await expect(page.locator('.market-control select')).toBeEnabled()
@@ -2669,7 +2984,7 @@ for (const width of [320, 1366]) {
       await expect(page.locator('#estimate-title')).toHaveValue('Fresh request')
       page.once('dialog', (dialog) => dialog.accept())
       await page.locator('.draft-secondary-actions button').first().click()
-      await expect(page.locator('#estimate-title')).toHaveValue('')
+      await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
       await page.locator('#estimate-title').fill('Separate estimate')
       await page.locator('#branch-select').fill('020')
       await page.locator('#branch-select').press('ArrowDown')
@@ -2678,8 +2993,7 @@ for (const width of [320, 1366]) {
       await page.locator('#opportunity-building').fill('New building')
       await expect(page.locator('#customer-name')).toHaveValue('')
       await expect(page.locator('#customer-email')).toHaveValue('')
-      await page.locator('#customer-name').fill('New customer')
-      await page.locator('#customer-email').fill('new@example.invalid')
+      await selectCustomerMasters(page)
       await next(page)
       await expect(page.locator('.selected-card')).toHaveCount(0)
       await pickEquipmentAndPackage(page)
@@ -2868,6 +3182,71 @@ test('saved draft explicitly reports unavailable pricing without claiming a fail
   await expect(page.locator('.pricing-summary')).not.toContainText('$31,807.21')
 })
 
+for (const language of ['en', 'fr']) {
+  for (const width of [320, 1366]) {
+    test(`pricing dashboard reference preserves real outputs at ${width}px in ${language}`, async ({ page }, testInfo) => {
+      await completeDraft(page, { width, height: 900 }, language, language === 'fr' ? 'dark' : 'light')
+      await page.evaluate(() => { window.__pricingOverrides = {
+        re_totaltruecost: 49677.97, re_sellprice: 60000, re_suggestedprice: 248389.85,
+        re_suggestedpricewithkonematerial: 310889.85, re_packageestimatedcost: 30164.12,
+        re_customlaborcost: 750.6, re_custommaterialcost: 10000, re_totaladditionalcost: 19513.85,
+        re_usetaxamount: 664.46, re_freightamount: 2657.86, re_basetargetcmii: 0.65,
+        re_recommendedcmii: 0.8, re_actualcmii: 0.172, re_cmiivariance: -0.628,
+      } })
+      const summary = page.locator('.pricing-summary')
+      await summary.getByRole('button', { name: language === 'fr' ? 'Calculer' : 'Calculate', exact: true }).click()
+      await expect(summary.locator('.pricing-kpi')).toHaveCount(4)
+      const formatter = new Intl.NumberFormat(language === 'fr' ? 'fr-CA' : 'en-US', { style: 'currency', currency: 'USD' })
+      await expect(summary.locator('.pricing-kpi-suggested dd')).toHaveText(formatter.format(248389.85))
+      await expect(summary.locator('.pricing-kpi-kone dd')).toHaveText(formatter.format(310889.85))
+      await expect(summary.locator('.pricing-breakdown > div')).toHaveCount(6)
+      await expect(summary.locator('.pricing-composition-legend > div').last()).toContainText(formatter.format(8763.25))
+      await expect(summary.locator('.pricing-gauge strong')).toHaveText(language === 'fr' ? /17,2\s*%/ : '17.2%')
+      await expect(summary.locator('.pricing-gauge-fill')).toHaveAttribute('stroke-dasharray', /^17\.2/)
+      await expect(summary.locator('.pricing-margin-2')).toHaveClass(/is-negative/)
+      await expect(summary.locator('.pricing-incentives dd')).toHaveCount(2)
+      await expect(summary.getByRole('button', { name: language === 'fr' ? 'Recalculer' : 'Recalculate', exact: true })).toBeEnabled()
+      await checkLayout(page, { width, height: 900 }, 'pricing dashboard reference')
+      const internalOverflow = await summary.evaluate((el) => [...el.querySelectorAll('dl, figure, section, .pricing-kpi')].filter(
+        (node) => node.scrollWidth > node.clientWidth + 1).map((node) => node.className))
+      expect(internalOverflow).toEqual([])
+      if (width === 1366) {
+        const layout = await summary.evaluate((el) => ({
+          priceColumns: getComputedStyle(el.querySelector('.pricing-totals')).gridTemplateColumns.split(' ').length,
+          panelColumns: getComputedStyle(el.querySelector('.pricing-dashboard')).gridTemplateColumns.split(' ').length,
+        }))
+        expect(layout).toEqual({ priceColumns: 4, panelColumns: 2 })
+      }
+      await summary.screenshot({ path: testInfo.outputPath(`pricing-dashboard-${language}-${width}.png`),
+        style: '.topbar { visibility: hidden; }' })
+    })
+  }
+}
+
+test('pricing dashboard missing and out-of-range values are not fabricated or hidden', async ({ page }) => {
+  await completeDraft(page, { width: 320, height: 900 })
+  await page.evaluate(() => { window.__pricingOverrides = {
+    re_actualcmii: null, re_cmiivariance: null, re_suggestedpricewithkonematerial: null,
+  } })
+  const summary = page.locator('.pricing-summary')
+  await summary.getByRole('button', { name: 'Calculate', exact: true }).click()
+  await expect(summary.locator('.pricing-gauge strong')).toHaveText('—')
+  await expect(summary.locator('.pricing-kpi-kone dd')).toHaveText('—')
+  await expect(summary.locator('.pricing-gauge-fill')).toHaveCount(0)
+  await expect(summary.locator('.pricing-chart-unavailable')).toBeVisible()
+  await expect(summary).toContainText('Enter a selling price and recalculate')
+  await page.evaluate(() => { window.__pricingOverrides = { re_actualcmii: 1.5 } })
+  await summary.getByRole('button', { name: 'Recalculate', exact: true }).click()
+  await expect(summary.locator('.pricing-gauge strong')).toHaveText('150%')
+  await expect(summary.locator('.pricing-gauge-fill')).toHaveAttribute('stroke-dasharray', '100 100')
+  await expect(summary).toContainText('The actual saved value is displayed without a limit.')
+  await page.evaluate(() => { window.__pricingOverrides = {} })
+  await summary.getByRole('button', { name: 'Recalculate', exact: true }).click()
+  await expect(summary.locator('.pricing-gauge strong')).toHaveText('-65,028.16%')
+  await expect(summary.locator('.pricing-gauge-fill')).toHaveCount(0)
+  await checkLayout(page, { width: 320, height: 900 }, 'out-of-range CMII')
+})
+
 for (const width of [320, 1366]) {
   test(`saved pricing summary shows server values, localization and stale state at ${width}px`, async ({ page }) => {
     await completeDraft(page, { width, height: 768 })
@@ -2948,12 +3327,54 @@ test('calculate preserves edits on save failure and requires mandatory inputs', 
   await page.evaluate(() => { window.__draftFailure = '403: Write permission denied' })
   await calculate.click()
   await expect(page.locator('.draft-error')).toContainText('403')
+  await expect(page.locator('.pricing-summary').getByRole('alert')).toContainText('403: Write permission denied')
+  await expect(page.locator('.pricing-summary')).not.toContainText('Select Calculate to get pricing and CMII.')
   await expect(page.locator('#request-re_sellprice')).toHaveValue(/^1500(?:\.00)?$/)
   await expect(calculate).toBeEnabled()
   await expect(page.locator('.draft-saved')).toHaveCount(0)
   await page.evaluate(() => { window.__draftFailure = '' })
   await calculate.click()
   await expect(page.locator('.pricing-summary')).toContainText('$31,807.21')
+  await expect(page.locator('.pricing-summary').getByRole('alert')).toHaveCount(0)
+})
+
+for (const language of ['en', 'fr']) {
+  test(`selected Account references persist through draft save and reload in ${language}`, async ({ page }) => {
+    await completeDraft(page, { width: 320, height: 900 }, language)
+    for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+    await expect(page.locator('.customer-master-select')).toContainText('00042 — Acme Corporation')
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    const saved = await page.evaluate(() => window.__draftSaved)
+    expect(saved).toMatchObject({
+      accountId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', accountNumber:'00042',
+      accountName:'Acme Corporation', contactId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    })
+    await page.locator('.main-nav .nav-item').first().click()
+    await page.locator('.main-nav .nav-item').nth(1).click()
+    await expect(page.locator('.customer-master-select')).toContainText('00042 — Acme Corporation')
+    await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+    await page.locator('.draft-secondary-actions button').nth(1).click()
+    await expect(page.locator('.customer-master-select')).toContainText('00042 — Acme Corporation')
+    await page.locator('.draft-secondary-actions button').first().click()
+    await expect(page.locator('#customer-name')).toHaveValue('')
+    await expect(page.locator('.customer-master-select')).not.toContainText('00042 — Acme Corporation')
+  })
+}
+
+test('calculate reports invalid pricing input in the summary instead of silently returning', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.form-footer > button').click()
+  await page.locator('#request-re_sellprice').fill('-1')
+  const summary = page.locator('.pricing-summary')
+  await summary.getByRole('button', { name: 'Calculate', exact: true }).click()
+  await expect(summary.getByRole('alert')).toContainText('Sell price')
+  await expect(summary).not.toContainText('Select Calculate to get pricing and CMII.')
+  expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+  await page.locator('#request-re_sellprice').fill('2400')
+  await summary.getByRole('button', { name: 'Calculate', exact: true }).click()
+  await expect(summary).toContainText('$31,807.21')
+  await expect(summary.getByRole('alert')).toHaveCount(0)
 })
 
 test('pricing read failure does not claim save failure and can be retried', async ({ page }) => {
@@ -3321,10 +3742,10 @@ test('Excel equipment late lookup cannot populate a new draft and saving is bloc
   await expect(page.locator('.draft-save-action')).toBeDisabled()
   page.once('dialog', dialog => dialog.accept())
   await page.locator('.draft-secondary-actions button').first().click()
-  await expect(page.locator('#estimate-title')).toHaveValue('')
+  await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
   await page.waitForTimeout(1700)
   await expect(page.locator('.equipment-card:not(.selected-package-card)')).toHaveCount(0)
-  await expect(page.locator('#estimate-title')).toHaveValue('')
+  await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - /)
 })
 
 test('Excel equipment details are kept on screen with explicit warning when an older server drops snapshots', async ({ page }) => {

@@ -29,6 +29,73 @@ static class DraftServiceTests
         throw new Exception("Expected rejection: " + expected);
     }
 
+    public static void TestCustomerDefaults()
+    {
+        var service = Setup();
+        var accountId = Guid.NewGuid();
+        service.Add(new Entity("account", accountId) {
+            ["re_salesforceaccountid"] = "source-account", ["re_salesorganizations"] = "MKOF"
+        });
+        var firstContact = Guid.NewGuid();
+        service.Add(new Entity("contact", firstContact) {
+            ["parentcustomerid"] = new EntityReference("account", accountId),
+            ["re_salesforcecontactid"] = "source-contact", ["re_sourceactive"] = true,
+            ["re_salesforcename"] = "Source Contact", ["emailaddress1"] = "test@example.invalid",
+            ["re_primarycontact"] = true
+        });
+        service.Add(new Entity("contact", Guid.NewGuid()) {
+            ["parentcustomerid"] = new EntityReference("account", Guid.NewGuid()),
+            ["re_salesforcecontactid"] = "other", ["re_sourceactive"] = true,
+            ["re_salesforcename"] = "Other Account Contact", ["emailaddress1"] = "other@example.invalid"
+        });
+        service.Add(new Entity("contact", Guid.NewGuid()) {
+            ["parentcustomerid"] = new EntityReference("account", accountId),
+            ["re_salesforcecontactid"] = "inactive", ["re_sourceactive"] = false,
+            ["re_salesforcename"] = "Inactive Contact", ["emailaddress1"] = "inactive@example.invalid"
+        });
+        foreach (var location in new[] { "Site A", "Site A", "Site B" })
+            service.Add(new Entity("re_equipment", Guid.NewGuid()) {
+                ["re_customeraccount"] = new EntityReference("account", accountId),
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = location
+            });
+        service.Add(new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_customeraccount"] = new EntityReference("account", accountId),
+            ["re_branch"] = new EntityReference("re_branch", Guid.NewGuid()), ["re_functionallocation"] = "Other Branch"
+        });
+        var input = new Draft { mode = "contactsearch", search = "", accountId = accountId.ToString(),
+            branchId = Branch.ToString(), market = 126110000 };
+        var search = typeof(DraftPlugin).GetMethod("SearchMasterRecords", BindingFlags.Static | BindingFlags.NonPublic);
+        Func<Draft> get = () => (Draft)search.Invoke(null, new object[] { service, input });
+        var before = service.Rows.Count;
+        var result = get();
+        Assert(result.contacts.Count == 1 && result.contacts[0].id == firstContact.ToString() &&
+            result.contacts[0].primary && result.contacts[0].phone == "", "Only eligible linked Contacts, preserving primary flag");
+        Assert(result.locations.SequenceEqual(new[] { "Site A", "Site B" }), "Distinct Account-and-Branch locations only");
+        Assert(service.Rows.Count == before && service.Deletes == 0, "Defaults must not mutate records");
+        input.search = "S";
+        Reject(() => get(), "at least two characters");
+        input.search = "Source";
+        Assert(get().contacts.Count == 1, "Existing prefix search must still work");
+        input.search = ""; input.market = 126110001;
+        Reject(() => get(), "selected market");
+        input.market = 126110000;
+        for (var i = 0; i < 21; i++)
+        {
+            service.Add(new Entity("contact", Guid.NewGuid()) {
+                ["parentcustomerid"] = new EntityReference("account", accountId),
+                ["re_salesforcecontactid"] = "contact" + i, ["re_sourceactive"] = true,
+                ["re_salesforcename"] = "Contact " + i, ["emailaddress1"] = "test@example.invalid"
+            });
+            service.Add(new Entity("re_equipment", Guid.NewGuid()) {
+                ["re_customeraccount"] = new EntityReference("account", accountId),
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Extra " + i
+            });
+        }
+        result = get();
+        Assert(result.contactsTruncated && result.contacts.Count == 20, "Contact truncation must be explicit");
+        Assert(result.locationsTruncated && result.locations.Count == 20, "Location truncation must be explicit");
+    }
+
     static FakeService Setup()
     {
         var service = new FakeService();
@@ -74,6 +141,7 @@ static class DraftServiceTests
     public static void RunAll()
     {
         TestChoices();
+        TestPackageEquipment();
         TestUnlistedEquipmentDetails();
         TestPresets();
         TestPackageMaterialPricing();
@@ -182,6 +250,60 @@ static class DraftServiceTests
         service.ChoiceValues["re_papertype"] = new int[0];
         Reject(() => readChoices.Invoke(null, new object[] { service }), "unavailable");
         Console.WriteLine("Live choice metadata and validation cases passed.");
+    }
+
+    public static void TestPackageEquipment()
+    {
+        var account = Guid.NewGuid(); var contact = Guid.NewGuid();
+        Func<FakeService> setup = () => {
+            var target = Setup();
+            target.Add(new Entity("account", account) {
+                ["re_salesforceaccountid"] = "source-account", ["re_salesorganizations"] = "MKOF",
+                ["accountnumber"] = "A1", ["name"] = "Account"
+            });
+            target.Add(new Entity("contact", contact) {
+                ["re_salesforcecontactid"] = "source-contact", ["re_sourceactive"] = true,
+                ["parentcustomerid"] = new EntityReference("account", account),
+                ["re_salesforcename"] = "Customer", ["emailaddress1"] = "customer@example.invalid"
+            });
+            return target;
+        };
+        Func<Draft> create = () => {
+            var draft = Input(); draft.accountId = account.ToString(); draft.contactId = contact.ToString();
+            return draft;
+        };
+        var service = setup();
+        var input = create();
+        for (int n = 2; n <= 5; n++) input.equipment.Add(new EquipmentInput { number = "E" + n, matched = false });
+        input.packages[0].equipmentNumbers = new List<string> { "E1", "E2", "E3", "E4" };
+        Run(service, input);
+        var loaded = Load(service, input);
+        Assert(loaded.packages[0].equipmentNumbers.SequenceEqual(input.packages[0].equipmentNumbers), "Assignments must roundtrip");
+        var row = service.Rows.Values.Single(e => e.LogicalName == "re_estimatepackage");
+        Assert(row.GetAttributeValue<int>("re_quantity") == 4 &&
+            row.GetAttributeValue<decimal>("re_totalhours") == 10m &&
+            row.GetAttributeValue<Money>("re_totalmaterial").Value == 500m, "Package snapshot costs must use the subset");
+        input.version = loaded.version;
+        input.packages[0].equipmentNumbers = null;
+        Reject(() => Run(service, input), "Reload with the current app");
+        input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+        input.packages[0].allEquipment = true;
+        Run(service, input);
+        Assert(Load(service, input).packages[0].equipmentNumbers == null &&
+            service.Rows.Values.Single(e => e.LogicalName == "re_estimatepackage").GetAttributeValue<int>("re_quantity") == 5,
+            "Explicit all-equipment reset must restore default");
+        foreach (var numbers in new[] { new List<string>(), new List<string> { "E1", "E1" }, new List<string> { "UNKNOWN" } })
+        {
+            var invalid = create(); invalid.packages[0].equipmentNumbers = numbers;
+            var target = setup();
+            Reject(() => Run(target, invalid), "PACKAGE_EQUIPMENT_INVALID");
+            Assert(!target.Rows.ContainsKey(Guid.Parse(invalid.id)), "Invalid assignments must fail before creating a header");
+        }
+        service = setup(); input = create(); input.packages[0].equipmentNumbers = new List<string> { "E1" };
+        Run(service, input);
+        row = service.Rows.Values.Single(e => e.LogicalName == "re_estimatepackage");
+        row["re_quantity"] = 2;
+        Reject(() => Load(service, input), "PACKAGE_EQUIPMENT_QUANTITY_MISMATCH");
     }
 
     static void TestUnlistedEquipmentDetails()

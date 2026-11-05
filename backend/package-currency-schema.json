@@ -1,0 +1,14 @@
+{
+  "status": "approved-for-dev",
+  "table": "re_repairpackage",
+  "identity": ["re_packagenumber", "re_currency"],
+  "migration": "Create and verify the composite alternate key first, then remove the number-only key. Preserve all GUIDs and existing prices. New imports require re_currency. Existing null-currency rows must be reviewed separately.",
+  "columns": {
+    "re_sourceexportmetadata": {
+      "type": "Memo",
+      "maximumLength": 100000,
+      "description": "Exact source workbook identity, sheet, row and typed reference cells for imported package masters. Never include example estimate transactions."
+    }
+  },
+  "selection": "Frontend catalog and clone must filter by branch currency as well as compatible/global country. Server currency validation remains unchanged."
+}

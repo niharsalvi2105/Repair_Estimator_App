@@ -1,0 +1,16 @@
+{
+  "environmentId": "294703ba-95fe-eca6-b3bb-dfadad011f06",
+  "solutionUniqueName": "RepairEstimatorApp",
+  "sourceOrganizationToMarket": {
+    "accounts": { "MKOF": "MKO", "CKE": "CKE", "CKQ": "CKQ" },
+    "equipment": { "MKOF": "MKO", "CKE": "CKE", "CKQ": "CKQ" },
+    "pricing": { "MKOM": "MKO" }
+  },
+  "contactNamePolicy": "Complete source Name in lastname and re_salesforcename; firstname null. Never split the source name.",
+  "importScope": "Preserve valid source masters regardless of active flags; dropdown eligibility is separate.",
+  "equipmentRelationshipPolicy": "Exact Account.Id only. Preserve original number strings; quarantine missing parent IDs and duplicate equipment numbers.",
+  "existingNativeRecordPolicy": "Never attach or overwrite a native record based only on account number or email. Report collisions for reconciliation.",
+  "contactIdentityPolicy": "Use the Salesforce Contact ID as identity. Preserve distinct source contacts that share an email; reject an email match only when the existing Contact has no source ID.",
+  "destructiveActions": false,
+  "activateCatalogOrExport": false
+}

@@ -26,6 +26,13 @@ backend-pricing-tests/obj
 *.local
 .env.production
 
+# Local importer caches and private staging databases
+__pycache__/
+*.py[cod]
+*.sqlite
+*.sqlite-*
+*.sqlite.lock
+
 # Local business-data extracts and generated audit workbooks
 Audit_Track/CSTM_Material_Import_2026-11-01/
 Audit_Track/Contract_Equipment_Import_2026-11-01/

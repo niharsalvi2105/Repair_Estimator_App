@@ -5,7 +5,7 @@ export const OPPORTUNITY_FIELDS = [
   're_customerbudgeted', 're_papertype', 're_consultantinvolved', 're_competingbids', 're_proposallanguage',
 ] as const
 export type OpportunityValues = Pick<DraftRecord, 'branchId' | 'stateId' | 'equipmentTypeId' | 'jobTypeId' |
-  'building' | 'customer' | 'email' | 'phone' | 'market' | 'fields'>
+  'building' | 'customer' | 'email' | 'phone' | 'accountId' | 'accountNumber' | 'accountName' | 'contactId' | 'market' | 'fields'>
 export type CloneSections = { opportunity: boolean; equipment: boolean; packages: boolean; custom: boolean; notes: boolean }
 export const DEFAULT_CLONE_SECTIONS: CloneSections = { opportunity: true, equipment: false, packages: false, custom: false, notes: false }
 const CUSTOM_FIELDS = ['re_timecategory', 're_additionallaborhours', 're_additionalmaterial',
@@ -17,7 +17,9 @@ export function opportunityValues(source: OpportunityValues): OpportunityValues 
   return {
     branchId: source.branchId, stateId: source.stateId, equipmentTypeId: source.equipmentTypeId,
     jobTypeId: source.jobTypeId ?? '', building: source.building, customer: source.customer,
-    email: source.email ?? '', phone: source.phone ?? '', market: source.market,
+    email: source.email ?? '', phone: source.phone ?? '', accountId: source.accountId ?? '',
+    accountNumber: source.accountNumber ?? '', accountName: source.accountName ?? '',
+    contactId: source.contactId ?? '', market: source.market,
     fields: source.fields.filter(field => allowedOpportunityFields.has(field.key)).map(field => ({ ...field })),
   }
 }
@@ -36,6 +38,19 @@ export function parseOpportunityValues(value: unknown): OpportunityValues {
   }
   if (!record.branchId || !record.stateId || !record.equipmentTypeId || !record.building?.trim() ||
     !record.customer?.trim() || !record.email?.trim()) throw new Error('Complete the Opportunity details before saving a preset.')
+  if (
+    (record.accountId != null && typeof record.accountId !== 'string') ||
+    (record.accountNumber != null && typeof record.accountNumber !== 'string') ||
+    (record.accountName != null && typeof record.accountName !== 'string') ||
+    (record.accountNumber != null && record.accountNumber.length > 50) ||
+    (record.accountName != null && record.accountName.length > 300) ||
+    (record.contactId != null && typeof record.contactId !== 'string') ||
+    (record.accountId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.accountId)) ||
+    (record.contactId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.contactId)) ||
+    (record.contactId && !record.accountId) ||
+    (record.accountId && (!record.accountNumber?.trim() || !record.accountName?.trim()))
+  )
+    throw new Error('Invalid Opportunity customer selection.')
   if (record.fields.some(field => !field || !allowedOpportunityFields.has(field.key) ||
     typeof field.value !== 'string' || field.value.length > 100) ||
     new Set(record.fields.map(field => field.key)).size !== record.fields.length)
@@ -55,12 +70,13 @@ export function cloneRequest(source: DraftRecord | OpportunityValues, sections: 
     .map(field => ({ ...field }))
   const opportunity = sections.opportunity ? opportunityValues(source) : {
     market: source.market, branchId: source.branchId, stateId: '', equipmentTypeId: '', jobTypeId: '',
-    building: '', customer: '', email: '', phone: '', fields: [],
+    building: '', customer: '', email: '', phone: '', accountId: '', contactId: '', fields: [],
   }
   return {
     ...opportunity, mode: 'save', id, version: null, title: '', fields,
     equipment: sections.equipment ? (full?.equipment ?? []).map(row => ({ ...row })) : [],
-    packages: sections.packages ? (full?.packages ?? []).map(row => ({ ...row })) : [],
+    packages: sections.packages ? (full?.packages ?? []).map(row => ({ ...row,
+      equipmentNumbers: sections.equipment ? row.equipmentNumbers?.slice() : undefined })) : [],
     laborLines: sections.custom ? (full?.laborLines ?? []).map(row => ({ ...row, id: crypto.randomUUID(), rate: undefined })) : [],
     materialLines: sections.custom ? (full?.materialLines ?? []).map(row => ({
       ...row, id: crypto.randomUUID(), refreshPart: !!row.catalogPartId,

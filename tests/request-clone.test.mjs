@@ -31,6 +31,16 @@ function transport() {
       re_mechanichours: 3, re_materialmisctaxcost: 300, re_iscustompackage: true }],
   }
 }
+test('equipment assignments survive full clone and current-master revalidation', async () => {
+  const original = source()
+  original.packages[0].equipmentNumbers = ['E1']
+  const copy = cloneRequest(original, { ...DEFAULT_CLONE_SECTIONS, equipment: true, packages: true }, 'new')
+  assert.deepEqual(copy.packages[0].equipmentNumbers, ['E1'])
+  assert.notEqual(copy.packages[0].equipmentNumbers, original.packages[0].equipmentNumbers)
+  assert.deepEqual((await revalidateClone(copy, transport())).packages[0].equipmentNumbers, ['E1'])
+  const packagesOnly = cloneRequest(original, { ...DEFAULT_CLONE_SECTIONS, packages: true }, 'new')
+  assert.equal(packagesOnly.packages[0].equipmentNumbers, undefined)
+})
 test('default clone copies only approved Opportunity values, with fresh unsaved identity', () => {
   const original = source()
   const before = structuredClone(original)
@@ -44,6 +54,20 @@ test('default clone copies only approved Opportunity values, with fresh unsaved 
   assert.deepEqual(copy.packages, [])
   assert.deepEqual(copy.laborLines, [])
   assert.deepEqual(original, before)
+})
+test('cloning preserves selected Account and Contact references', () => {
+  const original = {
+    ...source(), accountId: '11111111-1111-4111-8111-111111111111', accountNumber: 'A-42',
+    accountName: 'Customer Account', contactId: '22222222-2222-4222-8222-222222222222',
+  }
+  const values = opportunityValues(original)
+  assert.deepEqual(parseOpportunityValues(values), values)
+  const copy = cloneRequest(original, DEFAULT_CLONE_SECTIONS, 'new')
+  assert.equal(copy.accountId, original.accountId)
+  assert.equal(copy.accountNumber, original.accountNumber)
+  assert.equal(copy.accountName, original.accountName)
+  assert.equal(copy.contactId, original.contactId)
+  assert.throws(() => parseOpportunityValues({ ...values, contactId: 'bad' }))
 })
 test('custom cloning preserves selected inputs but refreshes rates, catalog snapshots and line IDs', () => {
   const original = source()

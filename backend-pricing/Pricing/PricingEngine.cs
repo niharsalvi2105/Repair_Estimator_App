@@ -10,7 +10,7 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.6";
+        public const string Version = "2026.7";
 
         public static PricingResult Calculate(EstimateInput i)
         {
@@ -33,7 +33,8 @@ namespace RepairEstimator.Plugins.Pricing
             var r = new PricingResult();
             var p = i.Parameters;
             if (i.MechanicLaborRate < 0 || i.UseTaxPct < 0 || i.UseTaxPct > 1 || i.FreightPct < 0 || i.FreightPct > 1 ||
-                i.Packages.Any(x => x.MechanicHoursPerUnit < 0 || x.MaterialCostPerUnit < 0) ||
+                i.Packages.Any(x => x.MechanicHoursPerUnit < 0 || x.MaterialCostPerUnit < 0 ||
+                    (x.EquipmentQuantity.HasValue && (x.EquipmentQuantity.Value < 1 || x.EquipmentQuantity.Value > i.EquipmentLineCount))) ||
                 i.AdditionalLaborHours < 0 || i.AdditionalMaterial < 0 || i.AdditionalMisc < 0 ||
                 i.KoneSparesSalesPrice < 0 ||
                 i.LaborLines.Any(x => x.Hours < 0 || x.Rate < 0 || x.Multiplier < 0) ||
@@ -107,7 +108,7 @@ namespace RepairEstimator.Plugins.Pricing
                 if (i.IsCustomPath && (i.KoneSparesSalesPrice > 0m || itemizedKone.Count > 0 || packageKone.Count > 0))
                 {
                     var selling = packageKone.Count > 0
-                        ? packageKone.Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment
+                        ? packageKone.Sum(x => x.MaterialCostPerUnit * PackageUnits(x, r))
                         : itemizedKone.Count > 0
                         ? itemizedKone.Sum(m => m.Quantity * m.UnitSellingPrice.Value *
                             (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m) + m.MarkupPercent.Value / 100m))
@@ -172,10 +173,10 @@ namespace RepairEstimator.Plugins.Pricing
             decimal markup = 1m + tax + freight;
 
             // Package costs scale by equipment; custom lines and additions are estimate-level.
-            decimal hours = i.Packages.Sum(x => x.MechanicHoursPerUnit) * r.NumberOfEquipment;
-            decimal packageKone = i.Packages.Where(x => x.PackagePricedKone).Sum(x => x.MaterialBeforeMarkup.Value) * r.NumberOfEquipment;
-            decimal customPackageMaterial = i.Packages.Where(x => x.IsCustom && !x.PackagePricedKone).Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment;
-            decimal standardPackageMaterial = i.Packages.Where(x => !x.IsCustom).Sum(x => x.MaterialCostPerUnit) * r.NumberOfEquipment;
+            decimal hours = i.Packages.Sum(x => x.MechanicHoursPerUnit * PackageUnits(x, r));
+            decimal packageKone = i.Packages.Where(x => x.PackagePricedKone).Sum(x => x.MaterialBeforeMarkup.Value * PackageUnits(x, r));
+            decimal customPackageMaterial = i.Packages.Where(x => x.IsCustom && !x.PackagePricedKone).Sum(x => x.MaterialCostPerUnit * PackageUnits(x, r));
+            decimal standardPackageMaterial = i.Packages.Where(x => !x.IsCustom).Sum(x => x.MaterialCostPerUnit * PackageUnits(x, r));
             decimal packageMaterial = standardPackageMaterial + customPackageMaterial + packageKone;
             decimal packageTax = standardPackageMaterial * EstimateInput.StandardUseTax + customPackageMaterial * tax;
             decimal packageFreight = standardPackageMaterial * EstimateInput.StandardFreight + customPackageMaterial * freight;
@@ -293,13 +294,13 @@ namespace RepairEstimator.Plugins.Pricing
         private static decimal? StatedRateMargin(EstimateInput i, PricingResult r)
         {
             if (!r.TargetCm2.HasValue) return null;
-            decimal packageMaterial = i.Packages.Sum(x => x.PackagePricedKone ? x.MaterialBeforeMarkup.Value : x.MaterialCostPerUnit *
+            decimal packageMaterial = i.Packages.Sum(x => (x.PackagePricedKone ? x.MaterialBeforeMarkup.Value : x.MaterialCostPerUnit *
                 (1m + (x.IsCustom ? i.UseTaxPct : EstimateInput.StandardUseTax)
-                    + (x.IsCustom ? i.FreightPct : EstimateInput.StandardFreight))) * r.NumberOfEquipment;
+                    + (x.IsCustom ? i.FreightPct : EstimateInput.StandardFreight))) * PackageUnits(x, r));
             decimal hours, material;
             if (i.IsCustomPath)
             {
-                hours = i.Packages.Sum(x => x.MechanicHoursPerUnit) * r.NumberOfEquipment
+                hours = i.Packages.Sum(x => x.MechanicHoursPerUnit * PackageUnits(x, r))
                     + i.AdditionalLaborHours + i.LaborLines.Sum(l => l.Hours);
                 material = i.MaterialLines.Sum(m => m.Quantity * m.UnitCost * (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m)))
                     + packageMaterial
@@ -307,8 +308,7 @@ namespace RepairEstimator.Plugins.Pricing
             }
             else
             {
-                decimal units = r.NumberOfEquipment;
-                hours = i.Packages.Sum(x => x.MechanicHoursPerUnit) * units + i.AdditionalLaborHours;
+                hours = i.Packages.Sum(x => x.MechanicHoursPerUnit * PackageUnits(x, r)) + i.AdditionalLaborHours;
                 material = packageMaterial + i.AdditionalMaterial + i.AdditionalMisc;
             }
 
@@ -319,6 +319,9 @@ namespace RepairEstimator.Plugins.Pricing
             decimal sell = hours * i.StatedLaborRate + material / (1m - Math.Max(floor, r.TargetCm2.Value));
             return sell == 0m ? (decimal?)null : (sell - cost) / sell;
         }
+
+        private static int PackageUnits(PackageInput package, PricingResult result) =>
+            package.EquipmentQuantity ?? result.NumberOfEquipment;
 
         private static bool IsKoneMaterial(MaterialLineInput m)
         {

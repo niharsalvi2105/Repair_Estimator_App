@@ -12,11 +12,33 @@ const fixture = () => ({
   packages: [{ id: 'package-id', number: 'P1', nameEn: 'Package', scopeEn: 'Scope', hours: 2.5, material: 125 }],
 })
 
+test('package equipment snapshots roundtrip and reject invalid subsets', () => {
+  const original = fixture()
+  for (const equipmentNumbers of [undefined, null, ['UNLISTED']])
+    assert.deepEqual(parseDraft({ ...original, packages: [{ ...original.packages[0], equipmentNumbers }] }).packages[0].equipmentNumbers, equipmentNumbers)
+  for (const equipmentNumbers of [[], ['UNLISTED', 'UNLISTED'], ['MISSING'], [1], 'UNLISTED'])
+    assert.throws(() => parseDraft({ ...original, packages: [{ ...original.packages[0], equipmentNumbers }] }), /package snapshot/)
+})
+
 test('draft responses preserve row version, snapshots and display percentages', () => {
   const record = parseDraft(fixture())
   assert.equal(record.version, '17')
   assert.equal(record.packages[0].hours, 2.5)
   assert.deepEqual(draftInputs(record), { re_usetax: '5', re_freight: '0' })
+})
+
+test('draft responses retain valid Account and Contact references', () => {
+  const record = parseDraft({
+    ...fixture(), accountId: '11111111-1111-4111-8111-111111111111', accountNumber: 'A-42',
+    accountName: 'Customer Account', contactId: '22222222-2222-4222-8222-222222222222',
+  })
+  assert.equal(record.accountId, '11111111-1111-4111-8111-111111111111')
+  assert.equal(record.contactId, '22222222-2222-4222-8222-222222222222')
+  for (const change of [
+    { contactId: 'bad' },
+    { contactId: '22222222-2222-4222-8222-222222222222' },
+    { accountId: '11111111-1111-4111-8111-111111111111' },
+  ]) assert.throws(() => parseDraft({ ...fixture(), ...change }), /customer master/i)
 })
 
 test('pricing state accepts old responses and nullable strings but rejects malformed values', () => {

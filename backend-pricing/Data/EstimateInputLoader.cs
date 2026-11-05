@@ -17,6 +17,7 @@ namespace RepairEstimator.Plugins.Data
         public bool HasPackages { get; set; }
         public int RedundancyCount { get; set; }
         public string VerticalBand { get; set; }
+        public List<string> EquipmentNumbers { get; set; } = new List<string>();
     }
 
     internal static class EstimateInputLoader
@@ -156,6 +157,7 @@ namespace RepairEstimator.Plugins.Data
             query.Criteria.AddCondition(Names.ChildParentLookup, ConditionOperator.Equal, est.Id);
             var lines = Query.All(s, query);
             input.EquipmentLineCount = lines.Count;
+            loaded.EquipmentNumbers = lines.Select(line => line.GetAttributeValue<string>(Names.EstimateEquipment.NumberSnapshot)).ToList();
 
             var primary = lines.FirstOrDefault(l => l.GetAttributeValue<bool?>(Names.EstimateEquipment.IsPrimary) == true)
                 ?? lines.OrderBy(l => l.GetAttributeValue<int?>(Names.EstimateEquipment.Sequence) ?? int.MaxValue).FirstOrDefault();
@@ -211,6 +213,7 @@ namespace RepairEstimator.Plugins.Data
                 input.Packages.Add(new PackageInput
                 {
                     Id = line.Id,
+                    EquipmentQuantity = RepairEstimator.Shared.PackageEquipmentSnapshot.Read(line, loaded.EquipmentNumbers)?.Count,
                     PackagePricedKone = line.GetAttributeValue<bool>("re_packagepricedkone"),
                     MaterialBeforeMarkup = Query.Money(line, "re_materialbeforemarkup"),
                     IsCustom = line.GetAttributeValue<bool>("re_iscustompackage"),

@@ -13,6 +13,7 @@ import {
   type ReferenceOption,
 } from './data/repairEstimatorRepository'
 import './App.css'
+import { validPackageEquipment } from './data/packageEquipment'
 import { EstimateList } from './EstimateList'
 import { LazyWorkspace } from './LazyWorkspace'
 import { DashboardMetrics } from './DashboardMetrics'
@@ -23,7 +24,7 @@ import { customCostsError, pricingUnavailableMessage, statedRateError, submissio
 import type { Market } from './data/estimateQuery'
 import { useUserPreferences } from './useUserPreferences'
 import { UserAvatar } from './UserAvatar'
-import koneLogo from './assets/kone-logo-small.jpg?no-inline'
+import koneLogo from './assets/kone-logo-small.jpg?inline'
 import { draftOperation, draftInputs, type DraftRecord } from './data/draftRepository'
 import { serializeDraft, MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial, type ExportDelivery } from './data/draftContract'
 import { submissionDeliveryMessage } from './data/submissionDelivery'
@@ -33,6 +34,7 @@ import { revalidateClone } from './data/cloneValidation'
 import { getDraftChoices } from './data/draftChoiceRepository'
 import { CloneRequestWorkspace } from './CloneRequestWorkspace'
 import { CloneRequestDialog } from './CloneRequestDialog'
+import type { AccountMasterOption, ContactMasterOption } from './data/customerMasterRepository'
 import { requestReuseErrorMessage } from './data/dataverseOperation'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
@@ -132,7 +134,7 @@ const copy = {
     requestDetails: 'Repair request details',
     salesperson: 'Salesperson (signed-in user)',
     locationAssignment: 'Location & assignment',
-    opportunityHint: 'Estimator header inputs for the selected market. Supervisor is optional; customer contact details are confirmed at review.',
+    opportunityHint: 'Select a branch and Account number. Account name, linked Contact, email, phone and functional location numbers are fetched from Dataverse where available. Confirm any ambiguous or missing values.',
     nextEquipment: 'Continue to equipment & packages',
     costsHint: 'Review all selected package costs before additional details. Additional cost inputs require a CSTM package. Save to calculate authoritative server pricing.',
     pricingHint: 'Use Calculate below to save your draft and calculate pricing in Dataverse. After changing inputs, use Recalculate. An entered selling price is not an approved quote.',
@@ -286,7 +288,7 @@ const copy = {
     requestDetails: 'Détails de la réparation',
     salesperson: 'Vendeur (utilisateur connecté)',
     locationAssignment: 'Emplacement et affectation',
-    opportunityHint: 'En-tête de l’estimateur pour le marché sélectionné. Le superviseur est facultatif ; les coordonnées du client sont confirmées à la vérification.',
+    opportunityHint: 'Sélectionnez une succursale et un numéro de compte. Les données client liées sont chargées depuis Dataverse. Confirmez les valeurs manquantes ou ambiguës.',
     nextEquipment: 'Continuer vers les équipements et forfaits',
     costsHint: 'Vérifiez les coûts des forfaits avant les détails supplémentaires. Les ajouts nécessitent un forfait CSTM. Enregistrez pour calculer les prix sur le serveur.',
     pricingHint: 'Utilisez Calculer ci-dessous pour enregistrer le brouillon et calculer les prix dans Dataverse. Après modification, utilisez Recalculer. Le prix saisi n’est pas un devis approuvé.',
@@ -441,9 +443,11 @@ function App() {
   const [laborLines, setLaborLines] = useState<DraftLabor[]>([])
   const [materialLines, setMaterialLines] = useState<DraftMaterial[]>([])
   const [step, setStep] = useState(1)
-  const [customerName, setCustomerName] = useState('')
-  const [customerEmail, setCustomerEmail] = useState('')
-  const [customerPhone, setCustomerPhone] = useState('')
+  const [selectedAccount, setSelectedAccount] = useState<AccountMasterOption | null>(null)
+  const [selectedContact, setSelectedContact] = useState<ContactMasterOption | null>(null)
+  const customerName = selectedContact?.name ?? ''
+  const customerEmail = selectedContact?.email ?? ''
+  const customerPhone = selectedContact?.phone ?? ''
   const [buildingName, setBuildingName] = useState('')
   const [session, setSession] = useState<AppSession>()
   const preferences = useUserPreferences(session)
@@ -466,8 +470,9 @@ function App() {
   const [draftReferences, setDraftReferences] = useState<DraftReferences>()
   const [draftReferenceError, setDraftReferenceError] = useState('')
   const [stateId, setStateId] = useState('')
-  const [estimateTitle, setEstimateTitle] = useState('')
   const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID())
+  const [enteredEstimateTitle, setEstimateTitle] = useState('')
+  const estimateTitle = enteredEstimateTitle || `Repair - ${(selectedAccount?.name || (market === 126110000 ? 'MKO' : market === 126110001 ? 'CKE' : 'CKQ')).slice(0, 80)} - ${draftId.slice(0, 8)}`
   const [draftVersion, setDraftVersion] = useState<string | null>(null)
   const [draftNumber, setDraftNumber] = useState('')
   const [savedSnapshot, setSavedSnapshot] = useState('')
@@ -525,11 +530,14 @@ function App() {
   const canWork = canStart || Boolean(draftVersion)
   const currentSnapshot = useMemo(() => JSON.stringify({
     branchId, stateId, estimateTitle, buildingName, customerName, customerEmail, customerPhone,
+    accountId: selectedAccount?.id ?? '', contactId: selectedContact?.id ?? '',
     equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages, laborLines, materialLines,
   }), [branchId, stateId, estimateTitle, buildingName, customerName, customerEmail, customerPhone,
+    selectedAccount, selectedContact,
     equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages, laborLines, materialLines])
-  const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || estimateTitle
-    || customerName || customerEmail || customerPhone || equipmentTypeId || jobTypeId || Object.values(editableRequestInputs).some(Boolean))
+  const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || enteredEstimateTitle
+    || customerName || customerEmail || customerPhone || selectedAccount || selectedContact ||
+    equipmentTypeId || jobTypeId || Object.values(editableRequestInputs).some(Boolean))
   const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty || masterDirty || masterBusy || reuseBusy)
   const selectedBranch = branches.find((branch) => branch.re_branchid === branchId)
   const marketBranches = branches.filter((branch) => branch.re_market === market)
@@ -644,12 +652,13 @@ function App() {
   const equipmentError = equipmentBulkError || (equipmentSearch?.key === equipmentSearchKey ? equipmentSearch.error : '')
 
   const packageCountryId = selectedBranch?._re_country_value
-  const packageKey = packageCountryId ? `${packageCountryId}:${packageAttempt}` : ''
+  const packageCurrencyId = selectedBranch?._re_currency_value
+  const packageKey = packageCountryId && packageCurrencyId ? `${packageCountryId}:${packageCurrencyId}:${packageAttempt}` : ''
 
   useEffect(() => {
-    if (!packageCountryId) return
+    if (!packageCountryId || !packageCurrencyId) return
     let cancelled = false
-    listPackages(packageCountryId)
+    listPackages(packageCountryId, packageCurrencyId)
       .then((records) => {
         if (!cancelled) setPackageCatalog({ key: packageKey, records, error: '' })
       })
@@ -657,7 +666,7 @@ function App() {
         if (!cancelled) setPackageCatalog({ key: packageKey, records: [], error: message(error) })
       })
     return () => { cancelled = true }
-  }, [packageCountryId, packageKey])
+  }, [packageCountryId, packageCurrencyId, packageKey])
 
   const packageLoading = packageKey !== '' && packageCatalog?.key !== packageKey
   const packageResults = packageCatalog?.key === packageKey ? packageCatalog.records : []
@@ -671,6 +680,8 @@ function App() {
   function toggleEquipment(equipment: Equipment) {
     if (selectedEquipment.some((item) => item.number === equipment.re_equipment)) {
       setSelectedEquipment((current) => current.filter((item) => item.number !== equipment.re_equipment))
+      setSelectedPackages((current) => current.map((p) => ({ ...p,
+        equipmentNumbers: p.equipmentNumbers?.filter((number) => number !== equipment.re_equipment) })))
       return
     }
     setSelectedEquipment((current) => [...current, toSelectedEquipment(equipment)])
@@ -765,7 +776,8 @@ function App() {
     setEquipmentBulkBusy(false)
     setEquipmentBulkError('')
     setBranchId(nextBranchId)
-    setCustomerName('')
+    setSelectedAccount(null); setSelectedContact(null)
+    setBuildingName('')
     setEquipmentQuery('')
     setSelectedEquipment([])
     setSelectedPackages([])
@@ -841,7 +853,7 @@ function App() {
     save: 'Enregistrer le brouillon', saving: 'Enregistrement…', saved: 'Brouillon enregistré',
     open: 'Ouvrir le brouillon', working: 'Opération en cours…', new: 'Nouveau brouillon',
     warning: 'Des modifications ne sont pas enregistrées. Les abandonner ?',
-    required: 'Renseignez le nom de l’opportunité, le client, le courriel du client, la description de l’emplacement fonctionnel, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
+    required: 'Renseignez le nom de l’opportunité, le compte, le contact, le courriel du contact, la description de l’emplacement fonctionnel, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
     note: 'Enregistrez un brouillon ou soumettez le devis depuis la vérification finale. La soumission valide les prix et verrouille les modifications, sans envoyer de courriel.',
     error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
     reload: 'Recharger le brouillon', locked: 'La succursale et le marché sont fixes pour un brouillon enregistré.',
@@ -850,13 +862,15 @@ function App() {
     save: 'Save draft', saving: 'Saving…', saved: 'Draft saved',
     open: 'Open draft', working: 'Operation in progress…', new: 'New draft',
     warning: 'There are unsaved changes. Discard them?',
-    required: 'Complete opportunity name, customer, customer email, functional location description, province, equipment, packages, proposal language, time category, use tax and freight.',
+    required: 'Complete opportunity name, Account, Contact, Contact email, functional location description, province, equipment, packages, proposal language, time category, use tax and freight.',
     note: 'Save a draft or submit from Review. Submission validates pricing and locks editing; no email is sent.',
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
   }
   const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && buildingName.trim() && stateId
+    && selectedAccount?.id && selectedContact?.id
     && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
+    && selectedPackages.every((item) => validPackageEquipment(item, selectedEquipment))
     && requestInputs.re_proposallanguage && requestInputs.re_timecategory
     && requestInputs.re_usetax?.trim() && requestInputs.re_freight?.trim()
     && selectedBranch?._re_currency_value && draftReferences
@@ -880,6 +894,7 @@ function App() {
       re_proposalscopefr: item.scopeFr ?? undefined, re_mechanichours: item.hours, re_materialmisctaxcost: item.material,
       re_materialbeforemarkup: item.materialBeforeMarkup ?? undefined,
       re_iscustompackage: item.isCustom ?? false, re_istimematerial: item.isTimeMaterial ?? false,
+      equipmentNumbers: item.equipmentNumbers,
     }))
     const customIds = packages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid)
     if (!customIds.length) {
@@ -897,8 +912,11 @@ function App() {
     setSubmitted(record.status === 126110002)
     setExportDelivery(record.exportDelivery ?? undefined)
     setEstimateTitle(record.title); setBranchId(record.branchId); setStateId(record.stateId)
-    setBuildingName(record.building); setCustomerName(record.customer)
-    setCustomerEmail(record.email ?? ''); setCustomerPhone(record.phone ?? '')
+    setBuildingName(record.building)
+    setSelectedAccount(record.accountId && record.accountNumber && record.accountName
+      ? { id: record.accountId, number: record.accountNumber, name: record.accountName } : null)
+    setSelectedContact(record.contactId
+      ? { id: record.contactId, name: record.customer, email: record.email ?? '', phone: record.phone ?? '' } : null)
     setEquipmentTypeId(record.equipmentTypeId); setJobTypeId(record.jobTypeId ?? '')
     customRatesInitialized.current = true
     setMarket(record.market); setRequestInputs(inputs); setSelectedEquipment(equipment); setSelectedPackages(packages)
@@ -906,7 +924,8 @@ function App() {
     setSavedSnapshot(JSON.stringify({
       branchId: record.branchId, stateId: record.stateId, estimateTitle: record.title,
       buildingName: record.building, customerName: record.customer, customerEmail: record.email ?? '',
-      customerPhone: record.phone ?? '', equipmentTypeId: record.equipmentTypeId, jobTypeId: record.jobTypeId ?? '',
+      customerPhone: record.phone ?? '', accountId: record.accountId ?? '', contactId: record.contactId ?? '',
+      equipmentTypeId: record.equipmentTypeId, jobTypeId: record.jobTypeId ?? '',
       market: record.market, requestInputs: inputs, selectedEquipment: equipment, selectedPackages: packages,
       laborLines: labor, materialLines: materials,
     }))
@@ -937,7 +956,13 @@ function App() {
       setStep(4); return
     }
     const controls = requestSection.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')
-    if (controls && !Array.from(controls).every((input) => input.reportValidity())) return
+    const invalidControl = controls && Array.from(controls).find((input) => !input.checkValidity())
+    if (invalidControl) {
+      const label = invalidControl.labels?.[0]?.textContent?.trim() || invalidControl.id
+      setDraftError(`${language === 'fr' ? 'Vérifiez le champ' : 'Check field'}: ${label}. ${invalidControl.validationMessage}`)
+      invalidControl.reportValidity()
+      return
+    }
     if (submit && !window.confirm(language === 'fr'
       ? 'Soumettre ce devis ? Toutes les modifications seront enregistrées et le devis ne sera plus modifiable.'
       : 'Submit this estimate? All changes will be saved and the estimate will be locked against editing.')) return
@@ -947,11 +972,14 @@ function App() {
         mode: submit ? 'submit' : 'save', id: draftId, version: draftVersion, title: estimateTitle,
         branchId, stateId, equipmentTypeId, jobTypeId, building: buildingName,
         customer: customerName, email: customerEmail, phone: customerPhone, market,
+        accountId: selectedAccount?.id ?? '', accountNumber: selectedAccount?.number ?? '',
+        accountName: selectedAccount?.name ?? '', contactId: selectedContact?.id ?? '',
         fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
         equipment: selectedEquipment.map((item) => ({ ...item, id: item.matched ? item.id : '' })),
         packages: selectedPackages.map((item) => ({ id: item.re_repairpackageid,
           number: item.re_packagenumber, nameEn: item.re_packagenameen, scopeEn: item.re_proposalscopeen ?? '',
-          hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial })),
+          hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial,
+          equipmentNumbers: item.equipmentNumbers ?? null, allEquipment: item.equipmentNumbers == null })),
         laborLines, materialLines,
       }
       serializeDraft(input)
@@ -962,10 +990,20 @@ function App() {
           (item.oem && saved.oem !== item.oem) || (item.age != null && saved.age !== item.age) ||
           (item.customer && saved.customer !== item.customer)
       })
-      if (missingDetails) {
+      const missingAssignments = input.packages.some((item) => {
+        const saved = record.packages.find((row) => row.id === item.id)
+        if (!saved) return true
+        return item.equipmentNumbers == null ? saved.equipmentNumbers != null
+          : saved.equipmentNumbers == null || saved.equipmentNumbers.length !== item.equipmentNumbers.length ||
+            item.equipmentNumbers.some((number) => !saved.equipmentNumbers?.includes(number))
+      })
+      if (missingDetails || missingAssignments) {
         setDraftVersion(record.version); setDraftNumber(record.number || '')
         setSubmitted(record.status === 126110002)
         setExportDelivery(record.exportDelivery ?? undefined)
+        if (missingAssignments) throw new Error(language === 'fr'
+          ? 'Le serveur n’a pas conservé les affectations d’équipements des forfaits. Vos sélections restent à l’écran. La tarification enregistrée ne correspond pas à ces sélections : contactez votre administrateur pour déployer les deux plug-ins mis à jour.'
+          : 'The server did not retain package equipment assignments. Your selections remain on screen. Saved pricing does not match these selections: contact your administrator to deploy both updated plugins.')
         throw new Error(language === 'fr'
           ? 'Le devis a été enregistré, mais le serveur n’a pas conservé les détails des équipements non répertoriés. Vos détails restent à l’écran. Conservez le fichier Excel et contactez votre administrateur pour déployer le plug-in de brouillon mis à jour et récupérer les détails.'
           : 'The draft was saved, but the server did not retain unlisted equipment details. Your details remain on screen. Keep the Excel file and contact your administrator to deploy the updated draft plugin and recover the details.')
@@ -988,7 +1026,7 @@ function App() {
     setSubmitted(false)
     setExportDelivery(undefined)
     setEstimateTitle(''); resetBranch(''); setStateId(''); setEquipmentTypeId(''); setJobTypeId('')
-    setBuildingName(''); setCustomerName(''); setCustomerEmail(''); setCustomerPhone('')
+    setBuildingName(''); setSelectedAccount(null); setSelectedContact(null)
     setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1)
   }
 
@@ -1018,7 +1056,9 @@ function App() {
 
   const currentOpportunity = opportunityValues({
     branchId, stateId, equipmentTypeId, jobTypeId, building: buildingName, customer: customerName,
-    email: customerEmail, phone: customerPhone, market,
+    email: customerEmail, phone: customerPhone, accountId: selectedAccount?.id ?? '',
+    accountNumber: selectedAccount?.number ?? '', accountName: selectedAccount?.name ?? '',
+    contactId: selectedContact?.id ?? '', market,
     fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
   })
 
@@ -1265,9 +1305,18 @@ function App() {
               newDraft,
               onSaveOpportunity: () => navigate('clone'),
               draftBusy,
+              draftError,
               canStart,
               openDraft,
               draftId,
+              selectedAccount,
+              selectedContact,
+              onSelectAccount: (account: AccountMasterOption | null) => {
+                if (selectedAccount) setBuildingName('')
+                setSelectedAccount(account)
+                setSelectedContact(null)
+              },
+              onSelectContact: setSelectedContact,
               canWork,
               draftComplete,
               saveDraft, submitted, exportDelivery,
@@ -1324,11 +1373,8 @@ function App() {
               setSelectedPackages,
               marketName,
               customerName,
-              setCustomerName,
               customerEmail,
-              setCustomerEmail,
               customerPhone,
-              setCustomerPhone,
               setStep,
               onDashboard: () => setView('estimates'),
             }} />

@@ -1,5 +1,6 @@
 import type { RequestInputs } from '../RequestFields'
 import type { Market } from './estimateQuery'
+import { validPackageEquipment } from './packageEquipment.ts'
 
 export type DraftEquipment = {
   id: string; number: string; name: string; location: string; customer: string
@@ -10,6 +11,8 @@ export type DraftPackage = {
   scopeEn: string; scopeFr?: string | null; hours: number; material: number
   isCustom?: boolean; isTimeMaterial?: boolean
   materialBeforeMarkup?: number | null
+  equipmentNumbers?: string[] | null
+  allEquipment?: boolean
 }
 export type DraftLabor = { id: string; packageId?: string | null; role: number; time: number; hours: number; rate?: number }
 export type DraftMaterial = {
@@ -34,6 +37,7 @@ export type DraftRecord = {
   status?: 126110000 | 126110001 | 126110002
   title: string; branchId: string; stateId: string; equipmentTypeId: string; jobTypeId: string
   building: string; customer: string; email: string; phone: string; market: Market
+  accountId?: string | null; accountNumber?: string | null; accountName?: string | null; contactId?: string | null
   salesperson?: string | null
   pricingState?: string | null
   exportDelivery?: ExportDelivery | null
@@ -48,6 +52,8 @@ export function parseDraft(value: unknown): DraftRecord {
     || typeof record.stateId !== 'string' || typeof record.equipmentTypeId !== 'string'
     || typeof record.building !== 'string' || typeof record.customer !== 'string'
     || !nullableString(record.email) || !nullableString(record.phone) || !nullableString(record.jobTypeId)
+    || !nullableString(record.accountId) || !nullableString(record.accountNumber) ||
+      !nullableString(record.accountName) || !nullableString(record.contactId)
     || !nullableString(record.salesperson) || !nullableString(record.number)
     || !nullableString(record.pricingState)
     || (record.status != null && ![126110000, 126110001, 126110002].includes(record.status))
@@ -70,6 +76,13 @@ export function parseDraft(value: unknown): DraftRecord {
         throw new Error('Invalid submission workbook URL.')
     }
   }
+  const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if ((record.accountId && !guidPattern.test(record.accountId)) ||
+    (record.contactId && !guidPattern.test(record.contactId)) ||
+    (record.contactId && !record.accountId) ||
+    (record.accountId && (!record.accountNumber?.trim() || record.accountNumber.length > 50 ||
+      !record.accountName?.trim() || record.accountName.length > 300)))
+    throw new Error('The draft service returned invalid customer master references. Reload before editing.')
   if (record.equipment.length < 1 || record.packages.length < 1 ||
     record.packages.length + record.equipment.length + (record.laborLines?.length ?? 0) +
       (record.materialLines?.length ?? 0) > MAX_DRAFT_CHILD_OPERATIONS)
@@ -91,9 +104,12 @@ export function parseDraft(value: unknown): DraftRecord {
       || !nullableString(item.nameFr) || !nullableString(item.scopeFr)
       || (item.isCustom != null && typeof item.isCustom !== 'boolean')
       || (item.isTimeMaterial != null && typeof item.isTimeMaterial !== 'boolean')
+      || (item.allEquipment != null && typeof item.allEquipment !== 'boolean')
+      || (item.allEquipment === true && item.equipmentNumbers != null)
       || !Number.isFinite(item.hours) || item.hours < 0
       || (item.materialBeforeMarkup != null && (!Number.isFinite(item.materialBeforeMarkup) || item.materialBeforeMarkup < 0))
-      || !Number.isFinite(item.material) || item.material < 0) throw new Error('Invalid draft package snapshot.')
+      || !Number.isFinite(item.material) || item.material < 0 ||
+      !validPackageEquipment(item, record.equipment)) throw new Error('Invalid draft package snapshot.')
   }
   if (record.laborLines != null && (!Array.isArray(record.laborLines) || record.laborLines.some((line) =>
     !line || typeof line.id !== 'string' || !nullableString(line.packageId) || ![126110000, 126110001, 126110002].includes(line.role) ||
