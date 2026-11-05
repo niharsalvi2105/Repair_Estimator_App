@@ -2,6 +2,18 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Account-number to Equipment Description mapping (2026-11-05)
+
+User-approved mapping: selected `account.accountid` plus Branch resolves active `re_equipment` through `re_customeraccount` and `re_branch`; `re_description` supplies location-description candidates. Account number remains the search/display identity, not an unscoped text join. The empty `contactsearch` response adds `locationDescriptions` plus independent truncation/overlength flags. Source metadata was read-only verified: Equipment Description is Memo, while Account generic Description and Equipment Location are blank in the verified sample. Plant Section Description is not the approved source.
+
+One complete distinct description autofills only a blank UI field; several offer a dropdown. Saved/manual text and edits during loading survive. Description candidates are UI-only until explicit Save persists the confirmed value to existing `re_repairestimate.re_buildingname` (300 UTF-16-character limit). The chosen candidate's Equipment GUID is not persisted and the existing API still accepts a manual description; this is not a new authoritative site entity or master-writeback mechanism. No tables, columns, relationships, pricing outputs or permissions change.
+
+A separate bounded Equipment read probes 21 rows with non-null Memo descriptions, ordered by Equipment GUID; candidates come from the first 20, excluding blanks/overlength values and deduplicating ordinally. More rows or any overlength candidate prevents unique autofill and shows an explanation. Missing data requires manual confirmation, never billing-address/location-code substitution. Native read-only Dev inspection found two distinct within-limit linked descriptions for the existing sample, requiring explicit choice. No business values are recorded here.
+
+Validation: 27 local unit cases, signed Drafts customer-defaults executable, production build/type-check, changed-file ESLint, seven mocked browser regressions and five documentation-guard tests passed. The local inactive fixture was corrected because its existing Add helper resets state to active; inactive state is now set after Add. Source/native metadata inspection is not deployment evidence.
+
+Dev deployment evidence: signed Drafts content/hash and unchanged signing/version/type identities were independently verified after publication; the live API's two descriptions and flags matched an exact native query. Frontend push to the existing Code App/solution succeeded (built entry `index-CL4ZeH40.js`). Published-browser cached-version acceptance and non-admin validation remain pending. No new schema, business record writes, Submit/email or import restart.
+
 ### Opportunity defaults read contract (2026-11-05)
 
 Frontend Account number/name now have separate visible controls backed by the selected `account.accountnumber`/`name`. `re_DraftEstimate` `contactsearch` accepts empty search for linked defaults, preserving initiating-user reads and active imported Account/Contact eligibility. Response adds Contact `primary` from `contact.re_primarycontact`, `contactsTruncated`, `locations` and `locationsTruncated`. Contacts still require `parentcustomerid`, source identity/active flag and an email. At most 20 are returned, with a 21st-row truncation probe; a truncated list never establishes a unique default.

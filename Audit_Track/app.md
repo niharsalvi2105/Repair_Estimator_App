@@ -2,6 +2,16 @@
 
 ## 1. Scope and evidence
 
+### Account-linked location descriptions (2026-11-05)
+
+This supersedes the earlier manual-only description limitation below. The user confirmed `re_equipment.re_description` as the authoritative description source. Selecting an Account number reads active Equipment under the exact selected Account and Branch. A complete list with one distinct nonblank description autofills the existing Functional Location Description only when it is blank. Multiple values appear in a labeled Dataverse dropdown for explicit selection; the input remains editable. Saved/manual values, including edits made while the request is in flight, are preserved. Changing an existing Account/Branch clears stale values through the existing handlers, and canceled responses cannot overwrite a new selection.
+
+Description candidates use the existing 300-character `re_buildingname` limit without source truncation. The bounded read probes 21 described Equipment records and returns distinct usable descriptions from the first 20, with independent incomplete-list and overlength warnings. Neither condition permits a unique automatic default. Users can choose a shown description or enter/confirm a compliant missing value. Functional-location numbers remain separate read-only context; billing address, Account generic Description and Plant Section Description are not substitutes. No automatic Save, master writeback or pricing/submission-rule change.
+
+Local validation: production build/type-check, changed-file ESLint, 27 customer/draft/clone unit tests, signed Drafts customer-defaults executable and seven focused browser scenarios passed. Browser coverage includes desktop/mobile EN/FR, automatic unique descriptions, explicit multiple-choice selection, 300-character contracts, incomplete/overlength warnings, account-switch and delayed-response protection, manual-value retention and saved Contact persistence. Browser services are mocked. Read-only Dev native queries found two distinct within-limit Equipment descriptions for the existing source-backed sample, so that sample requires dropdown selection, not automatic guessing. Five documentation-guard tests also passed.
+
+Dev publication: the signed Drafts assembly was updated in place and its hash/identities independently verified; the live defaults API returned descriptions/flags exactly matching a native-table query. Frontend push to the existing Code App/solution succeeded with built entry `index-CL4ZeH40.js`. Published-browser verification is still pending; a push/build is not proof that a cached browser serves the new version. No business record Save/Submit/email or import restart was performed.
+
 ### Opportunity-page autofetch correction (2026-11-05)
 
 The published external JPG URL was observed failing to load in the Power Apps runtime. The existing supplied logo is now bundled inline, without an external asset request. New unsaved opportunities receive an editable generated label (`Repair - market/account name - draft ID prefix`, at most 100 characters); this is not the authoritative Dataverse request number. Generating that label alone does not mark a pristine workspace dirty. Saved titles and user edits are retained.

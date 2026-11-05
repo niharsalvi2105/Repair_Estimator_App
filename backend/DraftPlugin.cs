@@ -165,6 +165,9 @@ namespace RepairEstimator.Drafts
         [DataMember(EmitDefaultValue = false)] public bool contactsTruncated;
         [DataMember(EmitDefaultValue = false)] public List<string> locations;
         [DataMember(EmitDefaultValue = false)] public bool locationsTruncated;
+        [DataMember(EmitDefaultValue = false)] public List<string> locationDescriptions;
+        [DataMember(EmitDefaultValue = false)] public bool locationDescriptionsTruncated;
+        [DataMember(EmitDefaultValue = false)] public bool locationDescriptionsTooLong;
         [DataMember] public string salesperson;
         [DataMember] public string pricingState;
         [DataMember(EmitDefaultValue = false)] public ExportDelivery exportDelivery;
@@ -897,6 +900,22 @@ namespace RepairEstimator.Drafts
                 result.locationsTruncated = rows.Count > 20;
                 result.locations = rows.Take(20).Select(row => row.GetAttributeValue<string>("re_functionallocation"))
                     .Where(location => !string.IsNullOrWhiteSpace(location)).ToList();
+                // Memo columns cannot safely establish uniqueness through a Dataverse distinct query.
+                var descriptions = new QueryExpression("re_equipment") {
+                    ColumnSet = new ColumnSet("re_description"), TopCount = 21
+                };
+                descriptions.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
+                descriptions.Criteria.AddCondition("re_branch", ConditionOperator.Equal, branchId);
+                descriptions.Criteria.AddCondition("re_customeraccount", ConditionOperator.Equal, accountId);
+                descriptions.Criteria.AddCondition("re_description", ConditionOperator.NotNull);
+                descriptions.AddOrder("re_equipmentid", OrderType.Ascending);
+                var descriptionRows = service.RetrieveMultiple(descriptions).Entities;
+                result.locationDescriptionsTruncated = descriptionRows.Count > 20;
+                var values = descriptionRows.Take(20).Select(row => row.GetAttributeValue<string>("re_description"))
+                    .Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
+                result.locationDescriptionsTooLong = values.Any(value => value.Length > 300);
+                result.locationDescriptions = values.Where(value => value.Length <= 300)
+                    .Distinct(StringComparer.Ordinal).OrderBy(value => value, StringComparer.Ordinal).ToList();
             }
             return result;
         }

@@ -2,6 +2,16 @@
 
 ## 1. Scope and evidence
 
+### Equipment description defaults (2026-11-05)
+
+Empty `contactsearch` with Branch context now also returns `locationDescriptions`, `locationDescriptionsTruncated` and `locationDescriptionsTooLong`. The user confirmed the source as active `re_equipment.re_description`, filtered by exact `re_customeraccount` and `re_branch` after existing Account/Branch/market eligibility validation. Contact and functional-location-number queries remain unchanged.
+
+Because the source is Memo, a distinct server query cannot safely prove uniqueness. A separate non-distinct query orders by Equipment GUID, probes 21 non-null descriptions and uses the first 20. Nonblank values at most 300 UTF-16 characters are deduplicated with ordinal equality; longer source values are omitted with an explicit flag, never shortened. More than 20 described records sets the independent truncation flag even if the visible values are identical. The frontend only autofills from a complete, within-limit single candidate; otherwise selection/confirmation is explicit. This bounded policy intentionally does not promise a complete list for large Accounts.
+
+No new schema, privileges, registration/images, writes, formula, snapshot or lock changes. Initiating-user read security remains authoritative. The existing `re_repairestimate.re_buildingname` captures the chosen/confirmed description on explicit Save. Signed Release build and the focused executable passed description deduplication, Account/Branch/inactive isolation, exact 300/301-character thresholds, truncation and unchanged prefix/contact behavior. Live read-only source inspection found two distinct usable descriptions in the existing sample.
+
+Dev deployment succeeded: existing Drafts signing/version/type identities were preserved, the content update was concurrency guarded and uploaded SHA-256 verified as `cd5f4607c736ecf726a474f84b1e9c32ceba957cb550a20032a82db2012eedc2`. The published API's two descriptions and truncation/overlength flags matched an independent native-table read exactly. This read-only sample acceptance is not non-admin certification. No business Save/Submit/email, schema change, pricing assembly update or registration change was performed.
+
 ### Customer defaults read enhancement (2026-11-05)
 
 `contactsearch` now accepts empty search to list eligible Contacts for an imported active Account without additional typing. Nonempty search still requires 2-100 characters and retains name/email prefix matching. The existing initiating-user service and parent/active/source/email filters remain. Response includes `primary` from the exact source flag and a `contactsTruncated` flag; TopCount 21 probes truncation before returning at most 20. Missing phone serializes as an empty string, consistent with the frontend's optional-phone contract.

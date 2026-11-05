@@ -137,7 +137,10 @@ async function mockData(page, language, theme, state = 'records') {
                 (starts(row.name,input.search) || starts(row.email,input.search))).slice(0,20),
                 contactsTruncated:!!window.__contactsTruncated,
                 locations:window.__accountLocations?.[input.accountId] || [],
-                locationsTruncated:!!window.__locationsTruncated};
+                locationsTruncated:!!window.__locationsTruncated,
+                locationDescriptions:window.__accountLocationDescriptions?.[input.accountId] || [],
+                locationDescriptionsTruncated:!!window.__locationDescriptionsTruncated,
+                locationDescriptionsTooLong:!!window.__locationDescriptionsTooLong};
           (window.__masterSearchCompleted ??= []).push(structuredClone(input));
           return {success:true,data:{ResultJson:JSON.stringify(result)}};
         }
@@ -2064,6 +2067,7 @@ for (const [width, language] of [[320, 'fr'], [1366, 'en']]) {
     await expect(page.locator('.market-control select')).toBeEnabled()
     await page.evaluate(() => {
       window.__accountLocations = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Source functional location'] }
+      window.__accountLocationDescriptions = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Source building description'] }
       window.__contactMasterRecords = [
         { id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',name:'Primary customer',email:'primary@example.invalid',
           phone:'12345',primary:true,accountId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
@@ -2092,7 +2096,7 @@ for (const [width, language] of [[320, 'fr'], [1366, 'en']]) {
     await expect(page.locator('#customer-phone')).toHaveValue('12345')
     await expect(page.locator('#account-functional-locations')).toHaveValue('Source functional location')
     await expect(page.locator('#account-functional-locations')).not.toBeEditable()
-    await expect(page.locator('#opportunity-building')).toHaveValue('')
+    await expect(page.locator('#opportunity-building')).toHaveValue('Source building description')
     await page.getByRole('button', { name: /^(Change Contact|Changer de contact)$/ }).click()
     await page.locator('.customer-linked-options button').filter({ hasText: 'Other customer' }).click()
     await expect(page.locator('#customer-email')).toHaveValue('other@example.invalid')
@@ -2130,6 +2134,10 @@ test('superseded customer defaults cannot overwrite a new Account or a customize
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Alpha location'],
       'cccccccc-cccc-4ccc-8ccc-cccccccccccc': ['Beta location'],
     }
+    window.__accountLocationDescriptions = {
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Alpha description'],
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc': ['Beta description'],
+    }
   })
   await page.locator('#account-master-search').fill('00042')
   await expect(page.locator('#account-master-options button')).toBeVisible()
@@ -2147,7 +2155,7 @@ test('superseded customer defaults cannot overwrite a new Account or a customize
   await expect(page.locator('#customer-email')).toHaveValue('beta@example.invalid')
   await expect(page.locator('#customer-phone')).toHaveValue('222')
   await expect(page.locator('#account-functional-locations')).toHaveValue('Beta location')
-  await expect(page.locator('#opportunity-building')).toHaveValue('')
+  await expect(page.locator('#opportunity-building')).toHaveValue('Beta description')
   await expect(page.locator('#estimate-title')).toHaveValue('My confirmed opportunity')
 })
 
@@ -2184,6 +2192,69 @@ test('customer defaults do not guess ambiguous or truncated data and recover exp
   await expect(page.locator('#customer-email')).toHaveValue('draft@example.invalid')
   await expect(page.locator('#account-functional-locations')).toHaveValue('Site A')
   await expect(page.locator('#opportunity-building')).toHaveValue('')
+})
+
+test('location descriptions offer explicit choices and preserve edits while incomplete defaults never autofill', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await expect(page.locator('.market-control select')).toBeEnabled()
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.locator('#branch-select').fill('020')
+  await page.locator('#branch-select').press('ArrowDown')
+  await page.locator('#branch-select').press('Enter')
+  await page.evaluate(() => {
+    window.__accountLocationDescriptions = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Building A', 'Building B'] }
+  })
+  await page.locator('#account-master-search').fill('00042')
+  await page.locator('#account-master-options button').click()
+  await expect(page.locator('#account-location-description option')).toHaveCount(3)
+  await expect(page.locator('#opportunity-building')).toHaveValue('')
+  await page.locator('#account-location-description').selectOption('Building B')
+  await expect(page.locator('#opportunity-building')).toHaveValue('Building B')
+  await page.locator('#opportunity-building').fill('Confirmed site description')
+  await expect(page.locator('#account-location-description')).toHaveValue('')
+  await page.getByRole('button', { name: 'Change account', exact: true }).click()
+  await expect(page.locator('#opportunity-building')).toHaveValue('')
+  await page.evaluate(() => {
+    window.__accountLocationDescriptions = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Building A'] }
+    window.__locationDescriptionsTruncated = true
+    window.__locationDescriptionsTooLong = true
+  })
+  await page.locator('#account-master-search').fill('00042')
+  await page.locator('#account-master-options button').click()
+  await expect(page.locator('.customer-master-select')).toContainText('Incomplete list')
+  await expect(page.locator('.customer-master-select')).toContainText('300-character limit')
+  await expect(page.locator('#opportunity-building')).toHaveValue('')
+  await page.getByRole('button', { name: 'Change account', exact: true }).click()
+  await page.evaluate(() => {
+    window.__locationDescriptionsTruncated = false
+    window.__locationDescriptionsTooLong = false
+  })
+  await page.locator('#opportunity-building').fill('Manual building before lookup')
+  await page.locator('#account-master-search').fill('00042')
+  await page.locator('#account-master-options button').click()
+  await expect(page.locator('#account-location-description option')).toHaveCount(2)
+  await expect(page.locator('#opportunity-building')).toHaveValue('Manual building before lookup')
+})
+
+test('location defaults cannot overwrite an edit entered while the lookup is in flight', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.goto('/')
+  await expect(page.locator('.market-control select')).toBeEnabled()
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.locator('#branch-select').fill('020')
+  await page.locator('#branch-select').press('ArrowDown')
+  await page.locator('#branch-select').press('Enter')
+  await page.locator('#account-master-search').fill('00042')
+  await expect(page.locator('#account-master-options button')).toBeVisible()
+  await page.evaluate(() => {
+    window.__masterSearchDelay = 1000
+    window.__accountLocationDescriptions = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Source description'] }
+  })
+  await page.locator('#account-master-options button').click()
+  await page.locator('#opportunity-building').fill('Confirmed during lookup')
+  await expect(page.locator('#account-location-description option')).toHaveCount(2)
+  await expect(page.locator('#opportunity-building')).toHaveValue('Confirmed during lookup')
 })
 
 for (const language of ['en', 'fr']) {

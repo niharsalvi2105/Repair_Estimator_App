@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useState } from 'react'
 import {
   searchAccountMasters, searchContactMasters, getCustomerDefaults, type AccountMasterOption, type ContactMasterOption,
 } from './data/customerMasterRepository'
-import { defaultContact, type CustomerDefaults } from './data/customerMasterContract'
+import { defaultContact, defaultLocationDescription, type CustomerDefaults } from './data/customerMasterContract'
 import type { Market } from './data/estimateQuery'
 
 type Props = {
@@ -37,6 +37,8 @@ export function CustomerMasterSelect({
     if (disabled) return
     const selected = defaultContact(result)
     if (!contact && selected) onContact(selected)
+    const description = defaultLocationDescription(result)
+    if (!building.trim() && description) onBuilding(description)
   })
 
   const accountId = account?.id
@@ -198,11 +200,26 @@ export function CustomerMasterSelect({
           disabled={disabled} value={building}
           onChange={event => onBuilding(event.target.value)} />
       </label>
+      {!!defaults?.locationDescriptions.length && <label className="field-label" htmlFor="account-location-description">
+        {fr ? 'Descriptions liées (Dataverse)' : 'Linked location descriptions (Dataverse)'}
+        <select id="account-location-description" className="text-input" disabled={disabled}
+          value={defaults.locationDescriptions.includes(building) ? building : ''}
+          onChange={event => { if (event.target.value) onBuilding(event.target.value) }}>
+          <option value="">{fr ? 'Choisir une description' : 'Choose a description'}</option>
+          {defaults.locationDescriptions.map(value => <option key={value} value={value}>{value}</option>)}
+        </select>
+      </label>}
       <p className="field-help">{!account
         ? fr ? 'Sélectionnez un compte pour charger les emplacements liés.' : 'Select an Account to fetch linked functional locations.'
-        : defaults && defaults.locations.length === 0
-          ? fr ? 'Aucun emplacement lié à ce compte et cette succursale. Saisissez la valeur manquante ; aucune adresse de facturation n’est utilisée.' : 'No linked functional location for this Account and Branch. Enter the missing value; billing addresses are not used as building names.'
-          : fr ? 'Les numéros proviennent des équipements liés au compte et à la succursale. Saisissez ou confirmez la description : un numéro d’emplacement n’est pas un nom de bâtiment.' : 'Numbers are fetched from Equipment linked to this Account and Branch. Enter or confirm the description: a location number is not a building name.'}</p>
+        : defaults && defaults.locationDescriptions.length === 0
+          ? fr ? 'Aucune description utilisable pour ce compte et cette succursale. Saisissez la valeur manquante ; aucune adresse de facturation n’est utilisée.' : 'No usable Equipment Description for this Account and Branch. Enter the missing description; billing addresses are not substituted.'
+          : fr ? 'La description provient du champ Description des équipements liés au compte et à la succursale. Une valeur unique est préremplie ; sinon, choisissez une description. Les valeurs enregistrées ou saisies sont conservées.' : 'Fetched from Equipment Description linked to this Account and Branch. One unambiguous value is autofilled; otherwise choose a description. Saved or manually entered values are preserved.'}</p>
+      {defaults?.locationDescriptionsTruncated && <p className="field-help" role="status">
+        {fr ? 'Liste incomplète : seuls les 20 premiers équipements décrits sont lus. Aucune description unique ne peut être déduite ; choisissez ou confirmez la valeur.' : 'Incomplete list: only the first 20 Equipment records with descriptions are shown. No unique description is inferred; choose or confirm the value.'}
+      </p>}
+      {defaults?.locationDescriptionsTooLong && <p className="field-help" role="status">
+        {fr ? 'Certaines descriptions dépassent la limite de 300 caractères et ne sont pas copiées ni tronquées. Confirmez une description conforme.' : 'Some descriptions exceed the 300-character limit and are not copied or truncated. Confirm a description within the limit.'}
+      </p>}
       {defaults?.locationsTruncated && <p className="field-help">{fr ? 'Seuls les 20 premiers numéros d’emplacements sont affichés.' : 'Only the first 20 functional location numbers are shown.'}</p>}
     </div>
   </div>
