@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useState } from 'react'
 import {
   searchAccountMasters, searchContactMasters, getCustomerDefaults, type AccountMasterOption, type ContactMasterOption,
 } from './data/customerMasterRepository'
-import { defaultContact, type CustomerDefaults } from './data/customerMasterContract'
+import { defaultContact, defaultLocationDescription, type CustomerDefaults } from './data/customerMasterContract'
 import type { Market } from './data/estimateQuery'
 
 type Props = {
@@ -10,16 +10,19 @@ type Props = {
   account: AccountMasterOption | null
   contact: ContactMasterOption | null
   onAccount: (account: AccountMasterOption | null) => void
-  onContact: (contact: ContactMasterOption | null) => void
+  onContact: (contact: ContactMasterOption | null, preserveManual?: boolean) => void
   language: 'en' | 'fr'
   disabled: boolean
   branchId: string
   building: string
   onBuilding: (value: string) => void
+  customerName: string
+  onCustomerName: (value: string) => void
 }
 
 export function CustomerMasterSelect({
   market, account, contact, onAccount, onContact, language, disabled, branchId, building, onBuilding,
+  customerName, onCustomerName,
 }: Props) {
   const fr = language === 'fr'
   const [accountQuery, setAccountQuery] = useState('')
@@ -36,7 +39,9 @@ export function CustomerMasterSelect({
   const applyDefaults = useEffectEvent((result: CustomerDefaults) => {
     if (disabled) return
     const selected = defaultContact(result)
-    if (!contact && selected) onContact(selected)
+    if (!contact && selected) onContact(selected, true)
+    const description = defaultLocationDescription(result)
+    if (!building.trim() && description) onBuilding(description)
   })
 
   const accountId = account?.id
@@ -90,7 +95,7 @@ export function CustomerMasterSelect({
     <div className="customer-master-field">
       <div className="input-grid">
       <label className="field-label" htmlFor="account-master-search">
-        {fr ? 'Numéro de compte' : 'Account number'}<span className="required">*</span>
+        <span>{fr ? 'Numéro de compte' : 'Account number'}<span className="required" aria-hidden="true">*</span></span>
         <input id="account-master-search" className="text-input" type="search" maxLength={100}
           autoComplete="off" disabled={disabled} aria-required="true"
           placeholder={fr ? 'Rechercher par numéro ou nom de compte' : 'Search by account number or name'}
@@ -141,14 +146,14 @@ export function CustomerMasterSelect({
       </div>}
       {defaults && !contact && <p className="field-help" role="status">{defaults.contacts.length
         ? fr ? 'Choisissez un contact ci-dessous ; aucune sélection unique ne peut être déduite.' : 'Choose a linked Contact below; there is no unambiguous default.'
-        : fr ? 'Aucun contact actif avec courriel n’est disponible pour ce compte dans Dataverse.' : 'No eligible active Contact with email is available for this Account in Dataverse.'}</p>}
+        : fr ? 'Aucun contact actif disponible. Saisissez les coordonnées manquantes pour ce devis.' : 'No eligible active Contact is available. Enter the missing contact details for this estimate.'}</p>}
       {defaults?.contactsTruncated && <p className="field-help">{fr ? 'Affichage limité : recherchez le contact par nom ou courriel.' : 'More Contacts exist: search by name or email to refine the list.'}</p>}
     </div>}
     <div className="customer-master-field">
       <label className="field-label" htmlFor="customer-name">
-        {fr ? 'Nom du contact' : 'Contact name'}<span className="required">*</span>
+        {fr ? 'Contact Dataverse' : 'Dataverse Contact'}
         <input id="customer-name" className="text-input" type="search" maxLength={100}
-          autoComplete="off" disabled={disabled || !account} aria-required="true"
+          autoComplete="off" disabled={disabled || !account}
           placeholder={fr ? 'Rechercher par nom ou courriel' : 'Search by name or email'}
           value={contact?.name ?? contactQuery} readOnly={!!contact} onChange={(event) => {
             if (contact) onContact(null)
@@ -167,6 +172,16 @@ export function CustomerMasterSelect({
         </button>
       </p>}
       {!account && <p className="field-help">{fr ? 'Sélectionnez d’abord un compte.' : 'Select an Account first.'}</p>}
+      {account && !contact?.name.trim() && <label className="field-label" htmlFor="customer-manual-name">
+        {fr ? 'Nom du contact' : 'Contact name'}<span className="required">*</span>
+        <input id="customer-manual-name" className="text-input" maxLength={100}
+          aria-required="true" disabled={disabled} value={customerName} onChange={event => onCustomerName(event.target.value)} />
+      </label>}
+      {account && <p className="field-help">
+        {fr
+          ? 'Les valeurs Dataverse disponibles sont utilisées directement. Complétez les champs manquants ; ils sont enregistrés uniquement sur ce devis, sans modifier le contact partagé.'
+          : 'Available Dataverse values are used directly. Fill in missing fields; manual details are saved only on this estimate, without changing shared Contacts.'}
+      </p>}
       {account && !contact && !contactQuery && defaults && defaults.contacts.length > 0 &&
         <ul className="customer-linked-options" aria-label={fr ? 'Contacts liés' : 'Linked Contacts'}>
           {defaults.contacts.map(row => <li key={row.id}><button className="button secondary" type="button" disabled={disabled}
@@ -198,11 +213,26 @@ export function CustomerMasterSelect({
           disabled={disabled} value={building}
           onChange={event => onBuilding(event.target.value)} />
       </label>
+      {!!defaults?.locationDescriptions.length && <label className="field-label" htmlFor="account-location-description">
+        {fr ? 'Descriptions liées (Dataverse)' : 'Linked location descriptions (Dataverse)'}
+        <select id="account-location-description" className="text-input" disabled={disabled}
+          value={defaults.locationDescriptions.includes(building) ? building : ''}
+          onChange={event => { if (event.target.value) onBuilding(event.target.value) }}>
+          <option value="">{fr ? 'Choisir une description' : 'Choose a description'}</option>
+          {defaults.locationDescriptions.map(value => <option key={value} value={value}>{value}</option>)}
+        </select>
+      </label>}
       <p className="field-help">{!account
         ? fr ? 'Sélectionnez un compte pour charger les emplacements liés.' : 'Select an Account to fetch linked functional locations.'
-        : defaults && defaults.locations.length === 0
-          ? fr ? 'Aucun emplacement lié à ce compte et cette succursale. Saisissez la valeur manquante ; aucune adresse de facturation n’est utilisée.' : 'No linked functional location for this Account and Branch. Enter the missing value; billing addresses are not used as building names.'
-          : fr ? 'Les numéros proviennent des équipements liés au compte et à la succursale. Saisissez ou confirmez la description : un numéro d’emplacement n’est pas un nom de bâtiment.' : 'Numbers are fetched from Equipment linked to this Account and Branch. Enter or confirm the description: a location number is not a building name.'}</p>
+        : defaults && defaults.locationDescriptions.length === 0
+          ? fr ? 'Aucune description utilisable pour ce compte et cette succursale. Saisissez la valeur manquante ; aucune adresse de facturation n’est utilisée.' : 'No usable Equipment Description for this Account and Branch. Enter the missing description; billing addresses are not substituted.'
+          : fr ? 'La description provient du champ Description des équipements liés au compte et à la succursale. Une valeur unique est préremplie ; sinon, choisissez une description. Les valeurs enregistrées ou saisies sont conservées.' : 'Fetched from Equipment Description linked to this Account and Branch. One unambiguous value is autofilled; otherwise choose a description. Saved or manually entered values are preserved.'}</p>
+      {defaults?.locationDescriptionsTruncated && <p className="field-help" role="status">
+        {fr ? 'Liste incomplète : seuls les 20 premiers équipements décrits sont lus. Aucune description unique ne peut être déduite ; choisissez ou confirmez la valeur.' : 'Incomplete list: only the first 20 Equipment records with descriptions are shown. No unique description is inferred; choose or confirm the value.'}
+      </p>}
+      {defaults?.locationDescriptionsTooLong && <p className="field-help" role="status">
+        {fr ? 'Certaines descriptions dépassent la limite de 300 caractères et ne sont pas copiées ni tronquées. Confirmez une description conforme.' : 'Some descriptions exceed the 300-character limit and are not copied or truncated. Confirm a description within the limit.'}
+      </p>}
       {defaults?.locationsTruncated && <p className="field-help">{fr ? 'Seuls les 20 premiers numéros d’emplacements sont affichés.' : 'Only the first 20 functional location numbers are shown.'}</p>}
     </div>
   </div>

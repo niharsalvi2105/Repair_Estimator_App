@@ -18,6 +18,142 @@ namespace RepairEstimator.Tests
     public class PluginIntegrationTests
     {
         [Fact]
+        public void Customer_search_includes_partial_linked_contacts_without_email()
+        {
+            var db = new Pipeline();
+            var account = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account"));
+            var contact = db.Add("contact", ("re_salesforcecontactid", "source-contact"), ("re_sourceactive", true),
+                ("parentcustomerid", account.ToEntityReference()), ("re_salesforcename", "Master Customer"),
+                ("telephone1", " "), ("mobilephone", "123"));
+            db.Add("contact", ("re_salesforcecontactid", "inactive"), ("re_sourceactive", false),
+                ("parentcustomerid", account.ToEntityReference()), ("re_salesforcename", "Inactive"));
+            db.Add("contact", ("re_salesforcecontactid", "other-parent"), ("re_sourceactive", true),
+                ("parentcustomerid", new EntityReference("account", Guid.NewGuid())), ("re_salesforcename", "Other"));
+            var response = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(new Draft {
+                mode = "contactsearch", search = "", accountId = account.Id.ToString()
+            })));
+            var result = Assert.Single(response.contacts);
+            Assert.Equal(contact.Id.ToString("D"), result.id);
+            Assert.Equal("Master Customer", result.name);
+            Assert.Equal("", result.email);
+            Assert.Equal("123", result.phone);
+        }
+
+        [Fact]
+        public void Customer_manual_selection_clears_previous_contact_lookup_without_deleting_master()
+        {
+            var db = new Pipeline();
+            var account = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account"));
+            var contact = db.Add("contact", ("re_salesforcecontactid", "source-contact"), ("re_sourceactive", true),
+                ("parentcustomerid", account.ToEntityReference()), ("re_salesforcename", "Master Customer"),
+                ("emailaddress1", "master@example.invalid"));
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = account.Id.ToString(); request.contactId = contact.Id.ToString();
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            saved.mode = "save"; saved.contactId = null;
+            saved.customer = "Manual Customer"; saved.email = "manual@example.invalid"; saved.phone = "123";
+            var updated = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(saved)));
+            Assert.Null(updated.contactId);
+            Assert.Null(updated.contactMaster);
+            Assert.Null(db.Rows[db.EstimateId].GetAttributeValue<EntityReference>("re_customercontact"));
+            Assert.Equal("Manual Customer", updated.customer);
+            Assert.Equal("manual@example.invalid", updated.email);
+            Assert.Equal("master@example.invalid", contact.GetAttributeValue<string>("emailaddress1"));
+            Assert.Single(db.Rows.Values, row => row.LogicalName == "contact");
+        }
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(true, false)]
+        [InlineData(true, true)]
+        public void Customer_missing_details_save_reload_and_update_without_master_writes(bool linked, bool complete)
+        {
+            var db = new Pipeline();
+            var account = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account"));
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = account.Id.ToString();
+            request.customer = "Manual Customer"; request.email = "manual@example.invalid"; request.phone = "123";
+            Entity contact = null;
+            if (linked)
+            {
+                contact = db.Add("contact", ("re_salesforcecontactid", "source-contact"), ("re_sourceactive", true),
+                    ("parentcustomerid", account.ToEntityReference()), ("re_salesforcename", "Master Customer"),
+                    ("emailaddress1", complete ? "master@example.invalid" : "   "),
+                    ("telephone1", complete ? "456" : " "));
+                request.contactId = contact.Id.ToString();
+            }
+            var response = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal(linked ? "Master Customer" : "Manual Customer", response.customer);
+            Assert.Equal(complete ? "master@example.invalid" : "manual@example.invalid", response.email);
+            Assert.Equal(complete ? "456" : "123", response.phone);
+            Assert.Equal(request.contactId, response.contactId);
+            Assert.Equal(account.Id, db.Rows[db.EstimateId].GetAttributeValue<EntityReference>("re_customeraccount").Id);
+            Assert.Equal(contact?.Id, db.Rows[db.EstimateId].GetAttributeValue<EntityReference>("re_customercontact")?.Id);
+            Assert.Equal(linked ? 1 : 0, db.Rows.Values.Count(row => row.LogicalName == "contact"));
+            if (linked && !complete)
+            {
+                Assert.Equal("   ", contact.GetAttributeValue<string>("emailaddress1"));
+                Assert.Equal("   ", response.contactMaster.email);
+            }
+            var reloaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal(response.email, reloaded.email);
+            reloaded.mode = "save"; reloaded.email = "updated@example.invalid"; reloaded.phone = "789";
+            var updated = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(reloaded)));
+            Assert.Equal(complete ? "master@example.invalid" : "updated@example.invalid", updated.email);
+            Assert.Equal(complete ? "456" : "789", updated.phone);
+            Assert.Equal(PricingEngine.Version, updated.pricingState);
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            updated.mode = "submit";
+            updated.fields.RemoveAll(field => field.key == "re_sellprice");
+            updated.fields.Add(new Field { key = "re_sellprice", value = "1000" });
+            var submitted = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(updated)));
+            Assert.Equal(Labels.SubmittedStatus, submitted.status);
+            Assert.Equal(updated.email, submitted.email);
+            Assert.Equal(updated.contactId, submitted.contactId);
+            Assert.Equal(linked ? 1 : 0, db.Rows.Values.Count(row => row.LogicalName == "contact"));
+        }
+
+        [Theory]
+        [InlineData("", "manual@example.invalid", "Customer name is required")]
+        [InlineData("Manual", "", "Customer email is required")]
+        [InlineData("Manual", "invalid-email", "valid email address")]
+        public void Customer_manual_details_reject_invalid_required_values(string name, string email, string error)
+        {
+            var db = new Pipeline();
+            var account = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account"));
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = account.Id.ToString(); request.customer = name; request.email = email;
+            Assert.Contains(error, Assert.Throws<InvalidPluginExecutionException>(
+                () => db.Save(ExportSnapshot.Serialize(request))).Message);
+            Assert.False(db.Rows.ContainsKey(db.EstimateId));
+        }
+
+        [Theory]
+        [InlineData("wrong-parent")]
+        [InlineData("inactive")]
+        [InlineData("wrong-market")]
+        [InlineData("malformed-contact")]
+        public void Customer_manual_fallback_does_not_bypass_master_validation(string scenario)
+        {
+            var db = new Pipeline();
+            var account = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", scenario == "wrong-market" ? "CKE" : "MKOF"),
+                ("accountnumber", "A1"), ("name", "Account"));
+            var contact = db.Add("contact", ("re_salesforcecontactid", "source-contact"),
+                ("re_sourceactive", scenario != "inactive"),
+                ("parentcustomerid", new EntityReference("account", scenario == "wrong-parent" ? Guid.NewGuid() : account.Id)));
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = account.Id.ToString();
+            request.contactId = scenario == "malformed-contact" ? "invalid" : contact.Id.ToString();
+            Assert.Throws<InvalidPluginExecutionException>(() => db.Save(ExportSnapshot.Serialize(request)));
+            Assert.False(db.Rows.ContainsKey(db.EstimateId));
+        }
+
+        [Fact]
         public void Package_equipment_subset_is_loaded_calculated_and_frozen_in_export()
         {
             var db = new Pipeline();
@@ -32,7 +168,7 @@ namespace RepairEstimator.Tests
             request.packages[0].equipmentNumbers = new List<string> { "E1", "E2", "E3", "E4" };
             var response = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
             Assert.Equal(request.packages[0].equipmentNumbers, response.packages[0].equipmentNumbers);
-            Assert.Equal("2026.7", response.pricingState);
+            Assert.Equal(PricingEngine.Version, response.pricingState);
             Assert.Equal(1276m, db.Rows[db.EstimateId].GetAttributeValue<Money>("re_totaltruecost").Value);
             var snapshot = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
             var package = Assert.Single(snapshot.packages);
@@ -326,6 +462,43 @@ namespace RepairEstimator.Tests
             Assert.Single(db.Rows.Values, r => r.LogicalName == Names.EstimatePackage.Entity);
         }
 
+        [Theory]
+        [InlineData("re_bandmatrix", "BAND_MATRIX_AMBIGUOUS")]
+        [InlineData("re_redundancyband", "REDUNDANCY_BAND_AMBIGUOUS")]
+        [InlineData("re_incentiverate", "INCENTIVE_RATE_AMBIGUOUS")]
+        public void Ambiguous_financial_configuration_clears_draft_outputs_and_blocks_submission(string table, string key)
+        {
+            var db = new Pipeline();
+            var account = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account"));
+            var contact = db.Add("contact", ("re_salesforcecontactid", "source-contact"), ("re_sourceactive", true),
+                ("parentcustomerid", account.ToEntityReference()), ("re_salesforcename", "Customer"),
+                ("emailaddress1", "customer@example.invalid"));
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = account.Id.ToString();
+            request.contactId = contact.Id.ToString();
+            request.fields.Add(new Field { key = "re_sellprice", value = "1000" });
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal(PricingEngine.Version, saved.pricingState);
+            Assert.NotNull(db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost));
+            foreach (var row in db.Rows.Values.Where(row => row.LogicalName == table).ToList())
+                db.Add(table, row.Attributes.Where(a => a.Key != "statecode")
+                    .Select(a => (a.Key, a.Value)).ToArray());
+            request.version = saved.version;
+            var unavailable = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal("unavailable", unavailable.pricingState);
+            foreach (var field in new[] { Names.Estimate.TotalTrueCost, Names.Estimate.SuggestedPrice,
+                Names.Estimate.ActualCmii, Names.Estimate.AmIncentive, Names.Estimate.BdIncentive })
+                Assert.Null(db.Rows[db.EstimateId][field]);
+            Assert.Contains(db.Traces, trace => trace.Contains(key));
+            var error = Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) {
+                    [Names.Estimate.Status] = new OptionSetValue(Labels.SubmittedStatus)
+                }));
+            Assert.Contains(key, error.Message);
+        }
+
         [Fact]
         public void Missing_pricing_blocks_submission()
         {
@@ -458,7 +631,7 @@ namespace RepairEstimator.Tests
             var response = db.Save(json);
             Assert.Contains("\"materialBeforeMarkup\":617.45", response);
             Assert.Contains("\"pricingSource\":\"package\"", response);
-            Assert.Contains("\"pricingState\":\"2026.7\"", response);
+            Assert.Contains("\"pricingState\":\"" + PricingEngine.Version + "\"", response);
             var header = db.Rows[db.EstimateId];
             Assert.Equal(941.25m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
             Assert.Equal(1497.37m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value);
@@ -742,6 +915,7 @@ namespace RepairEstimator.Tests
                 var values = f.Conditions.Select(c => {
                     row.Attributes.TryGetValue(c.AttributeName, out var value); value = Scalar(value);
                     if (c.Operator == ConditionOperator.Null) return value == null;
+                    if (c.Operator == ConditionOperator.NotNull) return value != null;
                     if (c.Operator == ConditionOperator.Equal) return Equals(value, Scalar(c.Values[0]));
                     if (value == null) return false;
                     var comparison = ((IComparable)value).CompareTo(c.Values[0]);

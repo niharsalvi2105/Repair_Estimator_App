@@ -300,6 +300,93 @@ namespace RepairEstimator.Tests
                 Assert.Throws<PricingException>(() => PricingEngine.Calculate(input)).Key);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Conflicting_matrix_rows_cannot_choose_a_margin_by_retrieval_order(bool reverse)
+        {
+            var input = Baseline();
+            input.BandMatrix.Add(new BandMatrixRule {
+                MatrixType = MatrixType.Equipment, Input1 = Band.Low, Input2 = Band.Low, Result = Band.High
+            });
+            if (reverse) input.BandMatrix.Reverse();
+            Assert.Equal("BAND_MATRIX_AMBIGUOUS",
+                Assert.Throws<PricingException>(() => PricingEngine.Calculate(input)).Key);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Overlapping_redundancy_bands_cannot_choose_a_margin_by_retrieval_order(bool reverse)
+        {
+            var input = Baseline();
+            input.RedundancyBands.Add(new RedundancyBandRule {
+                MinimumEquipment = 1, MaximumEquipment = 3, Band = Band.Low
+            });
+            if (reverse) input.RedundancyBands.Reverse();
+            Assert.Equal("REDUNDANCY_BAND_AMBIGUOUS",
+                Assert.Throws<PricingException>(() => PricingEngine.Calculate(input)).Key);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Duplicate_incentive_thresholds_cannot_choose_a_payout_by_retrieval_order(bool reverse)
+        {
+            var input = Baseline();
+            input.SellPrice = 4000m;
+            input.IncentiveRates.Add(new IncentiveRule {
+                MinimumCmii = .60m, AmPayout = .5m, BdPayout = .4m
+            });
+            if (reverse) input.IncentiveRates.Reverse();
+            Assert.Equal("INCENTIVE_RATE_AMBIGUOUS",
+                Assert.Throws<PricingException>(() => PricingEngine.Calculate(input)).Key);
+        }
+
+        [Fact]
+        public void Mixed_costs_reconcile_independently_with_subsets_exemptions_and_decimal_rounding()
+        {
+            var input = Baseline();
+            input.IsCustomPath = true;
+            input.EquipmentLineCount = 3;
+            input.MechanicLaborRate = 123.45m;
+            input.UseTaxPct = .08m;
+            input.FreightPct = .12m;
+            input.AdditionalLaborHours = .25m;
+            input.AdditionalMaterial = 12.34m;
+            input.AdditionalMisc = 5.67m;
+            input.Packages.Clear();
+            input.Packages.Add(new PackageInput {
+                EquipmentQuantity = 2, MechanicHoursPerUnit = 1.25m, MaterialCostPerUnit = 10.01m
+            });
+            input.Packages.Add(new PackageInput {
+                IsCustom = true, EquipmentQuantity = 1, MechanicHoursPerUnit = .75m, MaterialCostPerUnit = 20.02m
+            });
+            input.LaborLines.Add(new LaborLineInput { Hours = .5m, Rate = 80m, Multiplier = 1.5m });
+            input.MaterialLines.Add(new MaterialLineInput {
+                IsKone = false, Quantity = 3, UnitCost = 2.25m, TaxApplicable = false, FreightApplicable = true
+            });
+            input.MaterialLines.Add(new MaterialLineInput {
+                IsKone = false, Quantity = 2, UnitCost = 4.55m, TaxApplicable = true, FreightApplicable = false
+            });
+            var result = PricingEngine.Calculate(input);
+            Assert.Equal(401.21m, result.PackageLaborCost);
+            Assert.Equal(40.04m, result.PackageMaterialCost);
+            Assert.Equal(449.06m, result.PackageEstimatedCost);
+            Assert.Equal(30.86m, result.AdditionalLaborCost);
+            Assert.Equal(60m, result.CustomLaborCost);
+            Assert.Equal(4.77m, result.UseTaxAmount);
+            Assert.Equal(8.18m, result.FreightAmount);
+            Assert.Equal(129.86m, result.TotalAdditionalCost);
+            Assert.Equal(578.92m, result.TotalTrueCost);
+            input.FixedTargetCmii = .4m;
+            input.SellPrice = 1000m;
+            result = PricingEngine.Calculate(input);
+            Assert.Equal(964.87m, result.SuggestedPrice);
+            Assert.Equal(.4211m, result.ActualCmii);
+            Assert.Equal(.0211m, result.CmiiVariance);
+        }
+
         [Fact]
         public void Standard_package_cost_includes_tax_and_freight_on_material()
         {

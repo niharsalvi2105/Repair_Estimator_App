@@ -17,10 +17,12 @@ import { EquipmentPackageCosts } from './EquipmentPackageCosts'
 import { localizePackage, localizeScope } from './data/packageSearch'
 import { MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial, type ExportDelivery } from './data/draftContract'
 import { submissionDeliveryMessage } from './data/submissionDelivery'
-import { getPackageCostRates } from './data/repairEstimatorRepository'
-import { customCostsError } from './data/requestValidation'
+import { findEquipmentByNumbers, getPackageCostRates } from './data/repairEstimatorRepository'
+import { EQUIPMENT_LOOKUP_BATCH_SIZE } from './data/equipmentPaste'
+import { equipmentDisplayDetails } from './data/equipmentDisplay'
+import { customCostsError, konePricingConflict } from './data/requestValidation'
 import { PackageCostDetails } from './PackageCostDetails'
-import { calculatePackageCost, type CostRate } from './data/packageCosts'
+import { calculateAdditionalCost, calculatePackageCost, type CostRate } from './data/packageCosts'
 
 type Language = 'en' | 'fr'
 type Props = {
@@ -41,7 +43,10 @@ type Props = {
   selectedAccount: AccountMasterOption | null
   selectedContact: ContactMasterOption | null
   onSelectAccount: (account: AccountMasterOption | null) => void
-  onSelectContact: (contact: ContactMasterOption | null) => void
+  onSelectContact: (contact: ContactMasterOption | null, preserveManual?: boolean) => void
+  onCustomerName: (value: string) => void
+  onCustomerEmail: (value: string) => void
+  onCustomerPhone: (value: string) => void
   canWork: boolean
   draftComplete: boolean
   saveDraft: (submit?: boolean) => Promise<void>
@@ -113,6 +118,7 @@ export default function EstimatorWorkspace({
   requestSection, t, draftVersion, draftDirty, dt,
   draftNumber, newDraft, onSaveOpportunity, draftBusy, draftError, canStart, openDraft,
   draftId, selectedAccount, selectedContact, onSelectAccount, onSelectContact,
+  onCustomerName, onCustomerEmail, onCustomerPhone,
   canWork, draftComplete, saveDraft, submitted, exportDelivery, step,
   estimateTitle, setEstimateTitle, draftReferences, selectedBranch, draftReferenceError,
   setReferenceAttempt, branchLoading, branchError, loadBranches, market,
@@ -133,6 +139,31 @@ export default function EstimatorWorkspace({
   const [preview, setPreview] = useState<{ signature: string; total?: number; error?: string }>()
   const [rateResult, setRateResult] = useState<{ branchId: string; rates?: CostRate[]; error?: string }>()
   const [rateAttempt, setRateAttempt] = useState(0)
+  const [equipmentDetails, setEquipmentDetails] = useState<{ branchId: string; records?: Equipment[]; error?: string }>()
+  const [equipmentDetailsAttempt, setEquipmentDetailsAttempt] = useState(0)
+  useEffect(() => {
+    if (!branchId || !selectedEquipment.some(item => item.matched)) return
+    let active = true
+    async function loadDetails() {
+      try {
+        const numbers = selectedEquipment.filter(item => item.matched).map(item => item.number)
+        const records: Equipment[] = []
+        for (let offset = 0; offset < numbers.length; offset += EQUIPMENT_LOOKUP_BATCH_SIZE) {
+          records.push(...await findEquipmentByNumbers(branchId, numbers.slice(offset, offset + EQUIPMENT_LOOKUP_BATCH_SIZE)))
+          if (!active) return
+        }
+        setEquipmentDetails({ branchId, records })
+      } catch (reason) {
+        if (active) setEquipmentDetails({ branchId, error: reason instanceof Error ? reason.message : String(reason) })
+      }
+    }
+    void loadDetails()
+    return () => { active = false }
+  }, [branchId, selectedEquipment, equipmentDetailsAttempt])
+  const equipmentDetailsById = new Map([
+    ...(equipmentDetails?.branchId === branchId ? equipmentDetails.records ?? [] : []),
+    ...equipmentResults,
+  ].map(item => [item.re_equipmentid, item]))
   const needsRates = step >= 2 && selectedPackages.length > 0
   useEffect(() => {
     if (!branchId || !needsRates) return
@@ -146,6 +177,7 @@ export default function EstimatorWorkspace({
   const rates = rateResult?.branchId === branchId ? rateResult.rates ?? [] : []
   const customPackages = selectedPackages.filter((p) => p.re_iscustompackage)
   const customValidation = customCostsError(customPackages.map((p) => p.re_repairpackageid), laborLines, materialLines, language)
+  const koneConflict = konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
   const marketCurrencyId = marketBranches.length > 0 &&
     marketBranches.every(branch => branch._re_currency_value === marketBranches[0]._re_currency_value)
     ? marketBranches[0]._re_currency_value : undefined
@@ -161,6 +193,14 @@ export default function EstimatorWorkspace({
     packageEquipmentNumbers(p, selectedEquipment).length
   const assignmentValid = selectedPackages.every((p) => validPackageEquipment(p, selectedEquipment))
   const previewSignature = JSON.stringify({ selectedPackages, selectedEquipment, requestInputs, rates, laborLines, materialLines, currency })
+  function additionalCost() {
+    const values = ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous'].map((field) => {
+      const text = requestInputs[field as keyof RequestInputs]
+      return text?.trim() ? Number(text) : 0
+    })
+    return calculateAdditionalCost(values[0], values[1], values[2],
+      rates, costInputs.time, costInputs.tax, costInputs.freight)
+  }
   function calculatePreview() {
     try {
       if (customValidation) throw new Error(customValidation)
@@ -168,15 +208,7 @@ export default function EstimatorWorkspace({
         ? 'Sélectionnez la devise et au moins un équipement par forfait.' : 'Select a currency and at least one equipment unit per package.')
       let total = selectedPackages.reduce((sum, p) => sum + calculatePackageCost(p,
         quantityFor(p), rates, costInputs.time, costInputs.tax, costInputs.freight, laborLines, materialLines).total, 0)
-      const mechanic = rates.filter((rate) => rate.role === 126110000 && rate.time === costInputs.time)
-      if (mechanic.length !== 1) throw new Error(language === 'fr' ? 'Taux mécanicien manquant ou ambigu.' : 'Mechanic cost rate is missing or ambiguous.')
-      const additional = ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous'].map((field) => {
-        const text = requestInputs[field as keyof RequestInputs]
-        const value = text?.trim() ? Number(text) : 0
-        if (!Number.isFinite(value) || value < 0) throw new Error(language === 'fr' ? 'Coûts supplémentaires invalides.' : 'Additional cost inputs are invalid.')
-        return value
-      })
-      total += additional[0] * mechanic[0].rate + (additional[1] + additional[2]) * (1 + costInputs.tax / 100 + costInputs.freight / 100)
+      total += additionalCost().total
       if (!Number.isFinite(total)) throw new Error(language === 'fr' ? 'Coût indisponible.' : 'Cost is unavailable.')
       setPreview({ signature: previewSignature, total })
     } catch (reason) { setPreview({ signature: previewSignature, error: reason instanceof Error ? reason.message : String(reason) }) }
@@ -217,12 +249,20 @@ export default function EstimatorWorkspace({
   const canAdd = selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length < MAX_DRAFT_CHILD_OPERATIONS
   let packageTotal: number | undefined
   let packageTotalError = ''
+  let additions: ReturnType<typeof calculateAdditionalCost> | undefined
+  let additionsError = ''
   if (step >= 3 && !activeCustom) {
     try {
       packageTotal = selectedPackages.reduce((total, p) => total + calculatePackageCost(p,
         quantityFor(p), rates, costInputs.time, costInputs.tax, costInputs.freight, laborLines, materialLines).total, 0)
     } catch (reason) { packageTotalError = reason instanceof Error ? reason.message : String(reason) }
+    try { additions = additionalCost() }
+    catch (reason) { additionsError = reason instanceof Error ? reason.message : String(reason) }
   }
+  const costNumber = (value: number) => value.toLocaleString(language === 'fr' ? 'fr-CA' : 'en-US',
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const costMoney = (value: number | undefined) => value == null || !currency
+    ? language === 'fr' ? 'Indisponible' : 'Unavailable' : `${costNumber(value)} ${currency}`
   const packagePaging = selectedPackages.length > pageSize && <div className="custom-line-actions">
     <button type="button" className="button secondary" disabled={currentPackagePage === 0}
       onClick={() => setPackagePage(currentPackagePage - 1)}>{language === 'fr' ? 'Précédent' : 'Previous'}</button>
@@ -246,7 +286,7 @@ export default function EstimatorWorkspace({
     </div>
     {packagePaging}
     <dl className="package-cost-details package-combined-total">
-      <dt>{language === 'fr' ? 'Coût total des forfaits' : 'Total package cost'}</dt>
+      <dt>{language === 'fr' ? 'Sous-total des forfaits' : 'Package subtotal'}</dt>
       <dd>{packageTotal === undefined ? '—' : `${packageTotal.toLocaleString(language === 'fr' ? 'fr-CA' : 'en-US',
         { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${currency ? ` ${currency}` : ''}`}</dd>
     </dl>
@@ -254,6 +294,36 @@ export default function EstimatorWorkspace({
     <p className="field-help">{language === 'fr'
       ? 'Tous les forfaits sélectionnés, taxe et fret inclus. Les ajouts sont comptés séparément, une seule fois.'
       : 'All selected packages, including tax and freight. Additions are counted separately, once.'}</p>
+    {step === 4 && <>
+    <article className="additional-cost-card">
+      <h3>{language === 'fr' ? 'Coût des détails supplémentaires' : 'Additional details cost'}</h3>
+      <p>{language === 'fr'
+        ? 'Ajouts au devis uniquement. Les lignes CSTM sont déjà incluses dans le sous-total des forfaits.'
+        : 'Estimate-level additions only. CSTM lines are already included in the package subtotal.'}</p>
+      {additions && currency ? <dl className="package-cost-details">
+        <dt>{language === 'fr' ? 'Heures supplémentaires' : 'Additional labor hours'}</dt><dd>{costNumber(additions.hours)}</dd>
+        <dt>{language === 'fr' ? 'Taux de coût mécanicien' : 'Mechanic labor cost rate'}</dt><dd>{costMoney(additions.rate)}</dd>
+        <dt>{language === 'fr' ? 'Coût de main-d’œuvre supplémentaire' : 'Additional labor cost'}</dt><dd>{costMoney(additions.labor)}</dd>
+        <dt>{language === 'fr' ? 'Matériaux supplémentaires' : 'Additional material'}</dt><dd>{costMoney(additions.material)}</dd>
+        <dt>{language === 'fr' ? 'Frais divers supplémentaires' : 'Additional miscellaneous'}</dt><dd>{costMoney(additions.miscellaneous)}</dd>
+        <dt>{language === 'fr' ? 'Taxe (%)' : 'Tax (%)'}</dt><dd>{costNumber(additions.tax)}%</dd>
+        <dt>{language === 'fr' ? 'Montant de la taxe' : 'Tax amount'}</dt><dd>{costMoney(additions.taxAmount)}</dd>
+        <dt>{language === 'fr' ? 'Fret (%)' : 'Freight (%)'}</dt><dd>{costNumber(additions.freight)}%</dd>
+        <dt>{language === 'fr' ? 'Montant du fret' : 'Freight amount'}</dt><dd>{costMoney(additions.freightAmount)}</dd>
+        <dt className="package-cost-total">{language === 'fr' ? 'Total des coûts supplémentaires' : 'Total additional cost'}</dt>
+        <dd className="package-cost-total">{costMoney(additions.total)}</dd>
+      </dl> : <p className="package-cost-status" role="status">{language === 'fr'
+        ? 'Aperçu indisponible : vérifiez la devise, les taux et les coûts supplémentaires.'
+        : `Preview unavailable: ${additionsError || 'Check currency, labor rates and additional costs.'}`}</p>}
+    </article>
+    <dl className="package-cost-details estimate-combined-total">
+      <dt>{language === 'fr' ? 'Coût total estimé' : 'Total estimated cost'}</dt>
+      <dd>{costMoney(packageTotal != null && additions ? packageTotal + additions.total : undefined)}</dd>
+    </dl>
+    <p className="field-help">{language === 'fr'
+      ? 'Sous-total des forfaits + coûts supplémentaires, comptés une seule fois. Aperçu des coûts, pas un prix de vente.'
+      : 'Package subtotal + additional cost, counted once. Cost preview, not a selling price.'}</p>
+    </>}
   </section>
   useEffect(() => {
     requestSection.current?.querySelector<HTMLElement>('[aria-current="step"]')?.focus()
@@ -381,18 +451,23 @@ export default function EstimatorWorkspace({
               <legend>{language === 'fr' ? 'Coordonnées du client' : 'Customer details'}</legend>
               <CustomerMasterSelect key={`${market}:${branchId}:${selectedAccount?.id ?? 'no-account'}`}
                 market={market} branchId={branchId} account={selectedAccount} contact={selectedContact}
+                customerName={customerName} onCustomerName={onCustomerName}
                 building={buildingName} onBuilding={setBuildingName}
                 onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted} />
               <div className="input-grid">
                 <div className="field-label">
                   <label htmlFor="customer-email">{t.customerEmail}<span className="required" aria-hidden="true">*</span></label>
                   <input id="customer-email" type="email" className="text-input" maxLength={100}
-                    required aria-required="true" readOnly value={customerEmail} />
+                    required aria-required="true" readOnly={!!selectedContact?.email.trim()}
+                    disabled={!canWork || draftBusy || submitted || !selectedAccount}
+                    value={customerEmail} onChange={event => onCustomerEmail(event.target.value)} />
                 </div>
                 <div className="field-label">
                   <label htmlFor="customer-phone">{t.customerPhone}</label>
-                  <input id="customer-phone" type="tel" className="text-input" maxLength={100}
-                    readOnly value={customerPhone} />
+                  <input id="customer-phone" type="tel" className="text-input" maxLength={50}
+                    readOnly={!!selectedContact?.phone.trim()}
+                    disabled={!canWork || draftBusy || submitted || !selectedAccount}
+                    value={customerPhone} onChange={event => onCustomerPhone(event.target.value)} />
                 </div>
               </div>
               <div className="request-options">
@@ -442,11 +517,11 @@ export default function EstimatorWorkspace({
                   {!branchId || stateId ? t.provinceFromBranch : t.missingProvince}
                 </p>
               </div>
-              {(!selectedAccount?.id || !selectedContact?.id || !customerEmail.trim()) &&
+              {(!selectedAccount?.id || !customerName.trim() || !customerEmail.trim()) &&
                 <p id="customer-navigation-help" className="field-help" role="status">
                   {language === 'fr'
-                    ? 'Vous pouvez continuer pour consulter les autres étapes. Sélectionnez un compte et un contact avec un courriel avant d’enregistrer ou de soumettre.'
-                    : 'You can continue to review the other steps. Select an Account and Contact with an email before saving or submitting.'}
+                    ? 'Vous pouvez consulter les autres étapes. Sélectionnez un compte, puis choisissez un contact ou saisissez les coordonnées manquantes avant d’enregistrer ou de soumettre.'
+                    : 'You can review the other steps. Select an Account, then choose a Contact or enter missing contact details before saving or submitting.'}
                 </p>}
               </fieldset>
               <fieldset className="opportunity-group">
@@ -509,7 +584,16 @@ export default function EstimatorWorkspace({
                   </div>
                 </div>
                 <div className="selected-list">
-                  {selectedEquipment.map((equipment, index) => (
+                  {equipmentDetails?.branchId === branchId && equipmentDetails.error && <div role="alert" className="error-box">
+                    {language === 'fr' ? 'Détails du matériel indisponibles.' : 'Equipment details unavailable.'} {equipmentDetails.error}
+                    <button className="button secondary" onClick={() => setEquipmentDetailsAttempt(n => n + 1)}>{t.retry}</button>
+                  </div>}
+                  {selectedEquipment.map((equipment, index) => {
+                    const master = equipment.matched ? equipmentDetailsById.get(equipment.id) : undefined
+                    const details = equipmentDisplayDetails({
+                      ...master, re_oem: equipment.oem, re_equipmentage: equipment.age,
+                    })
+                    return (
                     <article className="equipment-card" key={equipment.id}>
                       <div className="equipment-index">{String(index + 1).padStart(2, '0')}</div>
                       <div className="equipment-info">
@@ -518,11 +602,12 @@ export default function EstimatorWorkspace({
                           {!equipment.matched && <span className="unbound-tag">{t.unbound}</span>}
                         </div>
                         {equipment.name && <span>{equipment.name}</span>}
+                        {details.description && <span>Description: {details.description}</span>}
                         <div className="equipment-meta">
                           {equipment.location && <span>{t.location}: {equipment.location}</span>}
                           {equipment.customer && <span>{t.customer}: {equipment.customer}</span>}
-                          {equipment.oem && <span>{t.oem}: {equipment.oem}</span>}
-                          {equipment.age !== undefined && <span>{t.age}: {equipment.age}</span>}
+                          <span>{t.oem}: {details.manufacturer || '-'}</span>
+                          <span>{t.age}: {details.age ?? '-'}</span>
                         </div>
                       </div>
                       <button
@@ -537,7 +622,7 @@ export default function EstimatorWorkspace({
                         ×
                       </button>
                     </article>
-                  ))}
+                  )})}
                 </div>
               </section>
             )}
@@ -697,6 +782,13 @@ export default function EstimatorWorkspace({
               <RequestFields stage={step === 3 ? 'cost' : 'pricing'} language={language}
                 value={requestInputs} onChange={updateRequestInput} currency={currency}
                 custom={hasCustom || (step !== 3 && Number(requestInputs.re_konesparessalespricevk13) > 0)} />
+              {step === 4 && koneConflict && <div className="error-box kone-pricing-conflict" role="alert">
+                <p>{koneConflict}</p>
+                <button type="button" className="button secondary" disabled={draftBusy || submitted || !!exportDelivery}
+                  onClick={() => updateRequestInput('re_konesparessalespricevk13', '')}>
+                  {language === 'fr' ? 'Effacer le prix global VK13' : 'Clear aggregate VK13 price'}
+                </button>
+              </div>}
               <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
             </section>}
             {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
@@ -829,7 +921,7 @@ export default function EstimatorWorkspace({
                 setActiveCustom(undefined); setCustomError('')
                 setStep((current) => current + 1)
               }}
-              aria-describedby={step === 1 && (!selectedAccount?.id || !selectedContact?.id || !customerEmail.trim())
+              aria-describedby={step === 1 && (!selectedAccount?.id || !customerName.trim() || !customerEmail.trim())
                 ? 'customer-navigation-help' : undefined}
               disabled={step === 1 ? !branchId || !buildingName.trim() || !equipmentTypeId
                 : step === 2 ? selectedEquipment.length === 0 || selectedPackages.length === 0 || !assignmentValid : false}

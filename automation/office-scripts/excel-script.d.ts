@@ -4,6 +4,8 @@ declare namespace ExcelScript {
   enum RangeCopyType { all }
   enum ClearApplyTo { contents }
   interface Range {
+    merge(across: boolean): void
+    unmerge(): void
     getValue(): string | number | boolean
     getRowIndex(): number
     setValue(value: string | number | boolean): void

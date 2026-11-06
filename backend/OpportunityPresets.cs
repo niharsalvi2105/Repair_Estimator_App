@@ -73,7 +73,8 @@ namespace RepairEstimator.Drafts
             if (province.GetAttributeValue<bool>("re_frenchrequired") &&
                 header.GetAttributeValue<OptionSetValue>("re_proposallanguage")?.Value != 126110001)
                 Fail("The selected province requires French proposal language.");
-            var selection = DraftPlugin.ResolveCustomerSelection(service, value.accountId, value.contactId, value.market);
+            var selection = DraftPlugin.ResolveCustomerSelection(service, value.accountId, value.contactId, value.market,
+                value.customer, value.email, value.phone);
             return new OpportunityValues {
                 branchId = branch.Id.ToString(), stateId = province.Id.ToString(),
                 equipmentTypeId = value.equipmentTypeId, jobTypeId = value.jobTypeId ?? "",
@@ -81,9 +82,10 @@ namespace RepairEstimator.Drafts
                 accountId = selection.Item1.Id.ToString("D"),
                 accountNumber = Optional(selection.Item6, 50),
                 accountName = Required(selection.Item7, 300),
-                contactId = selection.Item2.Id.ToString("D"),
+                contactId = selection.Item2?.Id.ToString("D"),
+                contactMaster = DraftPlugin.CustomerContact(selection.Item2),
                 customer = Required(selection.Item3, 100), email = Required(selection.Item4, 100),
-                phone = Optional(selection.Item5, 100), fields = value.fields
+                phone = Optional(selection.Item5, 50), fields = value.fields
             };
         }
         static void Schema(IOrganizationService service)

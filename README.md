@@ -42,8 +42,12 @@ The Opportunity page now bundles its logo inline, generates an editable default
 title, displays the selected Account number/name, and fetches eligible linked
 Contact details and functional-location numbers without a second search. The
 final Dev runtime was verified with the real source-backed sample. Location
-numbers are not building descriptions: missing site-description and signed-in
-organization mappings still need authoritative data, not guessed defaults.
+numbers are not building descriptions. The user-approved location-description
+source is linked active Equipment Description: a complete unique value autofills
+a blank field; multiple values offer an explicit dropdown. Saved/manual values
+are preserved. Incomplete or overlength lists never establish a unique default;
+missing data and signed-in organization mappings still need authoritative data.
+See the references above for publication evidence and bounded-read limitations.
 
 ## Exact customer-master bulk import
 

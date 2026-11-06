@@ -56,11 +56,13 @@ static class DraftServiceTests
         foreach (var location in new[] { "Site A", "Site A", "Site B" })
             service.Add(new Entity("re_equipment", Guid.NewGuid()) {
                 ["re_customeraccount"] = new EntityReference("account", accountId),
-                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = location
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = location,
+                ["re_description"] = "Building A"
             });
         service.Add(new Entity("re_equipment", Guid.NewGuid()) {
             ["re_customeraccount"] = new EntityReference("account", accountId),
-            ["re_branch"] = new EntityReference("re_branch", Guid.NewGuid()), ["re_functionallocation"] = "Other Branch"
+            ["re_branch"] = new EntityReference("re_branch", Guid.NewGuid()), ["re_functionallocation"] = "Other Branch",
+            ["re_description"] = "Wrong Branch Description"
         });
         var input = new Draft { mode = "contactsearch", search = "", accountId = accountId.ToString(),
             branchId = Branch.ToString(), market = 126110000 };
@@ -71,6 +73,33 @@ static class DraftServiceTests
         Assert(result.contacts.Count == 1 && result.contacts[0].id == firstContact.ToString() &&
             result.contacts[0].primary && result.contacts[0].phone == "", "Only eligible linked Contacts, preserving primary flag");
         Assert(result.locations.SequenceEqual(new[] { "Site A", "Site B" }), "Distinct Account-and-Branch locations only");
+        Assert(result.locationDescriptions.SequenceEqual(new[] { "Building A" }) &&
+            !result.locationDescriptionsTruncated && !result.locationDescriptionsTooLong,
+            "Duplicate Equipment descriptions provide a unique Account-and-Branch default");
+        service.Add(new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_customeraccount"] = new EntityReference("account", Guid.NewGuid()),
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_description"] = "Wrong Account"
+        });
+        var inactiveEquipment = new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_customeraccount"] = new EntityReference("account", accountId),
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_description"] = "Inactive Building"
+        };
+        service.Add(inactiveEquipment);
+        inactiveEquipment["statecode"] = new OptionSetValue(1);
+        service.Add(new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_customeraccount"] = new EntityReference("account", accountId),
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_description"] = new string('X', 300)
+        });
+        service.Add(new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_customeraccount"] = new EntityReference("account", accountId),
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_description"] = new string('Y', 301)
+        });
+        result = get();
+        Assert(result.locationDescriptions.Count == 2 && result.locationDescriptionsTooLong &&
+            result.locationDescriptions.All(value => value.Length <= 300),
+            "Description length uses the persisted 300-character contract, never truncating source");
+        before = service.Rows.Count;
+        get();
         Assert(service.Rows.Count == before && service.Deletes == 0, "Defaults must not mutate records");
         input.search = "S";
         Reject(() => get(), "at least two characters");
@@ -88,12 +117,15 @@ static class DraftServiceTests
             });
             service.Add(new Entity("re_equipment", Guid.NewGuid()) {
                 ["re_customeraccount"] = new EntityReference("account", accountId),
-                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Extra " + i
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Extra " + i,
+                ["re_description"] = "Extra Building " + i
             });
         }
         result = get();
         Assert(result.contactsTruncated && result.contacts.Count == 20, "Contact truncation must be explicit");
         Assert(result.locationsTruncated && result.locations.Count == 20, "Location truncation must be explicit");
+        Assert(result.locationDescriptionsTruncated && result.locationDescriptions.Count <= 20,
+            "Bounded Equipment description reads cannot infer uniqueness from an incomplete list");
     }
 
     static FakeService Setup()

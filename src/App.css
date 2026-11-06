@@ -2537,18 +2537,21 @@
   color: #91b6ff;
 }
 
-.package-overview-card {
+.package-overview-card,
+.additional-cost-card {
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
 }
 
-.package-overview-card h3 {
+.package-overview-card h3,
+.additional-cost-card h3 {
   margin: 0 0 8px;
 }
 
-.package-overview-card > p {
+.package-overview-card > p,
+.additional-cost-card > p {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -2557,7 +2560,8 @@
   margin-top: 16px;
 }
 
-.package-combined-total {
+.package-combined-total,
+.estimate-combined-total {
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
