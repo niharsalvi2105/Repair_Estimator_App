@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Equipment } from './data/repairEstimatorRepository'
 import type { AppCopy } from './App'
 import { isEquipmentList } from './data/equipmentPaste'
+import { equipmentDisplayDetails } from './data/equipmentDisplay'
 
 const RESULT_LIMIT = 20
 
@@ -133,6 +134,7 @@ export function EquipmentSelect({
               )
             }
             const { equipment } = option
+            const details = equipmentDisplayDetails(equipment)
             const selected = selectedNumbers.has(equipment.re_equipment)
             return (
               <li key={equipment.re_equipmentid} id={`equipment-option-${index}`} role="option"
@@ -143,8 +145,12 @@ export function EquipmentSelect({
                   <span className="package-option-body">
                     <strong>{equipment.re_equipment}</strong>
                     {equipment.re_equipmentname && <span>{equipment.re_equipmentname}</span>}
+                    {details.description && <span>Description: {details.description}</span>}
                     <small className="package-option-scope">
                       {t.location}: {equipment.re_functionallocation || '-'} · {t.customer}: {equipment.re_soldtoname || '-'}
+                    </small>
+                    <small className="package-option-scope">
+                      {t.oem}: {details.manufacturer || '-'} · {t.age}: {details.age ?? '-'}
                     </small>
                   </span>
                 </button>

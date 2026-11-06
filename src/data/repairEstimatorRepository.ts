@@ -18,6 +18,7 @@ import type { Re_branchs } from '../generated/models/Re_branchsModel'
 import type { Re_equipments } from '../generated/models/Re_equipmentsModel'
 import type { Re_repairpackages } from '../generated/models/Re_repairpackagesModel'
 import type { IGetAllOptions } from '../generated/models/CommonModels'
+import type { EquipmentSourceDetails } from './equipmentDisplay'
 
 export const getBranchCustomerNames = createCustomerNameLoader(Re_equipmentsService)
 
@@ -46,7 +47,7 @@ export type Branch = Pick<
   | 're_defaultfreight'
 >
 
-export type Equipment = Pick<
+export type Equipment = EquipmentSourceDetails & Pick<
   Re_equipments,
   | 're_equipmentid'
   | 're_equipment'
@@ -153,6 +154,9 @@ export async function searchEquipment(
       're_soldtoname',
       're_oem',
       're_equipmentage',
+      're_description',
+      're_manufacturer',
+      're_constructionyear',
     ],
     filter: `statecode eq 0 and _re_branch_value eq ${branchId}${escapedSearch ? ` and (startswith(re_equipment,'${escapedSearch}') or startswith(re_equipmentname,'${escapedSearch}'))` : ''}`,
     orderBy: ['re_equipment asc'],
@@ -175,6 +179,9 @@ export async function findEquipmentByNumbers(branchId: string, numbers: string[]
       're_soldtoname',
       're_oem',
       're_equipmentage',
+      're_description',
+      're_manufacturer',
+      're_constructionyear',
     ],
     filter: `statecode eq 0 and _re_branch_value eq ${branchId} and (${matches})`,
     orderBy: ['re_equipment asc', 're_equipmentid asc'],

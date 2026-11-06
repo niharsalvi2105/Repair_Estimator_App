@@ -24,6 +24,13 @@ test('customer defaults select only a unique eligible Contact or unique primary,
   assert.equal(defaultContact({ ...defaults, contacts: [] }), undefined)
 })
 
+test('partial Contacts keep their identity and available fields without requiring a master email', () => {
+  const contact = { id: '22222222-2222-4222-8222-222222222222', name: 'Contact', email: '', phone: '' }
+  const defaults = parseCustomerDefaults({ contacts: [contact], locations: [], locationDescriptions: [] })
+  assert.deepEqual(defaultContact(defaults), contact)
+  assert.deepEqual(parseContactMasterOptions({ contacts: [{ ...contact, name: '' }] }), [{ ...contact, name: '' }])
+})
+
 test('location description defaults require a complete, unique, within-limit Equipment description', () => {
   const parse = values => parseCustomerDefaults({ contacts: [], locations: [], locationDescriptions: values })
   assert.equal(defaultLocationDescription(parse(['Building A', 'Building A'])), 'Building A')

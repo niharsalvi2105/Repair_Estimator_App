@@ -95,6 +95,7 @@ async function mockData(page, language, theme, state = 'records') {
           return structuredClone(window.__draftSaved);
         }
         window.__draftSaved = { ...structuredClone(input),
+          contactMaster:window.__contactMasterRecords?.find(row => row.id === input.contactId),
           status:input.mode === 'submit' ? 126110002 : 126110000,
           version:String(Number(window.__draftSaved?.version || 0) + 1),
           number:'0000000042', salesperson:'Original Salesperson', pricingState:window.__pricingState,
@@ -1482,9 +1483,9 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await setCostRates(page, '3', '12')
       await expect(material.getByLabel(label('Vendor', 'Fournisseur'), { exact: true })).toHaveCount(0)
       const quantity = material.getByRole('spinbutton', { name: label('Quantity', 'Quantité'), exact: true })
-      await expect(quantity).toHaveValue('2')
+      await expect(quantity).toHaveValue('1')
       await expect(quantity).toHaveAttribute('step', '1')
-      await material.getByRole('combobox', { name: type, exact: true }).selectOption('kone')
+      await expect(material.getByRole('combobox', { name: type, exact: true })).toHaveValue('kone')
       const part = material.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true })
       await part.fill('motor')
       await expect(material.getByRole('listbox').getByRole('option')).toContainText('TEST-PART-001')
@@ -1495,7 +1496,8 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await expect(material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true })).toHaveValue('7.73178')
       await expect(material.getByLabel(label('Unit price', 'Prix unitaire'), { exact: true })).toHaveValue(fr ? '40,376 USD' : '40.376 USD')
       const total = page.getByLabel(label('Material', 'Matériau'), { exact: true })
-      await expect(total).toHaveValue(fr ? '15,46356 USD' : '15.46356 USD')
+      await expect(quantity).toHaveValue('1')
+      await expect(total).toHaveValue(fr ? '7,73178 USD' : '7.73178 USD')
       await quantity.fill('1.5')
       await expect(material.getByRole('alert')).toContainText(fr ? 'entier' : 'whole number')
       await expect(page.locator('.draft-save-action')).toBeDisabled()
@@ -1506,6 +1508,10 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await expect(material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true })).not.toBeEditable()
       await page.getByRole('button', { name: fr ? 'Ajouter un matériau' : 'Add material', exact: true }).click()
       const manual = materials.last()
+      await expect(manual.getByRole('combobox', { name: type, exact: true })).toHaveValue('kone')
+      await expect(manual.getByRole('spinbutton', { name: label('Quantity', 'Quantité'), exact: true })).toHaveValue('1')
+      await manual.getByRole('combobox', { name: type, exact: true }).selectOption('non-kone')
+      await manual.getByRole('spinbutton', { name: label('Quantity', 'Quantité'), exact: true }).fill('2')
       await manual.getByRole('textbox', { name: 'Description', exact: true }).fill('Manual non-KONE component')
       await manual.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true }).fill('MANUAL-001')
       await manual.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true }).press('Escape')
@@ -1545,6 +1551,7 @@ test('package preview rates query current branch mechanic cost data from Dataver
     const material = (await openCatalogMaterial(page, false)).first()
     await expect(page.locator('.custom-cost-lines')).toContainText('Catalog unavailable')
     await expect(material.getByRole('combobox', { name: 'Part type', exact: true })).toBeEnabled()
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('non-kone')
     await material.getByRole('button', { name: 'Use manual entry without catalog', exact: true }).click()
     await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Existing manual motor')
     await material.getByRole('textbox', { name: 'Part number', exact: true }).fill('MANUAL-1')
@@ -1561,6 +1568,7 @@ test('package preview rates query current branch mechanic cost data from Dataver
 
   test('CSTM switching part types clears catalog prices and mandatory part fields', async ({ page }) => {
     const material = (await openCatalogMaterial(page, true)).first()
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('non-kone')
     await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Manual motor')
     await material.getByRole('spinbutton', { name: 'Unit cost', exact: true }).fill('100')
     await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('kone')
@@ -1598,7 +1606,7 @@ test('CSTM part lookup reports no matches and service errors then recovers after
   await material.getByRole('listbox').getByRole('button', { name: /TEST-PART-001/ }).click()
   await expect(part).toHaveValue('TEST-PART-001')
   await expect(material.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Test catalog motor')
-  await expect(page.getByLabel('Material', { exact: true })).toHaveValue('15.46356 USD')
+  await expect(page.getByLabel('Material', { exact: true })).toHaveValue('7.73178 USD')
 })
 
 test('package costs show immediately and each CSTM requires separate positive entries before returning to packages', async ({ page }) => {
@@ -1625,6 +1633,7 @@ test('package costs show immediately and each CSTM requires separate positive en
     await labor.locator('input').fill(String(index + 2))
     await page.getByRole('button', { name: 'Add material', exact: true }).click()
     const material = page.locator('.custom-cost-line').filter({ has: page.locator('legend', { hasText: /^Material/ }) }).last()
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('non-kone')
     await material.getByRole('button', { name: 'Use manual entry without catalog', exact: true }).click()
     await material.locator('textarea').fill(`Motor ${index}`)
     await material.getByRole('textbox', { name: 'Part number', exact: true }).fill(`MOTOR-${index}`)
@@ -1663,8 +1672,73 @@ test('package costs show immediately and each CSTM requires separate positive en
   expect(fields).toContainEqual({ key: 're_freight', value: '20' })
   await page.locator('.draft-secondary-actions button').nth(1).click()
   await next(page)
-  await expect(page.locator('.package-cost-details')).toHaveCount(3)
+  await expect(page.locator('.selected-package-card .package-cost-details')).toHaveCount(3)
 })
+
+for (const language of ['en', 'fr']) {
+  test(`Additional details cost card separates additions from package subtotal and combined total in ${language}`, async ({ page }) => {
+    const fr = language === 'fr'
+    await completeDraft(page, { width: fr ? 320 : 1366, height: 900 }, language)
+    await page.locator('.form-footer > button').click()
+    await page.locator('.form-footer > button').click()
+    const summary = page.locator('.package-cost-summary')
+    const card = summary.locator('.additional-cost-card')
+    await expect(card).toHaveCount(0)
+    await expect(summary.locator('.estimate-combined-total')).toHaveCount(0)
+    for (const [key, value] of [['re_additionallaborhours', '2'], ['re_additionalmaterial', '10'], ['re_additionalmiscellaneous', '5']])
+      await page.locator(`#request-${key}`).fill(value)
+    await next(page)
+    await expect(card).toBeVisible()
+    await expect(summary.locator('.package-combined-total dd')).toHaveText(fr ? '259,50 USD' : '259.50 USD')
+    await expect(card.locator('dd.package-cost-total')).toHaveText(fr ? '217,85 USD' : '217.85 USD')
+    await expect(summary.locator('.estimate-combined-total dd')).toHaveText(fr ? '477,35 USD' : '477.35 USD')
+    const detail = (label) => card.locator('dt').filter({ hasText: new RegExp(`^${label}$`) }).locator('+ dd')
+    await expect(detail(fr ? 'Heures supplémentaires' : 'Additional labor hours')).toHaveText(fr ? '2,00' : '2.00')
+    await expect(detail(fr ? 'Coût de main-d’œuvre supplémentaire' : 'Additional labor cost')).toHaveText(fr ? '200,00 USD' : '200.00 USD')
+    await expect(detail(fr ? 'Montant de la taxe' : 'Tax amount')).toHaveText(fr ? '0,75 USD' : '0.75 USD')
+    await expect(detail(fr ? 'Montant du fret' : 'Freight amount')).toHaveText(fr ? '2,10 USD' : '2.10 USD')
+    expect(await summary.evaluate(element => {
+      const subtotal = element.querySelector('.package-combined-total')
+      const additions = element.querySelector('.additional-cost-card')
+      const total = element.querySelector('.estimate-combined-total')
+      return subtotal.getBoundingClientRect().bottom <= additions.getBoundingClientRect().top
+        && additions.getBoundingClientRect().bottom <= total.getBoundingClientRect().top
+    })).toBe(true)
+    await checkLayout(page, { width: fr ? 320 : 1366, height: 900 }, 'additional cost breakdown')
+    await page.locator('.form-footer > button').click()
+    await expect(card).toHaveCount(0)
+    await page.locator('#request-re_additionalmaterial').focus()
+    await page.locator('#request-re_additionalmaterial').press('ControlOrMeta+A')
+    await page.locator('#request-re_additionalmaterial').pressSequentially('-1')
+    await next(page)
+    await expect(card).toHaveCount(0)
+    expect(await page.locator('#request-re_additionalmaterial').evaluate(input => input.validity.rangeUnderflow)).toBe(true)
+    await page.locator('#request-re_additionalmaterial').fill('20')
+    await next(page)
+    await expect(card.locator('dd.package-cost-total')).toHaveText(fr ? '229,75 USD' : '229.75 USD')
+    await expect(summary.locator('.estimate-combined-total dd')).toHaveText(fr ? '489,25 USD' : '489.25 USD')
+    await page.locator('.form-footer > button').click()
+    await page.locator('#request-re_additionalmaterial').focus()
+    await page.locator('#request-re_additionalmaterial').fill('10')
+    await expect(page.locator('#request-re_additionalmaterial')).toHaveValue('10')
+    await next(page)
+    await expect(summary.locator('.estimate-combined-total dd')).toHaveText(fr ? '477,35 USD' : '477.35 USD')
+    await page.locator('.local-calculate-action').click()
+    await expect(page.locator('.local-cost-total')).toContainText(fr ? '477,35' : '477.35')
+    await next(page)
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    await expect(card).toHaveCount(0)
+    await page.locator('.draft-secondary-actions button').nth(1).click()
+    await next(page)
+    await next(page)
+    await expect(card).toHaveCount(0)
+    await next(page)
+    await expect(card.locator('dd.package-cost-total')).toHaveText(fr ? '217,85 USD' : '217.85 USD')
+    await expect(summary.locator('.package-combined-total dd')).toHaveText(fr ? '398,75 USD' : '398.75 USD')
+    await expect(summary.locator('.estimate-combined-total dd')).toHaveText(fr ? '616,60 USD' : '616.60 USD')
+  })
+}
 
 for (const width of [320, 1366]) {
   test(`standard package Additional details are editable and survive save and reopen at ${width}px`, async ({ page }) => {
@@ -1726,14 +1800,15 @@ for (const width of [320, 1366]) {
     await editor.locator('fieldset').first().locator('input').fill('2')
     await editor.getByRole('button', { name: 'Add material', exact: true }).click()
     const material = editor.locator('fieldset').nth(1)
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('non-kone')
     await material.getByRole('button', { name: 'Use manual entry without catalog', exact: true }).click()
     await material.locator('textarea').fill('Motor')
     await material.getByRole('textbox', { name: 'Part number', exact: true }).fill('MOTOR-1')
     await material.getByRole('spinbutton', { name: 'Quantity', exact: true }).fill('2')
     await material.getByRole('spinbutton', { name: 'Unit cost', exact: true }).fill('25')
     await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
-    await expect(page.locator('.equipment-package-card .equipment-package-price')).toHaveText(['259.50 USD', '0.00 USD'])
-    await expect(page.locator('.equipment-package-costs').last()).toContainText('Custom labor and material lines')
+    await expect(page.locator('.equipment-package-card .equipment-package-price')).toHaveText(['259.50 USD', '257.50 USD'])
+    await expect(page.locator('.equipment-package-costs').last()).toContainText('Entered CSTM hours and costs are shared equally')
     await page.locator('#package-search').fill('PIT')
     await page.locator('#package-options button').first().click()
     await page.locator('#package-search').press('Escape')
@@ -1756,10 +1831,14 @@ for (const width of [320, 1366]) {
     await page.locator('#request-re_additionalmaterial').fill('10')
     await page.locator('#request-re_additionalmiscellaneous').fill('5')
     await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
+    await expect(summary.locator('.additional-cost-card')).toHaveCount(0)
+    await expect(summary.locator('.estimate-combined-total')).toHaveCount(0)
     await checkLayout(page, { width, height: 900 }, 'all package costs before additions')
     await summary.screenshot({ path: testInfo.outputPath('all-package-costs.png') })
     await next(page)
     await expect(summary.locator('.package-combined-total dd')).toHaveText('742.50 USD')
+    await expect(summary.locator('.additional-cost-card dd.package-cost-total')).toHaveText('119.20 USD')
+    await expect(summary.locator('.estimate-combined-total dd')).toHaveText('861.70 USD')
     await page.locator('.local-calculate-action').click()
     await expect(page.locator('.local-cost-total')).toContainText('861.70')
     await next(page)
@@ -1880,6 +1959,68 @@ test('per-equipment package cards page every equipment and package and clamp pag
   await expect(preview.locator('.equipment-package-price')).toHaveCount(400)
 })
 
+for (const language of ['en', 'fr']) {
+  test(`CSTM equipment cards show entered hours and costs and recalculate assigned shares in ${language}`, async ({ page }) => {
+    const fr = language === 'fr'
+    await page.addInitScript(() => {
+      window.__extraPackages = [{
+        re_repairpackageid: 'custom', re_packagenumber: 'CSTM: 0', re_packagenameen: 'Custom',
+        re_iscustompackage: true, re_mechanichours: 0, re_materialmisctaxcost: 0, re_effectivefrom: '2020-01-01',
+      }]
+      window.__equipmentResults = ['TEST123', 'TEST456', 'TEST789'].map((number, i) => ({
+        re_equipmentid: `unit-${i}`, re_equipment: number, re_equipmentname: `Equipment ${number}`,
+      }))
+    })
+    await completeDraft(page, { width: fr ? 320 : 1366, height: 900 }, language)
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    for (const number of ['TEST456', 'TEST789']) {
+      await page.locator('#equipment-search').fill(number)
+      await page.locator('#equipment-options').getByRole('button', { name: new RegExp(`^${number} Equipment ${number}`) }).click()
+    }
+    await page.locator('#package-search').fill('CSTM')
+    await page.locator('#package-options button').first().click()
+    const editor = page.locator('.custom-cost-lines')
+    await editor.getByRole('button', { name: fr ? 'Ajouter main-d’œuvre' : 'Add labor', exact: true }).click()
+    await editor.locator('fieldset').first().locator('input').fill('6')
+    await editor.getByRole('button', { name: fr ? 'Ajouter un matériau' : 'Add material', exact: true }).click()
+    const material = editor.locator('fieldset').nth(1)
+    await material.getByRole('combobox', { name: fr ? 'Type de pièce' : 'Part type', exact: true }).selectOption('non-kone')
+    await material.getByRole('button', {
+      name: fr ? 'Utiliser la saisie manuelle sans catalogue' : 'Use manual entry without catalog', exact: true,
+    }).click()
+    await material.locator('textarea').fill('Motor')
+    await material.getByRole('textbox', { name: fr ? 'Numéro de pièce' : 'Part number', exact: true }).fill('MOTOR-1')
+    await material.getByRole('spinbutton', { name: fr ? 'Quantité' : 'Quantity', exact: true }).fill('2')
+    await material.getByRole('spinbutton', { name: fr ? 'Coût unitaire' : 'Unit cost', exact: true }).fill('25')
+    await setCostRates(page, '5', '10')
+    await page.getByRole('button', {
+      name: fr ? 'Calculer et retourner aux forfaits' : 'Calculate and return to packages', exact: true,
+    }).click()
+    const group = page.locator('.selected-package-group').filter({ hasText: 'CSTM: 0' })
+    const cards = group.locator('.equipment-package-card')
+    const value = (label) => cards.locator('dt').filter({ hasText: new RegExp(`^${label}$`) }).locator('+ dd')
+    await expect(cards).toHaveCount(3)
+    await expect(value(fr ? 'Heures de main-d’œuvre' : 'Labor hours required')).toHaveText(Array(3).fill(fr ? '2,00' : '2.00'))
+    await expect(cards.locator('.equipment-package-price')).toHaveText(Array(3).fill(fr ? '219,17 USD' : '219.17 USD'))
+    await group.locator('details summary').click()
+    await group.getByLabel('TEST789', { exact: true }).uncheck()
+    await expect(cards).toHaveCount(2)
+    await expect(value(fr ? 'Heures de main-d’œuvre' : 'Labor hours required')).toHaveText(Array(2).fill(fr ? '3,00' : '3.00'))
+    await expect(cards.locator('.equipment-package-price')).toHaveText(Array(2).fill(fr ? '328,75 USD' : '328.75 USD'))
+    await next(page)
+    const summary = page.locator('.package-overview-card').filter({ hasText: 'CSTM: 0' })
+    await expect(summary.locator('dd.package-cost-total')).toHaveText(fr ? '657,50 USD' : '657.50 USD')
+    await page.getByRole('button', { name: fr ? 'Modifier les coûts CSTM' : 'Edit CSTM costs', exact: true }).click()
+    await editor.locator('fieldset').first().locator('input').fill('8')
+    await page.getByRole('button', {
+      name: fr ? 'Calculer et retourner aux forfaits' : 'Calculate and return to packages', exact: true,
+    }).click()
+    await expect(value(fr ? 'Heures de main-d’œuvre' : 'Labor hours required')).toHaveText(Array(2).fill(fr ? '4,00' : '4.00'))
+    await expect(cards.locator('.equipment-package-price')).toHaveText(Array(2).fill(fr ? '428,75 USD' : '428.75 USD'))
+    expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+  })
+}
+
 test('per-equipment package cards show missing-rate errors and recover after retry without displaying zero', async ({ page }) => {
   await page.addInitScript(() => { window.__rateError = 'Rates temporarily unavailable' })
   await completeDraft(page)
@@ -1926,7 +2067,7 @@ test('equipment selection exceeds fourteen for catalog and unlisted units and su
   await expect(page.locator('.selected-card').first().locator('.equipment-card')).toHaveCount(22)
 })
 
-test('Account and Contact are required for saving and Contact details are read-only', async ({ page }) => {
+test('Account is required for saving and fetched Contact details are read-only', async ({ page }) => {
   await mockData(page, 'en', 'light')
   await page.goto('/')
   await page.locator('.main-nav .nav-item').nth(1).click()
@@ -1939,8 +2080,8 @@ test('Account and Contact are required for saving and Contact details are read-o
   const email = page.locator('#customer-email')
   await expect(email).toHaveAttribute('required', '')
   await expect(email).toHaveAttribute('aria-required', 'true')
-  await expect(email).toHaveJSProperty('readOnly', true)
-  await expect(page.locator('#customer-phone')).toHaveJSProperty('readOnly', true)
+  await expect(email).toBeDisabled()
+  await expect(page.locator('#customer-phone')).toBeDisabled()
   for (const width of [320, 1366]) {
     await page.setViewportSize({ width, height: 900 })
     const label = page.locator('label[for="customer-email"]')
@@ -1969,10 +2110,75 @@ test('Account and Contact are required for saving and Contact details are read-o
   await page.locator('#customer-name-options button').first().click()
   await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
   await expect(email).toHaveValue('draft@example.invalid')
+  await expect(email).toHaveJSProperty('readOnly', true)
+  await expect(page.locator('#customer-phone')).toHaveJSProperty('readOnly', true)
   await expect(page.locator('.footer-actions .button')).toBeEnabled()
   await page.locator('.footer-actions .button').click()
   await expect(page.locator('#equipment-search')).toBeVisible()
 })
+
+for (const language of ['en', 'fr']) {
+  for (const partial of [false, true]) {
+    test(`Missing Contact details accept manual entry and save/reopen (${language}, linked=${partial})`, async ({ page }) => {
+      await mockData(page, language, 'light')
+      await page.addInitScript((linked) => {
+        window.__contactMasterRecords = linked ? [{
+          id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name:'Fetched Contact', email:'', phone:'',
+          accountId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        }] : []
+      }, partial)
+      await page.goto('/')
+      await page.locator('.main-nav .nav-item').nth(1).click()
+      await page.locator('#estimate-title').fill('Manual contact regression')
+      await page.locator('#branch-select').fill('020')
+      await page.locator('#branch-select').press('ArrowDown')
+      await page.locator('#branch-select').press('Enter')
+      await page.locator('#equipment-type').selectOption('test-type')
+      await page.locator('#opportunity-building').fill('Synthetic building')
+      await page.locator('#account-master-search').fill('Acme')
+      await page.locator('#account-master-options button').first().click()
+      await expect(page.locator('.customer-defaults-state')).not.toContainText(/Fetching linked|Chargement des données/)
+      if (partial) {
+        await expect(page.locator('#customer-name')).toHaveValue('Fetched Contact')
+        await expect(page.locator('#customer-name')).toHaveJSProperty('readOnly', true)
+      } else {
+        await page.locator('#customer-manual-name').fill('Manual Contact')
+      }
+      await expect(page.locator('#customer-email')).toBeEditable()
+      await expect(page.locator('#customer-phone')).toBeEditable()
+      await page.locator('#customer-email').fill('manual@example.invalid')
+      await page.locator('#customer-phone').fill('12345')
+      await next(page)
+      await pickEquipmentAndPackage(page)
+      await expect(page.locator('.draft-toolbar .primary')).toBeEnabled()
+      await page.locator('.draft-toolbar .primary').click()
+      await expect.poll(() => page.evaluate(() => window.__draftSaved?.version)).toBe('1')
+      const saved = await page.evaluate(() => window.__draftSaved)
+      expect(saved.accountId).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+      expect(saved.contactId).toBe(partial ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' : '')
+      expect(saved.customer).toBe(partial ? 'Fetched Contact' : 'Manual Contact')
+      expect(saved.email).toBe('manual@example.invalid')
+      expect(saved.phone).toBe('12345')
+      await page.locator('.main-nav .nav-item').first().click()
+      await page.locator('.request-record').first().getByRole('button', { name: /Open draft|Ouvrir le brouillon/ }).click()
+      await expect(page.locator('#customer-email')).toHaveValue('manual@example.invalid')
+      await expect(page.locator('#customer-email')).toBeEditable()
+      await expect(page.locator('#customer-phone')).toHaveValue('12345')
+      if (!partial) await expect(page.locator('#customer-manual-name')).toHaveValue('Manual Contact')
+      await page.locator('#customer-email').fill('invalid-email')
+      await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
+      await page.locator('#customer-email').fill('updated@example.invalid')
+      await page.locator('#customer-phone').fill('67890')
+      await page.locator('.draft-toolbar .primary').click()
+      await expect.poll(() => page.evaluate(() => window.__draftSaved?.version)).toBe('2')
+      expect(await page.evaluate(() => window.__draftSaved.email)).toBe('updated@example.invalid')
+      await page.getByRole('button', { name: /^(Change account|Changer de compte)$/ }).click()
+      await expect(page.locator('#customer-email')).toHaveValue('')
+      await expect(page.locator('#customer-phone')).toHaveValue('')
+      await expect(page.locator('.draft-toolbar .primary')).toBeDisabled()
+    })
+  }
+}
 
 for (const language of ['en', 'fr']) {
   test(`Missing customer masters do not block local navigation in ${language}`, async ({ page }) => {
@@ -2386,6 +2592,49 @@ test('customer master search shows errors, recovers on a new query and respects 
   await expect(page.locator('#account-master-options [role=option]')).toHaveCount(20)
 })
 
+for (const language of ['en', 'fr']) {
+  test(`imported equipment details display without changing saved financial snapshots in ${language}`, async ({ page }) => {
+    const fr = language === 'fr'
+    const viewport = { width: fr ? 320 : 1366, height: 900 }
+    await completeDraft(page, viewport, language)
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    await page.evaluate(() => {
+      window.__equipmentResults = [{
+        re_equipmentid: 'imported-details', re_equipment: 'UNIT999',
+        re_functionallocation: 'FL-TEST', re_description: 'Imported equipment description',
+        re_manufacturer: 'Imported manufacturer', re_constructionyear: new Date().getFullYear() - 12,
+      }]
+    })
+    await page.locator('#equipment-search').fill('UNIT999')
+    const option = page.locator('#equipment-options button').filter({ hasText: 'UNIT999' }).first()
+    await expect(option).toContainText('Description: Imported equipment description')
+    await expect(option).toContainText('Imported manufacturer')
+    await expect(option).toContainText(fr ? 'Âge: 12' : 'Age: 12')
+    await expect(option).toContainText('FL-TEST')
+    await option.click()
+    await page.locator('#equipment-search').press('Escape')
+    const card = page.locator('.equipment-card').filter({ hasText: 'UNIT999' })
+    await expect(card).toContainText('Description: Imported equipment description')
+    await expect(card).toContainText('Imported manufacturer')
+    await expect(card).toContainText(fr ? 'Âge: 12' : 'Age: 12')
+    await expect(card).toContainText('FL-TEST')
+    await checkLayout(page, viewport, 'imported equipment source details')
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    const saved = await page.evaluate(() => window.__draftCalls.at(-1).equipment.find(item => item.number === 'UNIT999'))
+    expect(saved.name).toBe('')
+    expect(saved.oem).toBe('')
+    expect(saved.age).toBeUndefined()
+    expect(saved).not.toHaveProperty('re_description')
+    await page.locator('.draft-secondary-actions button').nth(1).click()
+    await next(page)
+    await expect(card).toContainText('Imported equipment description')
+    await expect(card).toContainText('Imported manufacturer')
+    await expect(card).toContainText(fr ? 'Âge: 12' : 'Age: 12')
+    await expect(page.locator('.unsaved-badge')).not.toContainText(fr ? 'Non enregistré' : 'Not saved')
+  })
+}
+
 test('bulk equipment paste can select more than fourteen matched units', async ({ page }) => {
   await completeDraft(page, { width: 1366, height: 768 }, 'en')
   for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
@@ -2792,6 +3041,7 @@ for (const { language, theme } of modes) {
     await labor.locator('input').fill('3.25')
     await custom.getByRole('button', { name: language === 'fr' ? 'Ajouter un matériau' : 'Add material', exact: true }).click()
     const material = custom.locator('fieldset').nth(1)
+    await material.getByRole('combobox', { name: language === 'fr' ? 'Type de pièce' : 'Part type', exact: true }).selectOption('non-kone')
     await material.getByRole('button', { name: language === 'fr' ? 'Utiliser la saisie manuelle sans catalogue' : 'Use manual entry without catalog', exact: true }).click()
     await material.locator('textarea').fill('Custom motor')
     await material.getByRole('textbox', { name: language === 'fr' ? 'Numéro de pièce' : 'Part number', exact: true }).fill('NONKONE-123')

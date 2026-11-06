@@ -84,6 +84,7 @@ namespace RepairEstimator.Drafts
     [DataContract]
     public sealed class OpportunityValues
     {
+        [DataMember(EmitDefaultValue = false)] public ContactSearchResult contactMaster;
         [DataMember] public string branchId;
         [DataMember] public string stateId;
         [DataMember] public string equipmentTypeId;
@@ -137,6 +138,7 @@ namespace RepairEstimator.Drafts
     [DataContract]
     public sealed class Draft
     {
+        [DataMember(EmitDefaultValue = false)] public ContactSearchResult contactMaster;
         [DataMember] public string mode;
         [DataMember(EmitDefaultValue = false)] public string search;
         [DataMember(EmitDefaultValue = false)] public string partType;
@@ -382,9 +384,10 @@ namespace RepairEstimator.Drafts
             header["re_numberofequipment"] = input.equipment.Count;
             header["re_estimatepath"] = new OptionSetValue(126110000);
             header["re_estimatetype"] = new OptionSetValue(126110000);
-            var selection = ResolveCustomerSelection(service, input.accountId, input.contactId, input.market);
+            var selection = ResolveCustomerSelection(service, input.accountId, input.contactId, input.market,
+                input.customer, input.email, input.phone);
             header["re_customeraccount"] = selection.Item1.ToEntityReference();
-            header["re_customercontact"] = selection.Item2.ToEntityReference();
+            header["re_customercontact"] = selection.Item2?.ToEntityReference();
             header["re_customername"] = Required(selection.Item3, 100, "Customer name");
             header["re_customeremail"] = Required(selection.Item4, 100, "Customer email");
             header["re_customerphone"] = Optional(selection.Item5, 50);
@@ -858,7 +861,6 @@ namespace RepairEstimator.Drafts
             contactQuery.Criteria.AddCondition("parentcustomerid", ConditionOperator.Equal, accountId);
             contactQuery.Criteria.AddCondition("re_salesforcecontactid", ConditionOperator.NotNull);
             contactQuery.Criteria.AddCondition("re_sourceactive", ConditionOperator.Equal, true);
-            contactQuery.Criteria.AddCondition("emailaddress1", ConditionOperator.NotNull);
             if (!defaults)
             {
                 var contactMatch = new FilterExpression(LogicalOperator.Or);
@@ -871,14 +873,11 @@ namespace RepairEstimator.Drafts
             contactQuery.AddOrder("contactid", OrderType.Ascending);
             var contactRows = service.RetrieveMultiple(contactQuery).Entities;
             result.contactsTruncated = contactRows.Count > 20;
-            result.contacts = contactRows.Take(20).Select(row => new ContactSearchResult {
-                id = row.Id.ToString("D"),
-                name = row.GetAttributeValue<string>("re_salesforcename") ?? row.GetAttributeValue<string>("fullname"),
-                email = row.GetAttributeValue<string>("emailaddress1"),
-                phone = row.GetAttributeValue<string>("telephone1") ?? row.GetAttributeValue<string>("mobilephone") ?? "",
-                primary = row.GetAttributeValue<bool>("re_primarycontact")
-            }).Where(row => !string.IsNullOrWhiteSpace(row.name) && row.name.Length <= 100 &&
-                !string.IsNullOrWhiteSpace(row.email)).ToList();
+            result.contacts = contactRows.Take(20).Select(row => {
+                var option = CustomerContact(row);
+                option.primary = row.GetAttributeValue<bool>("re_primarycontact");
+                return option;
+            }).Where(row => row.name.Length <= 100 && row.email.Length <= 100 && row.phone.Length <= 50).ToList();
             if (defaults && !string.IsNullOrEmpty(input.branchId))
             {
                 Guid branchId;
@@ -927,34 +926,60 @@ namespace RepairEstimator.Drafts
                 market == 126110002 ? "CKQ" : null;
         }
 
+        static string CustomerValue(string master, string entered)
+        {
+            return string.IsNullOrWhiteSpace(master) ? entered : master;
+        }
+
+        internal static ContactSearchResult CustomerContact(Entity contact)
+        {
+            return contact == null ? null : new ContactSearchResult {
+                id = contact.Id.ToString("D"),
+                name = CustomerValue(contact.GetAttributeValue<string>("re_salesforcename"),
+                    contact.GetAttributeValue<string>("fullname")) ?? "",
+                email = contact.GetAttributeValue<string>("emailaddress1") ?? "",
+                phone = CustomerValue(contact.GetAttributeValue<string>("telephone1"),
+                    contact.GetAttributeValue<string>("mobilephone")) ?? ""
+            };
+        }
+
         internal static Tuple<Entity, Entity, string, string, string, string, string> ResolveCustomerSelection(
-            IOrganizationService service, string accountId, string contactId, int market)
+            IOrganizationService service, string accountId, string contactId, int market,
+            string enteredName = null, string enteredEmail = null, string enteredPhone = null)
         {
             Guid accountGuid = Guid.Empty;
             Guid contactGuid = Guid.Empty;
-            if (!Guid.TryParse(accountId, out accountGuid) || !Guid.TryParse(contactId, out contactGuid))
-                Fail("Select both an Account and Contact from Dataverse.");
+            if (!Guid.TryParse(accountId, out accountGuid))
+                Fail("Select an Account from Dataverse.");
             var account = service.Retrieve("account", accountGuid,
                 new ColumnSet("statecode", "re_salesforceaccountid", "re_salesorganizations", "accountnumber", "name"));
             Active(account);
             if (string.IsNullOrEmpty(account.GetAttributeValue<string>("re_salesforceaccountid")) ||
                 account.GetAttributeValue<string>("re_salesorganizations") != SourceOrganizationForMarket(market))
                 Fail("The selected Account is not an imported source master.");
-            var contact = service.Retrieve("contact", contactGuid,
-                new ColumnSet("statecode", "parentcustomerid", "re_salesforcecontactid", "re_sourceactive",
-                    "re_salesforcename", "fullname", "emailaddress1", "telephone1", "mobilephone"));
-            Active(contact);
-            var parent = contact.GetAttributeValue<EntityReference>("parentcustomerid");
-            if (string.IsNullOrEmpty(contact.GetAttributeValue<string>("re_salesforcecontactid")) ||
-                !contact.GetAttributeValue<bool>("re_sourceactive") || parent == null ||
-                parent.LogicalName != "account" || parent.Id != accountGuid)
-                Fail("The selected Contact is not active under the selected Account.");
-            var name = contact.GetAttributeValue<string>("re_salesforcename") ?? contact.GetAttributeValue<string>("fullname");
-            var email = contact.GetAttributeValue<string>("emailaddress1");
-            if (string.IsNullOrWhiteSpace(name) || name.Length > 100 || string.IsNullOrWhiteSpace(email))
-                Fail("The selected Contact does not have valid name and email details.");
+            Entity contact = null;
+            if (!string.IsNullOrWhiteSpace(contactId))
+            {
+                if (!Guid.TryParse(contactId, out contactGuid)) Fail("Select a valid Contact from Dataverse.");
+                contact = service.Retrieve("contact", contactGuid,
+                    new ColumnSet("statecode", "parentcustomerid", "re_salesforcecontactid", "re_sourceactive",
+                        "re_salesforcename", "fullname", "emailaddress1", "telephone1", "mobilephone"));
+                Active(contact);
+                var parent = contact.GetAttributeValue<EntityReference>("parentcustomerid");
+                if (string.IsNullOrEmpty(contact.GetAttributeValue<string>("re_salesforcecontactid")) ||
+                    !contact.GetAttributeValue<bool>("re_sourceactive") || parent == null ||
+                    parent.LogicalName != "account" || parent.Id != accountGuid)
+                    Fail("The selected Contact is not active under the selected Account.");
+            }
+            var name = Required(CustomerValue(CustomerValue(contact?.GetAttributeValue<string>("re_salesforcename"),
+                contact?.GetAttributeValue<string>("fullname")), enteredName), 100, "Customer name");
+            var email = Required(CustomerValue(contact?.GetAttributeValue<string>("emailaddress1"), enteredEmail), 100, "Customer email");
+            if (!System.Text.RegularExpressions.Regex.IsMatch(email, @"^[^\s@]+@[^\s@]+\.[^\s@]+$"))
+                Fail("Customer email must be a valid email address.");
+            var phone = Optional(CustomerValue(CustomerValue(contact?.GetAttributeValue<string>("telephone1"),
+                contact?.GetAttributeValue<string>("mobilephone")), enteredPhone), 50);
             return Tuple.Create(account, contact, name, email,
-                contact.GetAttributeValue<string>("telephone1") ?? contact.GetAttributeValue<string>("mobilephone"),
+                phone,
                 account.GetAttributeValue<string>("accountnumber"), account.GetAttributeValue<string>("name"));
         }
 
@@ -990,11 +1015,12 @@ namespace RepairEstimator.Drafts
                 var contact = service.Retrieve("contact", linkedContact.Id,
                     new ColumnSet("re_salesforcename", "fullname", "emailaddress1", "telephone1", "mobilephone"));
                 result.contactId = linkedContact.Id.ToString("D");
-                result.customer = contact.GetAttributeValue<string>("re_salesforcename") ??
-                    contact.GetAttributeValue<string>("fullname") ?? result.customer;
-                result.email = contact.GetAttributeValue<string>("emailaddress1") ?? result.email;
-                result.phone = contact.GetAttributeValue<string>("telephone1") ??
-                    contact.GetAttributeValue<string>("mobilephone") ?? result.phone;
+                result.contactMaster = CustomerContact(contact);
+                result.customer = CustomerValue(CustomerValue(contact.GetAttributeValue<string>("re_salesforcename"),
+                    contact.GetAttributeValue<string>("fullname")), result.customer);
+                result.email = CustomerValue(contact.GetAttributeValue<string>("emailaddress1"), result.email);
+                result.phone = CustomerValue(CustomerValue(contact.GetAttributeValue<string>("telephone1"),
+                    contact.GetAttributeValue<string>("mobilephone")), result.phone);
             }
             var export = row.GetAttributeValue<EntityReference>("re_exportrequest");
             if (export != null && !forClone)

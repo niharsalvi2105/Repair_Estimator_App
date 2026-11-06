@@ -32,6 +32,7 @@ test('draft responses retain valid Account and Contact references', () => {
     ...fixture(), accountId: '11111111-1111-4111-8111-111111111111', accountNumber: 'A-42',
     accountName: 'Customer Account', contactId: '22222222-2222-4222-8222-222222222222',
   })
+
   assert.equal(record.accountId, '11111111-1111-4111-8111-111111111111')
   assert.equal(record.contactId, '22222222-2222-4222-8222-222222222222')
   for (const change of [
@@ -39,6 +40,20 @@ test('draft responses retain valid Account and Contact references', () => {
     { contactId: '22222222-2222-4222-8222-222222222222' },
     { accountId: '11111111-1111-4111-8111-111111111111' },
   ]) assert.throws(() => parseDraft({ ...fixture(), ...change }), /customer master/i)
+})
+
+test('manual customer snapshots and partial master fields remain distinct on reload', () => {
+  const original = {
+    ...fixture(), accountId: '11111111-1111-4111-8111-111111111111', accountNumber: 'A-42',
+    accountName: 'Customer Account', customer: 'Manual Name', email: 'manual@example.invalid', phone: '123',
+  }
+  assert.equal(parseDraft(original).contactId, undefined)
+  const contactMaster = { id: '22222222-2222-4222-8222-222222222222', name: 'Fetched Name', email: '', phone: '' }
+  const record = parseDraft({ ...original, contactId: contactMaster.id, contactMaster })
+  assert.equal(record.email, 'manual@example.invalid')
+  assert.equal(record.contactMaster.email, '')
+  assert.throws(() => parseDraft({ ...original, contactMaster }), /Contact/)
+  assert.throws(() => parseDraft({ ...record, contactMaster: { ...contactMaster, phone: null } }), /Contact/)
 })
 
 test('pricing state accepts old responses and nullable strings but rejects malformed values', () => {

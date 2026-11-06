@@ -10,16 +10,19 @@ type Props = {
   account: AccountMasterOption | null
   contact: ContactMasterOption | null
   onAccount: (account: AccountMasterOption | null) => void
-  onContact: (contact: ContactMasterOption | null) => void
+  onContact: (contact: ContactMasterOption | null, preserveManual?: boolean) => void
   language: 'en' | 'fr'
   disabled: boolean
   branchId: string
   building: string
   onBuilding: (value: string) => void
+  customerName: string
+  onCustomerName: (value: string) => void
 }
 
 export function CustomerMasterSelect({
   market, account, contact, onAccount, onContact, language, disabled, branchId, building, onBuilding,
+  customerName, onCustomerName,
 }: Props) {
   const fr = language === 'fr'
   const [accountQuery, setAccountQuery] = useState('')
@@ -36,7 +39,7 @@ export function CustomerMasterSelect({
   const applyDefaults = useEffectEvent((result: CustomerDefaults) => {
     if (disabled) return
     const selected = defaultContact(result)
-    if (!contact && selected) onContact(selected)
+    if (!contact && selected) onContact(selected, true)
     const description = defaultLocationDescription(result)
     if (!building.trim() && description) onBuilding(description)
   })
@@ -143,14 +146,14 @@ export function CustomerMasterSelect({
       </div>}
       {defaults && !contact && <p className="field-help" role="status">{defaults.contacts.length
         ? fr ? 'Choisissez un contact ci-dessous ; aucune sélection unique ne peut être déduite.' : 'Choose a linked Contact below; there is no unambiguous default.'
-        : fr ? 'Aucun contact actif avec courriel n’est disponible pour ce compte dans Dataverse.' : 'No eligible active Contact with email is available for this Account in Dataverse.'}</p>}
+        : fr ? 'Aucun contact actif disponible. Saisissez les coordonnées manquantes pour ce devis.' : 'No eligible active Contact is available. Enter the missing contact details for this estimate.'}</p>}
       {defaults?.contactsTruncated && <p className="field-help">{fr ? 'Affichage limité : recherchez le contact par nom ou courriel.' : 'More Contacts exist: search by name or email to refine the list.'}</p>}
     </div>}
     <div className="customer-master-field">
       <label className="field-label" htmlFor="customer-name">
-        {fr ? 'Nom du contact' : 'Contact name'}<span className="required">*</span>
+        {fr ? 'Contact Dataverse' : 'Dataverse Contact'}
         <input id="customer-name" className="text-input" type="search" maxLength={100}
-          autoComplete="off" disabled={disabled || !account} aria-required="true"
+          autoComplete="off" disabled={disabled || !account}
           placeholder={fr ? 'Rechercher par nom ou courriel' : 'Search by name or email'}
           value={contact?.name ?? contactQuery} readOnly={!!contact} onChange={(event) => {
             if (contact) onContact(null)
@@ -169,6 +172,16 @@ export function CustomerMasterSelect({
         </button>
       </p>}
       {!account && <p className="field-help">{fr ? 'Sélectionnez d’abord un compte.' : 'Select an Account first.'}</p>}
+      {account && !contact?.name.trim() && <label className="field-label" htmlFor="customer-manual-name">
+        {fr ? 'Nom du contact' : 'Contact name'}<span className="required">*</span>
+        <input id="customer-manual-name" className="text-input" maxLength={100}
+          aria-required="true" disabled={disabled} value={customerName} onChange={event => onCustomerName(event.target.value)} />
+      </label>}
+      {account && <p className="field-help">
+        {fr
+          ? 'Les valeurs Dataverse disponibles sont utilisées directement. Complétez les champs manquants ; ils sont enregistrés uniquement sur ce devis, sans modifier le contact partagé.'
+          : 'Available Dataverse values are used directly. Fill in missing fields; manual details are saved only on this estimate, without changing shared Contacts.'}
+      </p>}
       {account && !contact && !contactQuery && defaults && defaults.contacts.length > 0 &&
         <ul className="customer-linked-options" aria-label={fr ? 'Contacts liés' : 'Linked Contacts'}>
           {defaults.contacts.map(row => <li key={row.id}><button className="button secondary" type="button" disabled={disabled}

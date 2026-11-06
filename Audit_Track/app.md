@@ -2,6 +2,48 @@
 
 ## 1. Scope and evidence
 
+### Imported equipment detail display (2026-11-06, source correction)
+
+Read-only checks of the three equipment rows in the reported screenshot found blank legacy `re_equipmentname`, `re_oem` and `re_equipmentage`, but populated imported `re_description`, `re_manufacturer` and integer `re_constructionyear`. The UI had queried only the legacy columns; this was not evidence that imported source details were lost.
+
+With user approval, equipment browse/search and selected cards now show imported Description, Manufacturer and Age alongside the existing functional location. Description remains explicitly labelled, not relabelled as equipment name. Manufacturer uses the imported value, falling back to legacy OEM. An existing nonnegative legacy age is retained; otherwise age is current calendar year minus a valid positive integer construction year, including zero years for current-year construction. Missing/future/invalid years show no invented age. Existing legacy equipment names remain visible.
+
+Matched selected equipment details are loaded read-only in bounded Branch-scoped batches, including reopened/bulk selections. Errors are explicit with retry; stale responses are ignored. These are transient display details, not manual inputs or changes to pricing inputs, saved equipment snapshots, master records or persisted financial bands. Location retains the functional-location identifier; no address/name substitution is inferred.
+
+Validation: three display-helper tests, four bulk-planning tests and five documentation checks passed, plus build/type-check and focused lint. Seven mocked browser cases passed: English/French at desktop/mobile verify dropdown/cards, Save/reopen and unchanged financial snapshots; existing bulk and typed-list click/keyboard cases passed. PAC publication to Dev succeeded; a separate verification tab loaded `index-e-uRi3hk.js` and showed Description, Manufacturer, calculated Age and Location in both a live Equipment option and its unsaved selected card. No business Save/Submit or master write occurred. Age reflects the stored source year, not certified installation history; missing/correctness of source data remains a master-data concern.
+
+### Dev deployment and page-placement correction (2026-11-06)
+
+The accumulated customer fallback, CSTM equipment previews, additional-cost summary and new material defaults were published to Dev. A separate verification tab loaded `index-BVY7Cdit.js`; read-only Contact search succeeded. Pricing and Drafts signed assemblies were updated in place with hash readback and existing type identities preserved. Earlier source-only statements below describe predeployment validation, not current deployment status. No real business Save/Submit, email, financial recalculation or non-admin acceptance was performed.
+
+Correction: the additional-details card and combined estimated total belong **only on Pricing & Margin (step 4)**. Additional Details (step 3) retains package summaries and existing input controls; step 4 derives its card from those same inputs, including after back-navigation edits and Save/reopen. Review retains its existing package/pricing summaries without this extra card. No duplicate inputs, formula or persistence changes. Four focused mocked browser cases passed across successful runs (English/French edits, native negative-input navigation guard, Save/reopen and mobile/desktop mixed-package totals); 15 cost/documentation checks and build/type-check/lint passed. PAC published the correction to Dev; a separate verification tab loaded the new `index-Cpj6WZd4.js` bundle. This is published-bundle verification, not real tenant Save/Submit acceptance.
+
+### New CSTM material defaults (current source)
+
+New material lines start with quantity 1 and part type KONE in both languages. Selecting a catalog part preserves the entered quantity. Users can still explicitly choose Non-KONE/manual entry. Existing saved and cloned line quantities/types are not overwritten; no price, markup, validation or calculation formula changes. Regression coverage checks the defaults for successive new lines, catalog selection, manual override and saved non-default quantities in English/French at mobile/desktop widths. Deployment and validation evidence is recorded separately below when completed.
+
+### Additional details cost card and combined total (current source)
+
+Pricing & Margin shows selected package cards, a **Package subtotal**, an **Additional details cost** card, then **Total estimated cost**, using values entered on Additional Details. The additional card uses the same bordered-card styling and itemizes additional labor hours, branch mechanic role/time rate, labor cost, additional material, miscellaneous, tax/freight rates and amounts, and additional subtotal. The final total adds package subtotal and additions once. Package-specific CSTM lines remain in package costs and are not repeated as additions; these are cost previews, not selling prices or CMII.
+
+The shared additional-cost helper is also used by the local Calculate cost preview action to prevent formula drift. Blank optional additions are zero; negative/nonfinite inputs, missing/ambiguous labor rates or invalid percentages make the additional/combined preview explicitly unavailable. Existing fields and Save/reopen persistence remain unchanged. Ten cost tests, five documentation checks, production build/type-check and changed-source lint passed. Five mocked browser cases passed: English/French card ordering, breakdown, invalid-input recovery, local-preview reconciliation and Save/reopen, plus mobile/desktop mixed-package carry-forward and CSTM validation. Saved mock package snapshots differ from unsaved catalog values; combined totals correctly use the returned saved values. No frontend publication, tenant write, backend formula change or production/non-admin acceptance is claimed.
+
+### CSTM equipment cards include entered hours and costs (current source)
+
+The zero-hour/zero-cost cards used only predefined CSTM master values, while entered custom lines were already included in package summaries. Equipment cards now use the same validated package-total calculation and divide entered package-specific hours/labor/material/tax/freight equally across that package's assigned Equipment count. Predefined costs remain per-unit; other packages' lines and estimate-level additions are excluded. Changing hours, rates, material, tax/freight or assigned Equipment count updates the displayed shares. Custom entries are still charged once: no multiplied charges or changes to saved financial formulas.
+
+CSTM cards label their weighted hourly cost as a blended rate because role/time categories and saved line rates may differ. Package-priced KONE amounts remain once per unit, without extra tax/freight; separately entered manual materials retain applicable tax/freight. Missing/invalid CSTM entries or rates show an explicit unavailable error instead of a misleading zero. Display amounts use existing two-decimal formatting; rounded individual shares may differ from the unrounded package total by rounding cents.
+
+Local evidence: nine package-cost tests, three material tests and five documentation checks passed, including three/many-unit reconciliation, subsets, package isolation, saved/mixed-role rates and mixed KONE/manual materials. Seven focused browser cases passed across targeted runs: English/French CSTM hour edits and assigned-equipment shares, mobile/desktop carry-forward totals, standard cards and missing-rate recovery. Production build/type-check and changed-source lint passed. Tests use synthetic/mocked data; this is source/local evidence only, not app publication or tenant/non-admin verification. No backend/schema, master values, saved estimates or import contracts changed.
+
+### Missing customer details: estimate-only manual fallback (current source)
+
+This supersedes earlier mandatory-Contact/read-only-only descriptions below. An imported Account is still required. Available Contact name/email/phone values are autofetched and read-only; missing values can be entered manually (name/email 100, phone 50 characters). When no eligible Contact exists, a separate manual Contact-name field is shown alongside the optional Dataverse search. Required name and valid email remain Save/Submit gates; local review navigation remains possible without completed customer details. English and French helper text distinguishes estimate-only entry from shared master writeback.
+
+Account/Branch changes clear old Contact/manual values. Explicit Contact changes clear manual details; delayed automatic defaults preserve entered missing fields. Save/load, clone and preset payloads retain the Account, optional Contact and estimate snapshots. The additive `contactMaster` response distinguishes available master values from manually completed fields so missing values remain editable after reopening. No Account/Contact master is created or edited. Existing submitted/permission/busy locks still apply.
+
+Validation evidence: production build/type-check, changed-source ESLint, 30 customer-contract/clone cases, five documentation checks and 11 browser cases passed. Browser coverage includes missing/partial Contacts in English/French, save/reopen/update, invalid email, Account-change clearing and existing autofetch/stale-response behavior. Thirteen focused backend cases passed, covering Save/reload/update/submission and master-validation gates. These are local/mocked tests, not tenant acceptance. This is local source only, not a published app or deployed API. Tenant/non-admin Save/Submit acceptance remains outstanding; both the Drafts assembly and frontend need coordinated deployment. No pricing formulas or import workers changed.
+
 ### MKO master-data priority (2026-11-06)
 
 Email/template flow work is paused in favor of all MKO master imports. User approved making valid effective refined MKOM parts available through the existing catalog and correcting existing MKO package names/scopes from the supplied source, without changing financial values or GUIDs. Catalog search/effectivity, positive per-unit KONE pricing requirements and saved-line snapshot preservation remain unchanged; zero/non-unit source records stay inactive instead of causing catalog errors. Long/missing source fields and unresolved Equipment mappings are not guessed. No frontend publication or business Save/Submit is part of this import. Source/local tests, native Dataverse readback and browser/non-admin acceptance remain distinct; completion is recorded in [dataverse.md](dataverse.md).
@@ -11,6 +53,8 @@ All 280 MKO package source texts/provenance are now verified natively with uncha
 Subsequent remaining-data continuation supersedes the paused checkpoints above: user approved safe API continuation; parts and Equipment writers resumed while the customer writer remained active. At a later checkpoint, parts reached 14,500 verified and Equipment reached 3,425 verified with 1,075 native conflicts preserved. The attempted dataflow source connection was blocked by a popup error and its unpublished wizard was cancelled before parts resumed; there is no parallel dataflow refresh. These are master-data readback results, not frontend publication, automatic snapshot refresh or complete source import. Exact Branch-name/SFDC labor comparison found 1,308 existing rate amounts agreeing at cent precision; no rates or UI pricing logic were changed. See [dataverse.md](dataverse.md) for unresolved contexts and evidence limits.
 
 The generated import checklist now incorporates current MKO reports and full package completion evidence instead of fixed "not imported" parts text and an Equipment-only historical checkpoint. It explicitly separates source candidates, quarantines, native conflicts and incomplete runtime acceptance. A temporary private refresher keeps reporting current while cached import writers continue; brief stale intervals between refreshes are possible. This is reporting-only: no frontend controls, calculation/display behavior, access, saved snapshots or publication change. See [dataverse.md](dataverse.md) for report inputs and verification limits.
+
+Account/Contact import scheduling now supports concurrent per-dataset batches under one exclusive orchestrator; Contact linkage still requires exact source parents already verified. This is master-data ingestion only: no changed Account/Contact selector behavior, auto-save, permission, formatting, pricing or frontend publication. Preflight/reconciliation and measured native readback remain separate from local tests; see [dataverse.md](dataverse.md).
 
 ### New internal-submission PDF template source (2026-11-06)
 
@@ -181,7 +225,7 @@ validation remains. It is **less strict than full Save**: title/province/remaini
 inputs are checked later. Step2 Continue still requires equipment and package
 selections. Enabled Continue is not proof the request can be saved/submitted.
 
-Full Save completion requires title, selected Account and Contact, Contact email, building, province, branch, equipment type, equipment, package, proposal language, time category, tax/freight text, currency/references and valid CSTM associations. Additional HTML controls enforce required/type/range/step constraints. Source: [App](../src/App.tsx), [workspace](../src/EstimatorWorkspace.tsx).
+Full Save completion requires title, selected Account, customer name and valid email (master or manually completed), building, province, branch, equipment type, equipment, package, proposal language, time category, tax/freight text, currency/references and valid CSTM associations. Contact lookup is optional. Additional HTML controls enforce required/type/range/step constraints. Source: [App](../src/App.tsx), [workspace](../src/EstimatorWorkspace.tsx).
 
 ## 5. Step 1: Opportunity detail controls
 
@@ -196,8 +240,8 @@ Full Save completion requires title, selected Account and Contact, Contact email
 | Equipment type / Job type | Active reference dropdowns | Lookup IDs; job type can be empty |
 | Functional Location Description | Manual text; renamed Building Name label | Same `re_buildingname` column; no authoritative building-master lookup |
 | Account search | Searches active imported Accounts by number/name prefix, scoped to current market | `accountsearch`; selected GUID and displayed number/name enter draft and preset payload |
-| Contact search | Searches active imported Contacts by name/email prefix under the selected Account; Contacts without email are excluded | `contactsearch`; Contact ID is saved, and name/email/phone are populated from Dataverse |
-| Contact name / email / phone | Read-only selected Contact details | Save payload is server-validated against the selected Account/Contact; no manual override |
+| Contact search | Searches active imported Contacts by name/email prefix under the selected Account, including missing-email Contacts | `contactsearch`; optional Contact ID is saved and available values are autofetched |
+| Contact name / email / phone | Available selected Contact values read-only; missing values manually editable | Server validates required name/email, master relationship and field limits; manual values remain estimate-only |
 | Supervisor | Optional text | Saved request field |
 | Work-centre request / technicians / approved | Live choice / numeric technician count max3 / live choice | Saved inputs |
 | National account / Emergency / Customer budgeted | Live choices | Saved inputs |
@@ -249,7 +293,7 @@ Sources: [EquipmentSelect](../src/EquipmentSelect.tsx), [upload UI](../src/Equip
 | Package per-equipment details | Grouped **under each selected package**, one card per equipment, highlighted estimated cost plus formula breakdown |
 | Previous / Next detailed-card paging |20 equipment per page; package summaries also page20 |
 
-Per-equipment cards show the package's predefined one-unit cost, **not selling price**. CSTM labor/material and additional estimate costs are not allocated across equipment. All selected equipment receive the same predefined package unit preview for a given package/rate, not OEM-specific unit recalculation.
+Per-equipment cards show estimated cost, **not selling price**. Standard packages retain predefined one-unit costs. CSTM cards include predefined unit costs plus an equal display share of package-specific entered labor/material and applicable tax/freight across assigned Equipment. Estimate-level additions remain separate. Shares reconcile before display rounding to the package total without multiplying entered custom charges; this is not OEM-specific unit repricing.
 
 Contract equipment card was removed. Retained contract helpers/API do not mean an active frontend button exists.
 

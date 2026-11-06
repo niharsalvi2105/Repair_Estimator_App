@@ -445,9 +445,10 @@ function App() {
   const [step, setStep] = useState(1)
   const [selectedAccount, setSelectedAccount] = useState<AccountMasterOption | null>(null)
   const [selectedContact, setSelectedContact] = useState<ContactMasterOption | null>(null)
-  const customerName = selectedContact?.name ?? ''
-  const customerEmail = selectedContact?.email ?? ''
-  const customerPhone = selectedContact?.phone ?? ''
+  const [manualCustomer, setManualCustomer] = useState({ name: '', email: '', phone: '' })
+  const customerName = selectedContact?.name.trim() ? selectedContact.name : manualCustomer.name
+  const customerEmail = selectedContact?.email.trim() ? selectedContact.email : manualCustomer.email
+  const customerPhone = selectedContact?.phone.trim() ? selectedContact.phone : manualCustomer.phone
   const [buildingName, setBuildingName] = useState('')
   const [session, setSession] = useState<AppSession>()
   const preferences = useUserPreferences(session)
@@ -777,6 +778,7 @@ function App() {
     setEquipmentBulkError('')
     setBranchId(nextBranchId)
     setSelectedAccount(null); setSelectedContact(null)
+    setManualCustomer({ name: '', email: '', phone: '' })
     setBuildingName('')
     setEquipmentQuery('')
     setSelectedEquipment([])
@@ -868,7 +870,7 @@ function App() {
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
   }
   const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && buildingName.trim() && stateId
-    && selectedAccount?.id && selectedContact?.id
+    && selectedAccount?.id && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())
     && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
     && selectedPackages.every((item) => validPackageEquipment(item, selectedEquipment))
     && requestInputs.re_proposallanguage && requestInputs.re_timecategory
@@ -917,7 +919,8 @@ function App() {
     setSelectedAccount(record.accountId && record.accountNumber && record.accountName
       ? { id: record.accountId, number: record.accountNumber, name: record.accountName } : null)
     setSelectedContact(record.contactId
-      ? { id: record.contactId, name: record.customer, email: record.email ?? '', phone: record.phone ?? '' } : null)
+      ? record.contactMaster ?? { id: record.contactId, name: record.customer, email: record.email ?? '', phone: record.phone ?? '' } : null)
+    setManualCustomer({ name: record.customer, email: record.email ?? '', phone: record.phone ?? '' })
     setEquipmentTypeId(record.equipmentTypeId); setJobTypeId(record.jobTypeId ?? '')
     customRatesInitialized.current = true
     setMarket(record.market); setRequestInputs(inputs); setSelectedEquipment(equipment); setSelectedPackages(packages)
@@ -1030,6 +1033,7 @@ function App() {
     setExportDelivery(undefined)
     setEstimateTitle(''); resetBranch(''); setStateId(''); setEquipmentTypeId(''); setJobTypeId('')
     setBuildingName(''); setSelectedAccount(null); setSelectedContact(null)
+    setManualCustomer({ name: '', email: '', phone: '' })
     setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1)
   }
 
@@ -1062,6 +1066,7 @@ function App() {
     email: customerEmail, phone: customerPhone, accountId: selectedAccount?.id ?? '',
     accountNumber: selectedAccount?.number ?? '', accountName: selectedAccount?.name ?? '',
     contactId: selectedContact?.id ?? '', market,
+    contactMaster: selectedContact,
     fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
   })
 
@@ -1318,8 +1323,15 @@ function App() {
                 if (selectedAccount) setBuildingName('')
                 setSelectedAccount(account)
                 setSelectedContact(null)
+                setManualCustomer({ name: '', email: '', phone: '' })
               },
-              onSelectContact: setSelectedContact,
+              onSelectContact: (contact: ContactMasterOption | null, preserveManual = false) => {
+                setSelectedContact(contact)
+                if (!preserveManual) setManualCustomer({ name: '', email: '', phone: '' })
+              },
+              onCustomerName: (name: string) => setManualCustomer(value => ({ ...value, name })),
+              onCustomerEmail: (email: string) => setManualCustomer(value => ({ ...value, email })),
+              onCustomerPhone: (phone: string) => setManualCustomer(value => ({ ...value, phone })),
               canWork,
               draftComplete,
               saveDraft, submitted, exportDelivery,

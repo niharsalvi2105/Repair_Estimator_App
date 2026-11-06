@@ -1,6 +1,7 @@
 import type { RequestInputs } from '../RequestFields'
 import type { Market } from './estimateQuery'
 import { validPackageEquipment } from './packageEquipment.ts'
+import { parseContactMasterOptions, type ContactMasterOption } from './customerMasterContract.ts'
 
 export type DraftEquipment = {
   id: string; number: string; name: string; location: string; customer: string
@@ -38,6 +39,7 @@ export type DraftRecord = {
   title: string; branchId: string; stateId: string; equipmentTypeId: string; jobTypeId: string
   building: string; customer: string; email: string; phone: string; market: Market
   accountId?: string | null; accountNumber?: string | null; accountName?: string | null; contactId?: string | null
+  contactMaster?: ContactMasterOption | null
   salesperson?: string | null
   pricingState?: string | null
   exportDelivery?: ExportDelivery | null
@@ -77,6 +79,10 @@ export function parseDraft(value: unknown): DraftRecord {
     }
   }
   const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (record.contactMaster != null) {
+    const [contact] = parseContactMasterOptions({ contacts: [record.contactMaster] })
+    if (contact.id !== record.contactId) throw new Error('Invalid draft Contact details.')
+  }
   if ((record.accountId && !guidPattern.test(record.accountId)) ||
     (record.contactId && !guidPattern.test(record.contactId)) ||
     (record.contactId && !record.accountId) ||
