@@ -92,7 +92,7 @@ export function CustomerMasterSelect({
     <div className="customer-master-field">
       <div className="input-grid">
       <label className="field-label" htmlFor="account-master-search">
-        {fr ? 'Numéro de compte' : 'Account number'}<span className="required">*</span>
+        <span>{fr ? 'Numéro de compte' : 'Account number'}<span className="required" aria-hidden="true">*</span></span>
         <input id="account-master-search" className="text-input" type="search" maxLength={100}
           autoComplete="off" disabled={disabled} aria-required="true"
           placeholder={fr ? 'Rechercher par numéro ou nom de compte' : 'Search by account number or name'}

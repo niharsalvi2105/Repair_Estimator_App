@@ -447,8 +447,8 @@ for (const viewport of viewports) {
       await checkLayout(page, viewport, 'equipment and packages selected')
       await next(page)
 
-      await expect(page.locator('#request-re_additionallaborhours')).not.toBeEditable()
-      await expect(page.locator('#request-re_additionalmaterial')).not.toBeEditable()
+      await expect(page.locator('#request-re_additionallaborhours')).toBeEditable()
+      await expect(page.locator('#request-re_additionalmaterial')).toBeEditable()
       await checkLayout(page, viewport, 'cost inputs')
       await next(page)
       await page.locator('#request-re_sellprice').fill('1500')
@@ -1121,7 +1121,7 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await expect(page.locator('#request-re_freight')).toHaveValue('14.00')
   await expect(page.locator('#request-re_usetax')).not.toBeEditable()
   await expect(page.locator('#request-re_freight')).not.toBeEditable()
-  await expect(page.locator('#request-re_additionallaborhours')).not.toBeEditable()
+  await expect(page.locator('#request-re_additionallaborhours')).toBeEditable()
   await next(page)
   await page.locator('#request-re_sellprice').fill('1500')
   await next(page)
@@ -1441,6 +1441,33 @@ test('package preview rates query current branch mechanic cost data from Dataver
     return page.locator('.custom-cost-line').filter({ has: page.locator('legend', { hasText: /^(Material|Matériau)/ }) })
   }
 
+  test('Pricing exposes aggregate VK13 conflict and explicit clearing preserves itemized KONE before calculation', async ({ page }) => {
+    const materials = await openCatalogMaterial(page, true)
+    const material = materials.first()
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('kone')
+    const part = material.getByRole('combobox', { name: 'Part number', exact: true })
+    await part.fill('motor')
+    await expect(material.getByRole('listbox').getByRole('option')).toContainText('TEST-PART-001')
+    await part.press('ArrowDown')
+    await part.press('Enter')
+    await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
+    await next(page)
+    await next(page)
+    await page.locator('#request-re_konesparessalespricevk13').fill('100')
+    await expect(page.locator('.kone-pricing-conflict')).toContainText('cannot be used together')
+    await expect(page.locator('.draft-save-action')).toBeDisabled()
+    const before = await page.evaluate(() => window.__draftCalls?.length || 0)
+    await page.getByRole('button', { name: 'Clear aggregate VK13 price', exact: true }).click()
+    await expect(page.locator('#request-re_konesparessalespricevk13')).toHaveValue('')
+    await expect(page.locator('.kone-pricing-conflict')).toHaveCount(0)
+    expect(await page.evaluate(() => window.__draftCalls?.length || 0)).toBe(before)
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    const saved = await page.evaluate(() => window.__draftSaved)
+    expect(saved.materialLines[0]).toMatchObject({ partType: 'kone', part: 'TEST-PART-001' })
+    expect(saved.fields.some(field => field.key === 're_konesparessalespricevk13' && Number(field.value) > 0)).toBe(false)
+  })
+
   for (const width of [320, 1366]) for (const language of ['en', 'fr']) {
     test(`CSTM itemized material combobox and whole quantities save at ${width}px ${language}`, async ({ page }) => {
       const fr = language === 'fr'
@@ -1640,6 +1667,41 @@ test('package costs show immediately and each CSTM requires separate positive en
 })
 
 for (const width of [320, 1366]) {
+  test(`standard package Additional details are editable and survive save and reopen at ${width}px`, async ({ page }) => {
+    await completeDraft(page, { width, height: 900 })
+    for (let i = 0; i < 2; i++) await page.locator('.form-footer > button').click()
+    await expect(page.getByRole('heading', { name: 'Additional details', exact: true })).toBeVisible()
+    await expect(page.locator('.custom-cost-lines')).toHaveCount(0)
+    await expect(page.locator('#request-re_usetax')).not.toBeEditable()
+    await expect(page.locator('#request-re_freight')).not.toBeEditable()
+    for (const [key, value] of [
+      ['re_additionallaborhours', '1'], ['re_additionalmaterial', '10'],
+      ['re_additionalmiscellaneous', '5'], ['re_additionalscope', 'Additional site work'],
+    ]) {
+      await expect(page.locator(`#request-${key}`)).toBeEditable()
+      await page.locator(`#request-${key}`).fill(value)
+    }
+    await expect(page.locator('.form-main')).not.toContainText('Select a CSTM package to edit additional costs')
+    await next(page)
+    await page.locator('.local-calculate-action').click()
+    await expect(page.locator('.local-cost-total')).toContainText('377.35')
+    await next(page)
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    const fields = await page.evaluate(() => window.__draftSaved.fields)
+    expect(fields).toEqual(expect.arrayContaining([
+      { key: 're_additionallaborhours', value: '1' }, { key: 're_additionalmaterial', value: '10' },
+      { key: 're_additionalmiscellaneous', value: '5' }, { key: 're_additionalscope', value: 'Additional site work' },
+    ]))
+    await page.locator('.draft-secondary-actions button').nth(1).click()
+    await next(page)
+    await next(page)
+    await expect(page.locator('#request-re_additionallaborhours')).toHaveValue('1.00')
+    await expect(page.locator('#request-re_additionalmaterial')).toHaveValue('10.00')
+    await expect(page.locator('#request-re_additionalmiscellaneous')).toHaveValue('5.00')
+    await expect(page.locator('#request-re_additionalscope')).toHaveValue('Additional site work')
+  })
+
   test(`all three package costs carry forward before additions without reopening CSTM at ${width}px`, async ({ page }, testInfo) => {
     await page.addInitScript(() => {
       window.__extraPackages = [
@@ -1653,7 +1715,7 @@ for (const width of [320, 1366]) {
     for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
     await next(page)
     for (const key of ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous'])
-      await expect(page.locator(`#request-${key}`)).not.toBeEditable()
+      await expect(page.locator(`#request-${key}`)).toBeEditable()
     await expect(page.getByRole('button', { name: 'Add labor', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Add material', exact: true })).toHaveCount(0)
     await page.locator('.form-footer > button').click()
@@ -2088,6 +2150,13 @@ for (const [width, language] of [[320, 'fr'], [1366, 'en']]) {
     await page.locator('#account-master-search').fill('00042')
     await page.locator('#account-master-options button').click()
     await expect(page.locator('#account-master-search')).toHaveValue('00042')
+    const accountLabel = page.locator('label[for="account-master-search"] > span')
+    const labelBounds = await accountLabel.boundingBox()
+    const requiredBounds = await accountLabel.locator('.required').boundingBox()
+    expect(labelBounds).not.toBeNull()
+    expect(requiredBounds).not.toBeNull()
+    expect(Math.abs(requiredBounds.y - labelBounds.y)).toBeLessThan(4)
+    expect(requiredBounds.y + requiredBounds.height).toBeLessThanOrEqual(labelBounds.y + labelBounds.height + 1)
     await expect(page.locator('#account-master-name')).toHaveValue('Acme Corporation')
     await expect(page.locator('#account-master-name')).not.toBeEditable()
     await expect(page.locator('#estimate-title')).toHaveValue(/^Repair - Acme Corporation - /)

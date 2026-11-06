@@ -160,7 +160,6 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
         const rateField = key === 're_statedlaborrate'
         const taxOrFreight = key === 're_usetax' || key === 're_freight'
         const fixedRate = taxOrFreight && !custom
-        const customAddition = key === 're_additionallaborhours' || key === 're_additionalmaterial' || key === 're_additionalmiscellaneous'
         const error = rateField ? statedRateError(value[key], language) : undefined
         return (
           <div className="field-label" key={key}>
@@ -178,16 +177,13 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
                 max={field.percent ? 100 : field.max}
                 step={field.type === 'number' ? field.integer ? 1 : 'any' : undefined}
                 maxLength={field.maxLength ?? (field.type ? undefined : 100)}
-                readOnly={readOnly || fixedRate || (customAddition && !custom)}
+                readOnly={readOnly || fixedRate}
                 value={field.type === 'number' && !field.integer && focusedKey !== key
                   ? decimalInputDisplay(value[key] ?? '') : value[key] ?? ''}
                 onFocus={() => setFocusedKey(key)} onBlur={() => setFocusedKey(undefined)}
                 onChange={(event) => onChange(key, event.target.value)} />
             )}
             {key === 're_billingplan' && paymentDetails}
-            {customAddition && !custom && <p className="field-help">
-              {fr ? 'Sélectionnez un forfait CSTM pour modifier les coûts supplémentaires.' : 'Select a CSTM package to edit additional costs.'}
-            </p>}
             {taxOrFreight && <p className="field-help" id={`${id}-help`}>
               {custom
                 ? (fr ? 'Taux modifiable pour CSTM et les coûts supplémentaires uniquement. Forfaits standard : taxe 5 %, fret 14 % (fixes).'

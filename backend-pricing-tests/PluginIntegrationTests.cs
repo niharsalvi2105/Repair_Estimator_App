@@ -32,7 +32,7 @@ namespace RepairEstimator.Tests
             request.packages[0].equipmentNumbers = new List<string> { "E1", "E2", "E3", "E4" };
             var response = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
             Assert.Equal(request.packages[0].equipmentNumbers, response.packages[0].equipmentNumbers);
-            Assert.Equal("2026.7", response.pricingState);
+            Assert.Equal(PricingEngine.Version, response.pricingState);
             Assert.Equal(1276m, db.Rows[db.EstimateId].GetAttributeValue<Money>("re_totaltruecost").Value);
             var snapshot = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
             var package = Assert.Single(snapshot.packages);
@@ -326,6 +326,43 @@ namespace RepairEstimator.Tests
             Assert.Single(db.Rows.Values, r => r.LogicalName == Names.EstimatePackage.Entity);
         }
 
+        [Theory]
+        [InlineData("re_bandmatrix", "BAND_MATRIX_AMBIGUOUS")]
+        [InlineData("re_redundancyband", "REDUNDANCY_BAND_AMBIGUOUS")]
+        [InlineData("re_incentiverate", "INCENTIVE_RATE_AMBIGUOUS")]
+        public void Ambiguous_financial_configuration_clears_draft_outputs_and_blocks_submission(string table, string key)
+        {
+            var db = new Pipeline();
+            var account = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account"));
+            var contact = db.Add("contact", ("re_salesforcecontactid", "source-contact"), ("re_sourceactive", true),
+                ("parentcustomerid", account.ToEntityReference()), ("re_salesforcename", "Customer"),
+                ("emailaddress1", "customer@example.invalid"));
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = account.Id.ToString();
+            request.contactId = contact.Id.ToString();
+            request.fields.Add(new Field { key = "re_sellprice", value = "1000" });
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal(PricingEngine.Version, saved.pricingState);
+            Assert.NotNull(db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost));
+            foreach (var row in db.Rows.Values.Where(row => row.LogicalName == table).ToList())
+                db.Add(table, row.Attributes.Where(a => a.Key != "statecode")
+                    .Select(a => (a.Key, a.Value)).ToArray());
+            request.version = saved.version;
+            var unavailable = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal("unavailable", unavailable.pricingState);
+            foreach (var field in new[] { Names.Estimate.TotalTrueCost, Names.Estimate.SuggestedPrice,
+                Names.Estimate.ActualCmii, Names.Estimate.AmIncentive, Names.Estimate.BdIncentive })
+                Assert.Null(db.Rows[db.EstimateId][field]);
+            Assert.Contains(db.Traces, trace => trace.Contains(key));
+            var error = Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) {
+                    [Names.Estimate.Status] = new OptionSetValue(Labels.SubmittedStatus)
+                }));
+            Assert.Contains(key, error.Message);
+        }
+
         [Fact]
         public void Missing_pricing_blocks_submission()
         {
@@ -458,7 +495,7 @@ namespace RepairEstimator.Tests
             var response = db.Save(json);
             Assert.Contains("\"materialBeforeMarkup\":617.45", response);
             Assert.Contains("\"pricingSource\":\"package\"", response);
-            Assert.Contains("\"pricingState\":\"2026.7\"", response);
+            Assert.Contains("\"pricingState\":\"" + PricingEngine.Version + "\"", response);
             var header = db.Rows[db.EstimateId];
             Assert.Equal(941.25m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
             Assert.Equal(1497.37m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value);

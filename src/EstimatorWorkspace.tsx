@@ -18,7 +18,7 @@ import { localizePackage, localizeScope } from './data/packageSearch'
 import { MAX_DRAFT_CHILD_OPERATIONS, type DraftLabor, type DraftMaterial, type ExportDelivery } from './data/draftContract'
 import { submissionDeliveryMessage } from './data/submissionDelivery'
 import { getPackageCostRates } from './data/repairEstimatorRepository'
-import { customCostsError } from './data/requestValidation'
+import { customCostsError, konePricingConflict } from './data/requestValidation'
 import { PackageCostDetails } from './PackageCostDetails'
 import { calculatePackageCost, type CostRate } from './data/packageCosts'
 
@@ -146,6 +146,7 @@ export default function EstimatorWorkspace({
   const rates = rateResult?.branchId === branchId ? rateResult.rates ?? [] : []
   const customPackages = selectedPackages.filter((p) => p.re_iscustompackage)
   const customValidation = customCostsError(customPackages.map((p) => p.re_repairpackageid), laborLines, materialLines, language)
+  const koneConflict = konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
   const marketCurrencyId = marketBranches.length > 0 &&
     marketBranches.every(branch => branch._re_currency_value === marketBranches[0]._re_currency_value)
     ? marketBranches[0]._re_currency_value : undefined
@@ -697,6 +698,13 @@ export default function EstimatorWorkspace({
               <RequestFields stage={step === 3 ? 'cost' : 'pricing'} language={language}
                 value={requestInputs} onChange={updateRequestInput} currency={currency}
                 custom={hasCustom || (step !== 3 && Number(requestInputs.re_konesparessalespricevk13) > 0)} />
+              {step === 4 && koneConflict && <div className="error-box kone-pricing-conflict" role="alert">
+                <p>{koneConflict}</p>
+                <button type="button" className="button secondary" disabled={draftBusy || submitted || !!exportDelivery}
+                  onClick={() => updateRequestInput('re_konesparessalespricevk13', '')}>
+                  {language === 'fr' ? 'Effacer le prix global VK13' : 'Clear aggregate VK13 price'}
+                </button>
+              </div>}
               <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
             </section>}
             {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
