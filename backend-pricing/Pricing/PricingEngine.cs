@@ -10,7 +10,7 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.7";
+        public const string Version = "2026.8";
 
         public static PricingResult Calculate(EstimateInput i)
         {
@@ -128,6 +128,8 @@ namespace RepairEstimator.Plugins.Pricing
             // Step 32: incentives
             if (r.ActualCmii.HasValue)
             {
+                if (i.IncentiveRates.GroupBy(x => x.MinimumCmii).Any(group => group.Count() > 1))
+                    throw new PricingException("RE-117", "INCENTIVE_RATE_AMBIGUOUS");
                 var incentive = i.IncentiveRates
                     .Where(x => x.MinimumCmii <= r.ActualCmii.Value)
                     .OrderByDescending(x => x.MinimumCmii)
@@ -224,15 +226,19 @@ namespace RepairEstimator.Plugins.Pricing
 
         private static string ResolveRedundancyBand(EstimateInput i, PricingResult r)
         {
-            var hit = i.RedundancyBands.FirstOrDefault(b =>
-                (b.MinimumEquipment ?? 0) <= i.RedundancyCount && (!b.MaximumEquipment.HasValue || i.RedundancyCount <= b.MaximumEquipment.Value));
+            var matches = i.RedundancyBands.Where(b =>
+                (b.MinimumEquipment ?? 0) <= i.RedundancyCount && (!b.MaximumEquipment.HasValue || i.RedundancyCount <= b.MaximumEquipment.Value)).ToList();
+            if (matches.Count > 1) throw new PricingException("RE-117", "REDUNDANCY_BAND_AMBIGUOUS");
+            var hit = matches.SingleOrDefault();
             if (hit == null) r.Warnings.Add("No Redundancy Band matched count " + i.RedundancyCount + ".");
             return hit?.Band;
         }
 
         private static string Matrix(EstimateInput i, PricingResult r, string type, string input1, string input2)
         {
-            var hit = i.BandMatrix.FirstOrDefault(m => Same(m.MatrixType, type) && Same(m.Input1, input1) && Same(m.Input2, input2));
+            var matches = i.BandMatrix.Where(m => Same(m.MatrixType, type) && Same(m.Input1, input1) && Same(m.Input2, input2)).ToList();
+            if (matches.Count > 1) throw new PricingException("RE-117", "BAND_MATRIX_AMBIGUOUS");
+            var hit = matches.SingleOrDefault();
             if (hit == null) r.Warnings.Add(string.Format("Band Matrix '{0}' has no row for ({1}, {2}).", type, input1, input2));
             return hit?.Result;
         }

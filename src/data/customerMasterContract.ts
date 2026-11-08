@@ -2,6 +2,7 @@ export type AccountMasterOption = { id: string; number: string; name: string }
 export type ContactMasterOption = { id: string; name: string; email: string; phone: string; primary?: boolean }
 export type CustomerDefaults = {
   contacts: ContactMasterOption[]; contactsTruncated: boolean; locations: string[]; locationsTruncated: boolean
+  locationDescriptions: string[]; locationDescriptionsTruncated: boolean; locationDescriptionsTooLong: boolean
 }
 
 const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -46,10 +47,22 @@ export function parseCustomerDefaults(value: unknown): CustomerDefaults {
   if ((row.contactsTruncated !== undefined && typeof row.contactsTruncated !== 'boolean') ||
     (row.locationsTruncated !== undefined && typeof row.locationsTruncated !== 'boolean') ||
     !Array.isArray(row.locations) || row.locations.length > 20 ||
-    row.locations.some(location => typeof location !== 'string' || !location.trim() || location.length > 100))
+    row.locations.some(location => typeof location !== 'string' || !location.trim() || location.length > 100) ||
+    !Array.isArray(row.locationDescriptions) || row.locationDescriptions.length > 20 ||
+    row.locationDescriptions.some(value => typeof value !== 'string' || !value.trim() || value.length > 300) ||
+    (row.locationDescriptionsTruncated !== undefined && typeof row.locationDescriptionsTruncated !== 'boolean') ||
+    (row.locationDescriptionsTooLong !== undefined && typeof row.locationDescriptionsTooLong !== 'boolean'))
     throw new Error('Customer defaults require the updated draft API and valid functional locations.')
   return { contacts, contactsTruncated: row.contactsTruncated === true,
-    locations: row.locations, locationsTruncated: row.locationsTruncated === true }
+    locations: row.locations, locationsTruncated: row.locationsTruncated === true,
+    locationDescriptions: [...new Set(row.locationDescriptions)],
+    locationDescriptionsTruncated: row.locationDescriptionsTruncated === true,
+    locationDescriptionsTooLong: row.locationDescriptionsTooLong === true }
+}
+
+export function defaultLocationDescription(defaults: CustomerDefaults): string | undefined {
+  if (!defaults.locationDescriptionsTruncated && !defaults.locationDescriptionsTooLong &&
+    defaults.locationDescriptions.length === 1) return defaults.locationDescriptions[0]
 }
 
 export function defaultContact({ contacts, contactsTruncated }: CustomerDefaults): ContactMasterOption | undefined {

@@ -1,11 +1,12 @@
 import { isRequestInputKey, type DraftRecord } from './draftContract.ts'
+import { parseContactMasterOptions } from './customerMasterContract.ts'
 
 export const OPPORTUNITY_FIELDS = [
   're_supervisor', 're_workcenterrequest', 're_numberoftechs', 're_nationalaccount', 're_emergency',
   're_customerbudgeted', 're_papertype', 're_consultantinvolved', 're_competingbids', 're_proposallanguage',
 ] as const
 export type OpportunityValues = Pick<DraftRecord, 'branchId' | 'stateId' | 'equipmentTypeId' | 'jobTypeId' |
-  'building' | 'customer' | 'email' | 'phone' | 'accountId' | 'accountNumber' | 'accountName' | 'contactId' | 'market' | 'fields'>
+  'building' | 'customer' | 'email' | 'phone' | 'accountId' | 'accountNumber' | 'accountName' | 'contactId' | 'contactMaster' | 'market' | 'fields'>
 export type CloneSections = { opportunity: boolean; equipment: boolean; packages: boolean; custom: boolean; notes: boolean }
 export const DEFAULT_CLONE_SECTIONS: CloneSections = { opportunity: true, equipment: false, packages: false, custom: false, notes: false }
 const CUSTOM_FIELDS = ['re_timecategory', 're_additionallaborhours', 're_additionalmaterial',
@@ -20,6 +21,7 @@ export function opportunityValues(source: OpportunityValues): OpportunityValues 
     email: source.email ?? '', phone: source.phone ?? '', accountId: source.accountId ?? '',
     accountNumber: source.accountNumber ?? '', accountName: source.accountName ?? '',
     contactId: source.contactId ?? '', market: source.market,
+    ...(source.contactMaster ? { contactMaster: { ...source.contactMaster } } : {}),
     fields: source.fields.filter(field => allowedOpportunityFields.has(field.key)).map(field => ({ ...field })),
   }
 }
@@ -31,7 +33,7 @@ export function parseOpportunityValues(value: unknown): OpportunityValues {
     .every(key => typeof record[key as keyof OpportunityValues] === 'string') ||
     ![126110000, 126110001, 126110002].includes(record.market ?? -1) || !Array.isArray(record.fields))
     throw new Error('Invalid Opportunity preset.')
-  const lengths = { branchId: 36, stateId: 36, equipmentTypeId: 36, jobTypeId: 36, building: 300, customer: 300, email: 100, phone: 100 }
+  const lengths = { branchId: 36, stateId: 36, equipmentTypeId: 36, jobTypeId: 36, building: 300, customer: 100, email: 100, phone: 50 }
   for (const [key, max] of Object.entries(lengths)) {
     const text = record[key as keyof typeof lengths]
     if (typeof text !== 'string' || text.length > max) throw new Error('Invalid Opportunity preset field.')
@@ -51,6 +53,10 @@ export function parseOpportunityValues(value: unknown): OpportunityValues {
     (record.accountId && (!record.accountNumber?.trim() || !record.accountName?.trim()))
   )
     throw new Error('Invalid Opportunity customer selection.')
+  if (record.contactMaster != null) {
+    const [contact] = parseContactMasterOptions({ contacts: [record.contactMaster] })
+    if (contact.id !== record.contactId) throw new Error('Invalid Opportunity Contact details.')
+  }
   if (record.fields.some(field => !field || !allowedOpportunityFields.has(field.key) ||
     typeof field.value !== 'string' || field.value.length > 100) ||
     new Set(record.fields.map(field => field.key)).size !== record.fields.length)

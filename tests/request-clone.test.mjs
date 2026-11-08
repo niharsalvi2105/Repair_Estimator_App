@@ -69,6 +69,23 @@ test('cloning preserves selected Account and Contact references', () => {
   assert.equal(copy.contactId, original.contactId)
   assert.throws(() => parseOpportunityValues({ ...values, contactId: 'bad' }))
 })
+
+test('clone and preset preserve estimate-only customer details and partial master provenance', () => {
+  const original = {
+    ...source(), accountId: '11111111-1111-4111-8111-111111111111', accountNumber: 'A-42',
+    accountName: 'Customer Account', email: 'manual@example.invalid', phone: '123',
+  }
+  assert.equal(parseOpportunityValues(opportunityValues(original)).contactId, '')
+  const contactMaster = { id: '22222222-2222-4222-8222-222222222222', name: 'Master', email: '', phone: '' }
+  const linked = { ...original, contactId: contactMaster.id, contactMaster }
+  const values = parseOpportunityValues(opportunityValues(linked))
+  assert.deepEqual(values.contactMaster, contactMaster)
+  const copy = cloneRequest(values, DEFAULT_CLONE_SECTIONS, 'new')
+  assert.equal(copy.email, 'manual@example.invalid')
+  assert.deepEqual(copy.contactMaster, contactMaster)
+  assert.notEqual(copy.contactMaster, contactMaster)
+  assert.throws(() => parseOpportunityValues({ ...values, contactId: '' }), /Contact/)
+})
 test('custom cloning preserves selected inputs but refreshes rates, catalog snapshots and line IDs', () => {
   const original = source()
   const copy = cloneRequest(original, { opportunity: false, equipment: true, packages: true, custom: true, notes: true }, 'new')

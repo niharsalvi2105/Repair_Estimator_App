@@ -20,7 +20,7 @@ import { DashboardMetrics } from './DashboardMetrics'
 import { Settings } from './Settings'
 import { loadSession, type AppSession } from './data/sessionRepository'
 import type { RequestInputs } from './RequestFields'
-import { customCostsError, pricingUnavailableMessage, statedRateError, submissionErrorMessage } from './data/requestValidation'
+import { customCostsError, konePricingConflict, pricingUnavailableMessage, statedRateError, submissionErrorMessage } from './data/requestValidation'
 import type { Market } from './data/estimateQuery'
 import { useUserPreferences } from './useUserPreferences'
 import { UserAvatar } from './UserAvatar'
@@ -136,7 +136,7 @@ const copy = {
     locationAssignment: 'Location & assignment',
     opportunityHint: 'Select a branch and Account number. Account name, linked Contact, email, phone and functional location numbers are fetched from Dataverse where available. Confirm any ambiguous or missing values.',
     nextEquipment: 'Continue to equipment & packages',
-    costsHint: 'Review all selected package costs before additional details. Additional cost inputs require a CSTM package. Save to calculate authoritative server pricing.',
+    costsHint: 'Review all selected package costs before additional details. Enter estimate-level additions here; package-specific CSTM costs use their separate editor. Save to calculate authoritative server pricing.',
     pricingHint: 'Use Calculate below to save your draft and calculate pricing in Dataverse. After changing inputs, use Recalculate. An entered selling price is not an approved quote.',
     equipmentNote: 'Equipment names are resolved from Dataverse. Unlisted numbers remain explicitly unbound.',
     costsTitle: 'Additional details',
@@ -290,7 +290,7 @@ const copy = {
     locationAssignment: 'Emplacement et affectation',
     opportunityHint: 'Sélectionnez une succursale et un numéro de compte. Les données client liées sont chargées depuis Dataverse. Confirmez les valeurs manquantes ou ambiguës.',
     nextEquipment: 'Continuer vers les équipements et forfaits',
-    costsHint: 'Vérifiez les coûts des forfaits avant les détails supplémentaires. Les ajouts nécessitent un forfait CSTM. Enregistrez pour calculer les prix sur le serveur.',
+    costsHint: 'Vérifiez les coûts des forfaits avant les détails supplémentaires. Saisissez ici les ajouts du devis ; les coûts CSTM propres au forfait utilisent leur éditeur distinct. Enregistrez pour calculer les prix sur le serveur.',
     pricingHint: 'Utilisez Calculer ci-dessous pour enregistrer le brouillon et calculer les prix dans Dataverse. Après modification, utilisez Recalculer. Le prix saisi n’est pas un devis approuvé.',
     equipmentNote: 'Les noms des équipements proviennent de Dataverse. Les numéros non répertoriés restent sans correspondance.',
     costsTitle: 'Détails supplémentaires',
@@ -445,9 +445,10 @@ function App() {
   const [step, setStep] = useState(1)
   const [selectedAccount, setSelectedAccount] = useState<AccountMasterOption | null>(null)
   const [selectedContact, setSelectedContact] = useState<ContactMasterOption | null>(null)
-  const customerName = selectedContact?.name ?? ''
-  const customerEmail = selectedContact?.email ?? ''
-  const customerPhone = selectedContact?.phone ?? ''
+  const [manualCustomer, setManualCustomer] = useState({ name: '', email: '', phone: '' })
+  const customerName = selectedContact?.name.trim() ? selectedContact.name : manualCustomer.name
+  const customerEmail = selectedContact?.email.trim() ? selectedContact.email : manualCustomer.email
+  const customerPhone = selectedContact?.phone.trim() ? selectedContact.phone : manualCustomer.phone
   const [buildingName, setBuildingName] = useState('')
   const [session, setSession] = useState<AppSession>()
   const preferences = useUserPreferences(session)
@@ -777,6 +778,7 @@ function App() {
     setEquipmentBulkError('')
     setBranchId(nextBranchId)
     setSelectedAccount(null); setSelectedContact(null)
+    setManualCustomer({ name: '', email: '', phone: '' })
     setBuildingName('')
     setEquipmentQuery('')
     setSelectedEquipment([])
@@ -868,12 +870,13 @@ function App() {
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
   }
   const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && buildingName.trim() && stateId
-    && selectedAccount?.id && selectedContact?.id
+    && selectedAccount?.id && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())
     && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
     && selectedPackages.every((item) => validPackageEquipment(item, selectedEquipment))
     && requestInputs.re_proposallanguage && requestInputs.re_timecategory
     && requestInputs.re_usetax?.trim() && requestInputs.re_freight?.trim()
     && selectedBranch?._re_currency_value && draftReferences
+    && !konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
     && !customCostsError(selectedPackages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid),
       laborLines, materialLines, language))
 
@@ -916,7 +919,8 @@ function App() {
     setSelectedAccount(record.accountId && record.accountNumber && record.accountName
       ? { id: record.accountId, number: record.accountNumber, name: record.accountName } : null)
     setSelectedContact(record.contactId
-      ? { id: record.contactId, name: record.customer, email: record.email ?? '', phone: record.phone ?? '' } : null)
+      ? record.contactMaster ?? { id: record.contactId, name: record.customer, email: record.email ?? '', phone: record.phone ?? '' } : null)
+    setManualCustomer({ name: record.customer, email: record.email ?? '', phone: record.phone ?? '' })
     setEquipmentTypeId(record.equipmentTypeId); setJobTypeId(record.jobTypeId ?? '')
     customRatesInitialized.current = true
     setMarket(record.market); setRequestInputs(inputs); setSelectedEquipment(equipment); setSelectedPackages(packages)
@@ -945,6 +949,8 @@ function App() {
   async function saveDraft(submit = false) {
     if (draftInFlight.current || submitted || exportDelivery || equipmentBulkBusy) return
     setDraftError(''); setDraftNotice('')
+    const koneConflict = konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
+    if (koneConflict) { setDraftError(koneConflict); setStep(4); return }
     const customError = customCostsError(selectedPackages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid),
       laborLines, materialLines, language)
     if (customError) { setDraftError(customError); setStep(3); return }
@@ -1027,6 +1033,7 @@ function App() {
     setExportDelivery(undefined)
     setEstimateTitle(''); resetBranch(''); setStateId(''); setEquipmentTypeId(''); setJobTypeId('')
     setBuildingName(''); setSelectedAccount(null); setSelectedContact(null)
+    setManualCustomer({ name: '', email: '', phone: '' })
     setRequestInputs({}); setDraftError(''); setDraftNotice(''); setStep(1)
   }
 
@@ -1059,6 +1066,7 @@ function App() {
     email: customerEmail, phone: customerPhone, accountId: selectedAccount?.id ?? '',
     accountNumber: selectedAccount?.number ?? '', accountName: selectedAccount?.name ?? '',
     contactId: selectedContact?.id ?? '', market,
+    contactMaster: selectedContact,
     fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
   })
 
@@ -1315,8 +1323,15 @@ function App() {
                 if (selectedAccount) setBuildingName('')
                 setSelectedAccount(account)
                 setSelectedContact(null)
+                setManualCustomer({ name: '', email: '', phone: '' })
               },
-              onSelectContact: setSelectedContact,
+              onSelectContact: (contact: ContactMasterOption | null, preserveManual = false) => {
+                setSelectedContact(contact)
+                if (!preserveManual) setManualCustomer({ name: '', email: '', phone: '' })
+              },
+              onCustomerName: (name: string) => setManualCustomer(value => ({ ...value, name })),
+              onCustomerEmail: (email: string) => setManualCustomer(value => ({ ...value, email })),
+              onCustomerPhone: (phone: string) => setManualCustomer(value => ({ ...value, phone })),
               canWork,
               draftComplete,
               saveDraft, submitted, exportDelivery,

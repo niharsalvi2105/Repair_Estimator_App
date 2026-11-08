@@ -1,6 +1,13 @@
 import type { DraftLabor, DraftMaterial } from './draftContract'
 import { materialEntryError } from './customMaterialCosts.ts'
 
+export function konePricingConflict(materials: DraftMaterial[], legacyPrice: string | undefined, language: 'en' | 'fr'): string | undefined {
+  if (Number(legacyPrice) > 0 && materials.some(line => line.partType === 'kone' || line.pricingSource === 'package'))
+    return language === 'fr'
+      ? 'Le prix global VK13 et les références KONE détaillées ne peuvent pas être utilisés ensemble. Effacez explicitement le prix global VK13 dans Prix et marge pour conserver les pièces détaillées, ou retirez ces pièces pour utiliser le prix global.'
+      : 'The legacy aggregate VK13 price and itemized KONE references cannot be used together. Clear the aggregate VK13 price in Pricing & margin to keep itemized parts, or remove those parts to use the aggregate price.'
+}
+
 export function customCostsError(packageIds: string[], labor: DraftLabor[], materials: DraftMaterial[], language: 'en' | 'fr'): string | undefined {
   for (const line of materials) {
     const error = materialEntryError(line, language)
@@ -48,6 +55,9 @@ export function submissionErrorMessage(detail: string, language: 'en' | 'fr'): s
     ['RE-101|MARGIN_COMMENT_REQUIRED', 'Add a margin justification in Pricing & margin before submitting.', 'Ajoutez une justification de marge dans Prix et marge avant de soumettre.'],
     ['RE-102|PRICING_NOT_AVAILABLE', 'Pricing is unavailable. Correct the inputs or configuration before submitting.', 'Le calcul des prix est indisponible. Corrigez les entrées ou la configuration avant de soumettre.'],
     ['RE-103|BILLING_PLAN_REQUIRED', 'Select a billing plan in Pricing & margin before submitting.', 'Sélectionnez un plan de facturation dans Prix et marge avant de soumettre.'],
+    ['RE-117|BAND_MATRIX_AMBIGUOUS', 'Pricing is blocked by duplicate band-matrix rules. Ask an administrator to resolve the configuration.', 'Le calcul est bloqué par des règles de matrice en double. Demandez à un administrateur de corriger la configuration.'],
+    ['RE-117|REDUNDANCY_BAND_AMBIGUOUS', 'Pricing is blocked by overlapping redundancy bands. Ask an administrator to resolve the configuration.', 'Le calcul est bloqué par des plages de redondance qui se chevauchent. Demandez à un administrateur de corriger la configuration.'],
+    ['RE-117|INCENTIVE_RATE_AMBIGUOUS', 'Pricing is blocked by duplicate incentive thresholds. Ask an administrator to resolve the configuration.', 'Le calcul est bloqué par des seuils de prime en double. Demandez à un administrateur de corriger la configuration.'],
   ]
   const matched = messages.filter(([code]) => detail.includes(code))
   return matched.length ? `${matched.map((row) => row[language === 'fr' ? 2 : 1]).join(' ')} (${detail})` : detail

@@ -21,6 +21,18 @@ export function packageCost(hours: number, material: number, quantity: number, r
   return { hours: hours * quantity, labor, material: materialTotal, total: labor + materialTotal * (1 + tax / 100 + freight / 100) }
 }
 
+export function calculateAdditionalCost(hours: number, material: number, miscellaneous: number,
+  rates: CostRate[], time: number, tax: number, freight: number) {
+  if (![hours, material, miscellaneous].every(value => Number.isFinite(value) && value >= 0))
+    throw new Error('Additional cost inputs are missing or invalid.')
+  const rate = rateFor(rates, 126110000, time)
+  const cost = packageCost(hours, material + miscellaneous, 1, rate, tax, freight)
+  if (!Number.isFinite(cost.total)) throw new Error('Additional cost total is invalid.')
+  return { ...cost, rate, material, miscellaneous, tax, freight,
+    taxAmount: (material + miscellaneous) * tax / 100,
+    freightAmount: (material + miscellaneous) * freight / 100 }
+}
+
 function packageMaterialRates(p: CostPackage, tax: number, freight: number, materials: DraftMaterial[]) {
   const packagePriced = p.re_iscustompackage && materials.some((m) =>
     m.packageId === p.re_repairpackageid && m.pricingSource === 'package')
@@ -69,4 +81,25 @@ export function calculatePackageCost(p: CostPackage,
   return { hours: predefined.hours + lines.reduce((sum, l) => sum + l.hours, 0), rate,
     labor: predefined.labor + laborCost, material: predefined.material + material, total: predefined.total + laborCost + adjusted.total,
     ...(packagePriced ? { koneFinal: packageCost(0, p.re_materialmisctaxcost ?? NaN, quantity, 0, 0, 0).total } : {}) }
+}
+
+export function calculateEquipmentPackageCost(p: CostPackage, quantity: number, rates: CostRate[], time: number,
+  tax: number, freight: number, labor: DraftLabor[], materials: DraftMaterial[]) {
+  const unit = calculatePackageUnitCost(p, rates, time, tax, freight, materials)
+  if (!p.re_iscustompackage) return unit
+  const total = calculatePackageCost(p, quantity, rates, time, tax, freight, labor, materials)
+  const customMaterial = materials.filter(m => m.packageId === p.re_repairpackageid)
+    .reduce((sum, m) => sum + m.quantity * m.unitCost, 0)
+  return {
+    ...unit,
+    hours: total.hours / quantity,
+    labor: total.labor / quantity,
+    material: total.material / quantity,
+    total: total.total / quantity,
+    rate: total.hours > 0 ? total.labor / total.hours : unit.rate,
+    tax: customMaterial > 0 ? tax : unit.tax,
+    freight: customMaterial > 0 ? freight : unit.freight,
+    taxAmount: unit.taxAmount + customMaterial * tax / 100 / quantity,
+    freightAmount: unit.freightAmount + customMaterial * freight / 100 / quantity,
+  }
 }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { calculatePackageCost, calculatePackageUnitCost, packageCost } from '../src/data/packageCosts.ts'
+import { calculateAdditionalCost, calculateEquipmentPackageCost, calculatePackageCost, calculatePackageUnitCost, packageCost } from '../src/data/packageCosts.ts'
 import { customCostsError } from '../src/data/requestValidation.ts'
 
 test('package costs scale hours and material by equipment and apply additive material tax and freight', () => {
@@ -8,6 +8,21 @@ test('package costs scale hours and material by equipment and apply additive mat
     { hours: 6, labor: 600, material: 150, total: 772.5 })
   assert.throws(() => packageCost(NaN, 50, 3, 100, 5, 10), /invalid/)
   assert.throws(() => packageCost(2, 50, 0, 100, 5, 10), /invalid/)
+})
+
+test('additional costs show labor, material, miscellaneous, tax and freight counted once', () => {
+  const rates = [{ role: 126110000, time: 126110000, rate: 100 }]
+  const cost = calculateAdditionalCost(2, 10, 5, rates, 126110000, 5, 14)
+  assert.deepEqual(cost, { hours: 2, labor: 200, material: 10, miscellaneous: 5, rate: 100,
+    tax: 5, freight: 14, taxAmount: 0.75, freightAmount: 2.1, total: 217.85 })
+  assert.equal(calculateAdditionalCost(0, 0, 0, rates, 126110000, 5, 14).total, 0)
+  assert.equal(calculateAdditionalCost(0, 10, 5, rates, 126110000, 8, 20).total, 19.2)
+  for (const [hours, material, misc] of [[-1, 0, 0], [0, -1, 5], [0, 5, -1], [NaN, 0, 0], [0, Infinity, 0]])
+    assert.throws(() => calculateAdditionalCost(hours, material, misc, rates, 126110000, 5, 14), /invalid/)
+  for (const [tax, freight] of [[NaN, 14], [5, NaN], [101, 14], [5, -1]])
+    assert.throws(() => calculateAdditionalCost(1, 10, 5, rates, 126110000, tax, freight), /invalid/)
+  assert.throws(() => calculateAdditionalCost(1, 0, 0, [], 126110000, 5, 14), /missing or ambiguous/)
+  assert.throws(() => calculateAdditionalCost(1, 0, 0, [...rates, rates[0]], 126110000, 5, 14), /ambiguous/)
 })
 
 test('each custom package requires assigned positive labor and material entries', () => {
@@ -107,4 +122,58 @@ test('per-equipment KONE true cost ignores descriptive quantity and extra tax/fr
   assert.throws(() => calculatePackageUnitCost(p, [], 126110000, 5, 14, []), /missing or ambiguous/)
   assert.throws(() => calculatePackageUnitCost(p, [...rates, rates[0]], 126110000, 5, 14, []), /ambiguous/)
   assert.throws(() => calculatePackageUnitCost(p, rates, 126110000, NaN, 14, []), /invalid/)
+})
+
+test('CSTM equipment cards include entered hours and costs exactly once across assigned equipment', () => {
+  const rates = [{ role: 126110000, time: 126110000, rate: 100 },
+    { role: 126110001, time: 126110001, rate: 200 }]
+  const p = { re_repairpackageid: 'cstm', re_iscustompackage: true, re_mechanichours: 0, re_materialmisctaxcost: 0 }
+  const labor = [{ id: 'l', packageId: 'cstm', role: 126110001, time: 126110001, hours: 6 },
+    { id: 'other', packageId: 'other', role: 126110000, time: 126110000, hours: 100 }]
+  const materials = [{ id: 'm', packageId: 'cstm', part: 'MOTOR-1', description: 'Motor', quantity: 2, unitCost: 25 },
+    { id: 'other', packageId: 'other', part: 'OTHER', description: 'Other', quantity: 1, unitCost: 999 }]
+  for (const quantity of [1, 2, 3, 21]) {
+    const unit = calculateEquipmentPackageCost(p, quantity, rates, 126110000, 5, 10, labor, materials)
+    const total = calculatePackageCost(p, quantity, rates, 126110000, 5, 10, labor, materials)
+    assert.equal(unit.rate, 200)
+    for (const field of ['hours', 'labor', 'material', 'total'])
+      assert.ok(Math.abs(unit[field] * quantity - total[field]) < 1e-9, `${field}, ${quantity} equipment`)
+    assert.ok(Math.abs(unit.total - unit.labor - unit.material - unit.taxAmount - unit.freightAmount) < 1e-9)
+  }
+  const unit = calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, labor, materials)
+  assert.equal(unit.hours, 3)
+  assert.equal(unit.labor, 600)
+  assert.equal(unit.material, 25)
+  assert.equal(unit.total, 628.75)
+  assert.equal(unit.taxAmount, 1.25)
+  assert.equal(unit.freightAmount, 2.5)
+  assert.equal(calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10,
+    [{ ...labor[0], hours: 8, rate: 175 }], materials).labor, 700)
+  assert.throws(() => calculateEquipmentPackageCost(p, 0, rates, 126110000, 5, 10, labor, materials), /invalid/)
+  assert.throws(() => calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, [], materials), /Complete the CSTM/)
+  assert.throws(() => calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, labor, []), /Complete the CSTM/)
+  assert.throws(() => calculateEquipmentPackageCost(p, 2, [], 126110000, 5, 10, labor, materials), /missing or ambiguous/)
+})
+
+test('CSTM equipment allocation preserves predefined costs, KONE exceptions and saved mixed-role rates', () => {
+  const p = { re_repairpackageid: 'cstm', re_iscustompackage: true, re_mechanichours: 1,
+    re_materialbeforemarkup: 617.45, re_materialmisctaxcost: 849.77 }
+  const rates = [{ role: 126110000, time: 126110000, rate: 100 }]
+  const labor = [{ id: 'l', packageId: 'cstm', role: 126110001, time: 126110001, hours: 2, rate: 200 },
+    { id: 'l2', packageId: 'cstm', role: 126110000, time: 126110000, hours: 1 }]
+  const materials = [{ id: 'm', packageId: 'cstm', part: 'KM1', description: 'KONE reference',
+    quantity: 99, unitCost: 0, partType: 'kone', pricingSource: 'package' },
+    { id: 'manual', packageId: 'cstm', part: 'BR1', description: 'Bracket', quantity: 2, unitCost: 25 }]
+  const unit = calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, labor, materials)
+  assert.equal(unit.hours, 2.5)
+  assert.equal(unit.rate, 140)
+  assert.equal(unit.labor, 350)
+  assert.equal(unit.material, 642.45)
+  assert.equal(unit.taxAmount, 1.25)
+  assert.equal(unit.freightAmount, 2.5)
+  assert.equal(unit.total, 996.2)
+  assert.equal(unit.total * 2, calculatePackageCost(p, 2, rates, 126110000, 5, 10, labor, materials).total)
+  const standard = { ...p, re_iscustompackage: false }
+  assert.deepEqual(calculateEquipmentPackageCost(standard, 2, rates, 126110000, NaN, NaN, labor, materials),
+    calculatePackageUnitCost(standard, rates, 126110000, NaN, NaN, materials))
 })

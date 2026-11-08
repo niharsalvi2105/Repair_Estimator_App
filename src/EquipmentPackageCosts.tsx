@@ -1,25 +1,25 @@
 import { useMemo, useState } from 'react'
 import type { SelectedEquipment } from './App'
 import type { RepairPackage } from './data/repairEstimatorRepository'
-import type { DraftMaterial } from './data/draftContract'
-import { calculatePackageUnitCost, type CostRate } from './data/packageCosts'
+import type { DraftLabor, DraftMaterial } from './data/draftContract'
+import { calculateEquipmentPackageCost, type CostRate } from './data/packageCosts'
 import { localizePackage } from './data/packageSearch'
 
 const PAGE_SIZE = 20
 
-export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, tax, freight, materials, language, currency }: {
+export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, tax, freight, labor, materials, language, currency }: {
   equipment: SelectedEquipment[]; repairPackage: Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>; rates: CostRate[]; time: number
-  tax: number; freight: number; materials: DraftMaterial[]; language: 'en' | 'fr'; currency?: string
+  tax: number; freight: number; labor: DraftLabor[]; materials: DraftMaterial[]; language: 'en' | 'fr'; currency?: string
 }) {
   const [equipmentPage, setEquipmentPage] = useState(0)
   const fr = language === 'fr'
   const result = useMemo(() => {
     try {
-      return { cost: calculatePackageUnitCost(repairPackage, rates, time, tax, freight, materials), error: '' }
+      return { cost: calculateEquipmentPackageCost(repairPackage, equipment.length, rates, time, tax, freight, labor, materials), error: '' }
     } catch (reason) {
       return { cost: undefined, error: reason instanceof Error ? reason.message : String(reason) }
     }
-  }, [repairPackage, rates, time, tax, freight, materials])
+  }, [repairPackage, equipment.length, rates, time, tax, freight, labor, materials])
   const { cost, error } = result
   const currentEquipmentPage = Math.min(equipmentPage, Math.max(0, Math.ceil(equipment.length / PAGE_SIZE) - 1))
   const number = (amount: number) => amount.toLocaleString(fr ? 'fr-CA' : 'en-US',
@@ -48,8 +48,8 @@ export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, t
       </div>
     </div>
     <p className="field-help">{fr
-      ? 'La main-d’œuvre et les matériaux personnalisés, ainsi que les coûts supplémentaires, restent séparés au niveau du devis : ils ne sont pas répartis entre les équipements.'
-      : 'Custom labor and material lines, and additional costs, remain separate at estimate level; they are not allocated among equipment.'}</p>
+      ? 'Les heures et coûts CSTM saisis sont répartis également entre les équipements affectés au forfait pour cet affichage. Le total du forfait ne change pas. Les ajouts au devis restent séparés.'
+      : 'Entered CSTM hours and costs are shared equally across the equipment assigned to this package for display. The package total is unchanged. Estimate-level additions remain separate.'}</p>
     {!currency && <p className="error-box" role="alert">{fr
       ? 'Devise indisponible. Rechargez les références de la succursale pour consulter les montants.'
       : 'Currency unavailable. Reload branch references before reviewing amounts.'}</p>}
@@ -73,7 +73,9 @@ export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, t
                   <dl className="equipment-package-breakdown">
                     <dt>{fr ? 'Nombre d’équipements' : 'Number of equipment'}</dt><dd>1</dd>
                     <dt>{fr ? 'Heures de main-d’œuvre' : 'Labor hours required'}</dt><dd>{number(cost.hours)}</dd>
-                    <dt>{fr ? 'Taux de coût mécanicien' : 'Mechanic labor cost rate'}</dt><dd>{format(cost.rate)}</dd>
+                    <dt>{repairPackage.re_iscustompackage
+                      ? fr ? 'Taux horaire moyen pondéré' : 'Blended labor cost rate'
+                      : fr ? 'Taux de coût mécanicien' : 'Mechanic labor cost rate'}</dt><dd>{format(cost.rate)}</dd>
                     <dt>{fr ? 'Coût de main-d’œuvre' : 'Package labor cost'}</dt><dd>{format(cost.labor)}</dd>
                     <dt>{fr ? 'Matériaux (avant taxe et fret)' : 'Material (before tax and freight)'}</dt><dd>{format(cost.material)}</dd>
                     <dt>{fr ? 'Taxe (%)' : 'Tax (%)'}</dt><dd>{number(cost.tax)}%</dd>
@@ -82,8 +84,8 @@ export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, t
                     <dt>{fr ? 'Montant du fret' : 'Freight amount'}</dt><dd>{format(cost.freightAmount)}</dd>
                   </dl>
                   {cost.packagePriced && <p className="field-help">{fr
-                    ? 'Pièces KONE : coût du forfait avant majoration, sans taxe ni fret supplémentaires.'
-                    : 'KONE parts: package cost before markup, with no extra tax or freight.'}</p>}
+                    ? 'Pièces KONE : coût du forfait avant majoration, sans taxe ni fret supplémentaires sur ces pièces. Les matériaux saisis séparément conservent leurs taux applicables.'
+                    : 'KONE parts use package cost before markup, without extra tax or freight on those parts. Separately entered materials retain their applicable rates.'}</p>}
                   <p className="field-help equipment-package-formula">{fr
                     ? 'Main-d’œuvre = heures × taux. Total = main-d’œuvre + matériaux + taxe + fret.'
                     : 'Labor = hours × rate. Total = labor + material + tax + freight.'}</p>
