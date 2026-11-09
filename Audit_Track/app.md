@@ -2,6 +2,48 @@
 
 ## 1. Scope and evidence
 
+### Freestyle names, unobscured locations and click-time validation (2026-11-09, local source)
+
+Opportunity Name is now an initially empty, free-text 100-character field. Clearing it stays empty rather than regenerating a `Repair - ...` title; Account changes do not replace entered names. New drafts, clones and preset-created requests require their own name, while reopening retains the saved name.
+
+When a complete defaults response has no eligible Contacts, Contact name is a plain text input with no search dropdown or repeated no-match panel. Linked/ambiguous/truncated Contact lists retain search and selection; available selected master values remain read-only and missing details remain editable estimate-only snapshots. Contact results close when focus leaves the Contact field or on Escape (without the native search-input clear action reopening them). Customer result panels now occupy normal layout space instead of covering the following Functional Location Description label/input. Missing source Location.Name still requires manual entry; this fix does not manufacture source data.
+
+Next, Save draft and Submit are clickable with missing fields. Clicking shows localized red required/invalid-email messages beside the relevant labels, marks controls with accessible errors and focuses the first editable invalid field. Save/Submit return to the earliest step with missing data and do not call the persistence API. Messages clear as values become valid; a new draft resets attempted-validation state. Existing busy/import, access, submitted/export locking and server validation remain in force. Next retains the existing customer-free local browsing policy: step 1 checks name, Branch, location description and equipment type; step 2 checks equipment, packages and assignments. Account/Contact/email, proposal language, province/currency and cost requirements remain mandatory for Save; Submit additionally checks positive selling price and billing plan. Local previews and authoritative pricing prerequisites are unchanged.
+
+Local evidence: build/type-check, changed-source lint and frontend unit suite passed. Across focused mocked browser runs, 33 distinct cases passed, including English/French mobile/desktop inputs, no-match blur/Escape, required messages/reset, hidden-step Save/Submit errors, manual/partial Contact Save/reopen, linked location/Contact controls, stale location responses, local browsing, clones/presets, aggregate VK13 and CSTM guards. Initial failures required preventing native Escape clearing/reopening the search and explicitly focusing the formatted numeric input before clearing it in the test; both corrected cases passed. Two later mobile cases exceeded the 60-second timeout during a concurrent build/lint run, then passed in an isolated single-worker rerun without source changes. This is local source/mock evidence only: no publication, tenant write, schema/API/plugin change or live/non-admin verification was performed for this fix. Source gaps and prior tenant/deployment evidence below remain separately scoped.
+
+### Single-column customer controls (2026-11-07)
+
+Customer Contact and Location Description now appear vertically in one column instead of parallel source/manual columns. Contact name uses one combobox: a uniquely eligible fetched Contact is filled directly; multiple linked Contacts are available in its dropdown, with name/email search for larger lists. If no match exists, the same field accepts an estimate-only custom name. Selected nonblank master name/email/phone values remain authoritative; missing values are editable. The separate Dataverse Contact search/manual-name inputs are removed. Manual names entered during a pending lookup are not overwritten by automatic Contact selection.
+
+Location Description uses only one control at a time: an editable input for a complete sole default, missing data or existing/custom descriptions; a dropdown for multiple or uncertain fetched location choices, with an explicit custom-entry option. SAP numbers are supplementary text, not a second input. Saved/custom descriptions are preserved, and users can switch back to linked locations. Same-name SAP pairs remain distinct. Contact email/phone also stack vertically. Required values, lengths, Account/Branch filtering, backend persistence and master-write restrictions remain unchanged.
+
+Validation: 16 focused mocked browser cases passed across runs (15 initially, then the corrected layout selector plus two expanded unified-field cases passed). Coverage includes English/French desktop/mobile, one/multiple/missing Contacts and locations, manual/partial Contact Save/reopen, dropdown-to-custom switching, equal-name SAP pairs, keyboard access, stale responses and manual edits during lookup. Six contract and five documentation tests, final build/type-check and changed-source lint passed. This UI-only change needs no plugin/schema deployment; it does not fill missing source records or remove truncation/eligibility guards.
+
+PAC published the frontend into Dev `RepairEstimatorApp`; the verification tab initially showed the previous bundle, then after refresh loaded `index-D58AHTms.js`. Read-only unsaved UI verification confirmed fetched Contact name and source Location.Name in one control each, one-column layout and no duplicate manual-name/location inputs. No business Save/Submit, master writes, new plugin deployment or teammate/non-admin acceptance occurred. Existing cached tabs must refresh to use this publication.
+
+### Account-based source Location.Name selection (2026-11-07, source correction)
+
+Deployment update (2026-11-07, approximately 07:01 +05:30): the latest workspace frontend was published to the existing Dev app in `RepairEstimatorApp`, together with the matching signed Drafts assembly. The npm `pa app push --solution-id` reported success, but the initial verification tab still loaded the older `index-e-uRi3hk.js`; a subsequent explicit PAC publication with environment and solution name was followed by fresh-tab verification of `index-eXQteb7d.js`. This records observed results, not a proven root cause for the earlier stale bundle. Read-only Dataverse verification confirms the app is a solution component (type 300).
+
+The published UI fetched one SAP-number/source-name option from a live MKO Account/Branch and autofilled the blank description on step 1 before Equipment selection. The deployed API's pair matched independent native source-metadata reads. No Save/Submit or business/master writes occurred. Teammates must use the published app URL, not `/a/local`/localhost; their permissions and individual cached sessions were not tested. Eight focused mocked browser cases, six contract cases, changed-source lint, documentation checks and build/type-check passed; an additional missing-source-warning browser case and exact-2,000-row backend boundary check passed. The unrelated full legacy executable harness failed in `TestChoices` because its fixture omitted the now-required Account; focused customer defaults passed. Full-suite/non-admin acceptance remains outstanding.
+
+Location is chosen on Opportunity details before Equipment selection. The Account-master number resolves an imported Account GUID; the defaults API reads active Equipment linked to that Account and the selected Branch to recover the exact source `Location.Functional_Location_SAP_Number__c` / `Location.Name` pairs from import metadata. Location Description now uses **Location.Name**, not Equipment Description or billing address. Repeated Equipment rows deduplicate by the exact number/name pair; different SAP numbers with the same name remain separate dropdown options labelled `number - name`.
+
+A complete sole valid location autofills only a blank description. Multiple locations require dropdown selection, which copies the source name into the existing editable 300-character description field. Existing/manual descriptions are preserved. Missing names, inconsistent source-versus-typed numbers, overlong names or incomplete reads prevent inferred autofill and show an explicit warning; malformed metadata produces a retryable API error, never a fallback to Equipment Description. Leading zeros are preserved.
+
+At most 20 location choices are returned after paged scans of at most 2,000 matching Equipment records. Missing imports and unresolved Equipment relationships can still omit locations; this is not a complete independent location directory. The dropdown pair identity is UI-only; only the existing description snapshot is persisted. Reopened descriptions cannot identify a unique SAP location when different locations share that name. Equipment selection remains Branch-scoped and is not filtered by the chosen location in this change.
+
+Predeployment local evidence: six customer contract tests, signed Drafts/test build and focused backend defaults cases passed, plus frontend build/type-check, changed-source lint and five documentation checks. Eight mocked browser regressions passed across English/French desktop/mobile: sole-location autofill before Equipment selection, multiple/equal-name SAP choices, manual edits, stale Account responses, incomplete/overlong results and explicit read-error retry. A fresh read-only tenant sample found source Location.Name and matching raw/typed SAP numbers in all 25 MKO Equipment rows; 24 names differed from Equipment Description. This sample confirms source availability, not every-row accuracy. No import/master write, schema or permission changes. Subsequent coordinated deployment/UI evidence is recorded above.
+
+### Account input and Contact mapping: fresh read-only audit (2026-11-06)
+
+Current Account lookup expects the imported Account-master number/name prefix, then explicit Account-option selection; typing a number alone does not resolve a Contact relationship. Contact parent relationships use the source Account ID mapped to its Dataverse GUID, not email or a copied Equipment account-number string. A fresh 25-Account/25-Contact sample passed 1,175 mapped-field comparisons and all parent/number/market checks. Ten live app lookup/default API cases matched direct Dataverse queries: one allowed automatic Contact selection, nine required choosing linked Contacts under the existing sole/unique-primary policy. This is read-only sample/API evidence, not every-row certification, a UI Save/Submit test or non-admin acceptance.
+
+The private full mapping audit covers 105 source columns and separates source/payload checks, prior import-time readbacks and fresh tenant samples. It found 12,737 Equipment account-number copies differing only by leading-zero formatting; three live prefix-search samples found the intended Account with its Account-master number but not the Equipment-source variant. Existing lookup does not normalize those identifiers. Eight MKOF Equipment rows with CKE Account parents are separately flagged as invalid MKO defaults context; no automatic correction was made.
+
+At that audit's deployed version, Account + Branch defaults fetched linked functional-location numbers and Equipment Description, not Account billing address or source Location.Name. The subsequently deployed correction above replaces that description mapping. Account selection does not automatically select Equipment: the step-2 Equipment picker remains Branch-scoped by Equipment number/name, while the defaults query is separately Account-and-Branch-scoped.
+
 ### Imported equipment detail display (2026-11-06, source correction)
 
 Read-only checks of the three equipment rows in the reported screenshot found blank legacy `re_equipmentname`, `re_oem` and `re_equipmentage`, but populated imported `re_description`, `re_manufacturer` and integer `re_constructionyear`. The UI had queried only the legacy columns; this was not evidence that imported source details were lost.
@@ -206,22 +248,22 @@ The stepper shows **Opportunity -> Equipment & packages -> Costs & scope -> Pric
 
 | Shared control | Behavior |
 |---|---|
-| Save draft at top | Validates full request and mounted HTML inputs, saves via draft API, requests server calculation; does not submit |
+| Save draft at top | Clickable with missing values; displays inline errors and returns to the earliest incomplete step before API calls; valid requests save/calculate, not submit |
 | New draft | Explicit confirmed reset; disabled while busy or without create permission |
 | Reload draft | Available for saved request; reloads server state with dirty warning |
 | Back | Previous step; at first step returns to dashboard |
-| Continue / Next equipment | Advances locally, not a Save; gates differ from full draft completion |
+| Continue / Next equipment | Clickable with missing values; validates step-specific prerequisites with inline errors, advances locally, not a Save |
 | Complete CSTM / return to equipment | Validates CSTM lines and package preview, returns to step2 |
-| Submit on Review | Validates/saves/submits through API after confirmation; locks editing when server confirms |
+| Submit on Review | Clickable with missing values; inline errors return to incomplete fields; valid requests submit after confirmation and lock when server confirms |
 | Read-only submitted/export state | Inputs disabled through workspace/read-only surfaces; no ordinary draft edits |
 
-First-step Continue checks branch, building text and equipment type, but does
+First-step Continue checks opportunity name, branch, building text and equipment type, but does
 not require Account/Contact selections or Contact email. This intentionally
 allows local testing of later steps while customer imports/search are unavailable.
 An EN/FR status message explains that customer selections are still required
 before Save/Submit, and the button references that message accessibly.
 Step1 navigation skips only customer-email HTML validity; other mounted input
-validation remains. It is **less strict than full Save**: title/province/remaining
+validation remains. It is **less strict than full Save**: province/remaining
 inputs are checked later. Step2 Continue still requires equipment and package
 selections. Enabled Continue is not proof the request can be saved/submitted.
 
@@ -231,7 +273,7 @@ Full Save completion requires title, selected Account, customer name and valid e
 
 | Field / control | UI purpose / origin | Save behavior |
 |---|---|---|
-| Opportunity Name | Manual request title | Header `re_estimatename` |
+| Opportunity Name | Initially blank free-text title, maximum 100 characters; clearing does not generate a replacement | Required header `re_estimatename`; saved title retained on reopen |
 | Market | MKO/CKE/CKQ context | Saved header context; saved branch/market fixed |
 | Branch search dropdown/toggle | Local name/number filtering of fetched market branches | Sets branch; clears equipment/packages/lines/customer when changed |
 | Province/state | Branch-derived, disabled display | Saved province lookup; server country/French validation |

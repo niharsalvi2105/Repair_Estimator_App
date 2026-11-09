@@ -120,6 +120,26 @@ namespace RepairEstimator.Drafts
     }
 
     [DataContract]
+    public sealed class AccountLocationOption
+    {
+        [DataMember] public string number;
+        [DataMember] public string name;
+    }
+
+    [DataContract]
+    public sealed class SourceLocationCell
+    {
+        [DataMember] public string value;
+    }
+
+    [DataContract]
+    public sealed class SourceLocationExport
+    {
+        [DataMember(Name = "Location.Functional_Location_SAP_Number__c")] public SourceLocationCell number;
+        [DataMember(Name = "Location.Name")] public SourceLocationCell name;
+    }
+
+    [DataContract]
     public sealed class ExportSubmit
     {
         [DataMember] public string operation;
@@ -170,6 +190,8 @@ namespace RepairEstimator.Drafts
         [DataMember(EmitDefaultValue = false)] public List<string> locationDescriptions;
         [DataMember(EmitDefaultValue = false)] public bool locationDescriptionsTruncated;
         [DataMember(EmitDefaultValue = false)] public bool locationDescriptionsTooLong;
+        [DataMember(EmitDefaultValue = false)] public List<AccountLocationOption> locationOptions;
+        [DataMember(EmitDefaultValue = false)] public bool locationNamesUnavailable;
         [DataMember] public string salesperson;
         [DataMember] public string pricingState;
         [DataMember(EmitDefaultValue = false)] public ExportDelivery exportDelivery;
@@ -887,36 +909,84 @@ namespace RepairEstimator.Drafts
                 if (branch.GetAttributeValue<OptionSetValue>("re_market")?.Value != input.market ||
                     account.GetAttributeValue<string>("re_salesorganizations") != SourceOrganizationForMarket(input.market))
                     Fail("Account and Branch must belong to the selected market.");
-                var locations = new QueryExpression("re_equipment") {
-                    ColumnSet = new ColumnSet("re_functionallocation"), Distinct = true, TopCount = 21
-                };
-                locations.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
-                locations.Criteria.AddCondition("re_branch", ConditionOperator.Equal, branchId);
-                locations.Criteria.AddCondition("re_customeraccount", ConditionOperator.Equal, accountId);
-                locations.Criteria.AddCondition("re_functionallocation", ConditionOperator.NotNull);
-                locations.AddOrder("re_functionallocation", OrderType.Ascending);
-                var rows = service.RetrieveMultiple(locations).Entities;
-                result.locationsTruncated = rows.Count > 20;
-                result.locations = rows.Take(20).Select(row => row.GetAttributeValue<string>("re_functionallocation"))
-                    .Where(location => !string.IsNullOrWhiteSpace(location)).ToList();
-                // Memo columns cannot safely establish uniqueness through a Dataverse distinct query.
-                var descriptions = new QueryExpression("re_equipment") {
-                    ColumnSet = new ColumnSet("re_description"), TopCount = 21
-                };
-                descriptions.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
-                descriptions.Criteria.AddCondition("re_branch", ConditionOperator.Equal, branchId);
-                descriptions.Criteria.AddCondition("re_customeraccount", ConditionOperator.Equal, accountId);
-                descriptions.Criteria.AddCondition("re_description", ConditionOperator.NotNull);
-                descriptions.AddOrder("re_equipmentid", OrderType.Ascending);
-                var descriptionRows = service.RetrieveMultiple(descriptions).Entities;
-                result.locationDescriptionsTruncated = descriptionRows.Count > 20;
-                var values = descriptionRows.Take(20).Select(row => row.GetAttributeValue<string>("re_description"))
-                    .Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
-                result.locationDescriptionsTooLong = values.Any(value => value.Length > 300);
-                result.locationDescriptions = values.Where(value => value.Length <= 300)
-                    .Distinct(StringComparer.Ordinal).OrderBy(value => value, StringComparer.Ordinal).ToList();
+                LoadAccountLocations(service, accountId, branchId, result);
             }
             return result;
+        }
+
+        static void LoadAccountLocations(IOrganizationService service, Guid accountId, Guid branchId, Draft result)
+        {
+            // Source Location.Name is preserved in the import Memo, not Equipment Description.
+            // Page equipment rows before deduplicating; repeated equipment must not hide later locations.
+            var query = new QueryExpression("re_equipment") {
+                ColumnSet = new ColumnSet("re_functionallocation", "re_sourceexportmetadata"),
+                PageInfo = new PagingInfo { Count = 100, PageNumber = 1 }
+            };
+            query.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
+            query.Criteria.AddCondition("re_branch", ConditionOperator.Equal, branchId);
+            query.Criteria.AddCondition("re_customeraccount", ConditionOperator.Equal, accountId);
+            query.AddOrder("re_functionallocation", OrderType.Ascending);
+            query.AddOrder("re_equipmentid", OrderType.Ascending);
+            var numbers = new SortedSet<string>(StringComparer.Ordinal);
+            var options = new List<AccountLocationOption>();
+            while (true)
+            {
+                var page = service.RetrieveMultiple(query);
+                foreach (var row in page.Entities)
+                {
+                    var number = row.GetAttributeValue<string>("re_functionallocation");
+                    if (string.IsNullOrWhiteSpace(number) || number.Length > 100)
+                    {
+                        result.locationNamesUnavailable = true;
+                        continue;
+                    }
+                    numbers.Add(number);
+                    var raw = row.GetAttributeValue<string>("re_sourceexportmetadata");
+                    if (string.IsNullOrWhiteSpace(raw))
+                    {
+                        result.locationNamesUnavailable = true;
+                        continue;
+                    }
+                    SourceLocationExport source;
+                    if (raw.Length > 100000) Fail("Equipment source location metadata exceeds its import limit.");
+                    try
+                    {
+                        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(raw)))
+                            source = (SourceLocationExport)new DataContractJsonSerializer(typeof(SourceLocationExport)).ReadObject(stream);
+                    }
+                    catch (SerializationException)
+                    {
+                        Fail("Equipment source location metadata is invalid. Correct the imported mapping before fetching locations.");
+                        return;
+                    }
+                    if (source == null || source.number?.value != number || string.IsNullOrWhiteSpace(source.name?.value))
+                    {
+                        result.locationNamesUnavailable = true;
+                        continue;
+                    }
+                    var name = source.name.value;
+                    if (name.Length > 300)
+                    {
+                        result.locationDescriptionsTooLong = true;
+                        continue;
+                    }
+                    if (!options.Any(option => option.number == number && option.name == name))
+                        options.Add(new AccountLocationOption { number = number, name = name });
+                }
+                if (numbers.Count > 20 || options.Count > 20 || (page.MoreRecords && query.PageInfo.PageNumber == 20))
+                {
+                    result.locationsTruncated = result.locationDescriptionsTruncated = true;
+                    break;
+                }
+                if (!page.MoreRecords) break;
+                query.PageInfo.PageNumber++;
+                query.PageInfo.PagingCookie = page.PagingCookie;
+            }
+            result.locations = numbers.Take(20).ToList();
+            result.locationOptions = options.OrderBy(option => option.number, StringComparer.Ordinal)
+                .ThenBy(option => option.name, StringComparer.Ordinal).Take(20).ToList();
+            result.locationDescriptions = result.locationOptions.Select(option => option.name)
+                .Distinct(StringComparer.Ordinal).ToList();
         }
 
         static string SourceOrganizationForMarket(int market)

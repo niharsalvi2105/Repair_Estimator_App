@@ -659,9 +659,10 @@
   box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
 }
 
-.customer-master-select {
+.customer-master-select,
+.customer-details-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -669,6 +670,28 @@
 .customer-master-field {
   position: relative;
   min-width: 0;
+}
+
+.customer-master-field .branch-popup {
+  position: static;
+}
+
+.field-error {
+  color: #b42318;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .field-error {
+  color: #ffb4ab;
+}
+
+.text-input[aria-invalid='true'] {
+  border-color: #b42318;
+}
+
+.customer-master-select .input-grid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .customer-master-field:first-child,

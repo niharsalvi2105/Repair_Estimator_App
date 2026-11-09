@@ -31,6 +31,9 @@ static class DraftServiceTests
 
     public static void TestCustomerDefaults()
     {
+        Func<string, string, string> rawLocation = (number, name) =>
+            "{\"Location.Functional_Location_SAP_Number__c\":{\"storage\":\"s\",\"value\":\"" + number +
+            "\"},\"Location.Name\":{\"storage\":\"s\",\"value\":\"" + name + "\"}}";
         var service = Setup();
         var accountId = Guid.NewGuid();
         service.Add(new Entity("account", accountId) {
@@ -57,12 +60,14 @@ static class DraftServiceTests
             service.Add(new Entity("re_equipment", Guid.NewGuid()) {
                 ["re_customeraccount"] = new EntityReference("account", accountId),
                 ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = location,
-                ["re_description"] = "Building A"
+                ["re_description"] = "Not the location name",
+                ["re_sourceexportmetadata"] = rawLocation(location, "Building A")
             });
         service.Add(new Entity("re_equipment", Guid.NewGuid()) {
             ["re_customeraccount"] = new EntityReference("account", accountId),
             ["re_branch"] = new EntityReference("re_branch", Guid.NewGuid()), ["re_functionallocation"] = "Other Branch",
-            ["re_description"] = "Wrong Branch Description"
+            ["re_description"] = "Wrong Branch Description",
+            ["re_sourceexportmetadata"] = rawLocation("Other Branch", "Wrong Branch")
         });
         var input = new Draft { mode = "contactsearch", search = "", accountId = accountId.ToString(),
             branchId = Branch.ToString(), market = 126110000 };
@@ -75,24 +80,38 @@ static class DraftServiceTests
         Assert(result.locations.SequenceEqual(new[] { "Site A", "Site B" }), "Distinct Account-and-Branch locations only");
         Assert(result.locationDescriptions.SequenceEqual(new[] { "Building A" }) &&
             !result.locationDescriptionsTruncated && !result.locationDescriptionsTooLong,
-            "Duplicate Equipment descriptions provide a unique Account-and-Branch default");
+            "Source Location.Name, never Equipment Description, provides the location descriptions");
+        Assert(result.locationOptions.Count == 2 && result.locationOptions[0].number == "Site A" &&
+            result.locationOptions[1].number == "Site B", "Same names at different locations remain separate choices");
+        for (var i = 0; i < 120; i++)
+            service.Add(new Entity("re_equipment", Guid.NewGuid()) {
+                ["re_customeraccount"] = new EntityReference("account", accountId),
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Site A",
+                ["re_sourceexportmetadata"] = rawLocation("Site A", "Building A")
+            });
+        Assert(get().locationOptions.Count == 2 && !get().locationDescriptionsTruncated,
+            "Repeated Equipment across pages does not truncate distinct locations");
         service.Add(new Entity("re_equipment", Guid.NewGuid()) {
             ["re_customeraccount"] = new EntityReference("account", Guid.NewGuid()),
-            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_description"] = "Wrong Account"
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Wrong Account",
+            ["re_sourceexportmetadata"] = rawLocation("Wrong Account", "Wrong Account")
         });
         var inactiveEquipment = new Entity("re_equipment", Guid.NewGuid()) {
             ["re_customeraccount"] = new EntityReference("account", accountId),
-            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_description"] = "Inactive Building"
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Inactive",
+            ["re_sourceexportmetadata"] = rawLocation("Inactive", "Inactive Building")
         };
         service.Add(inactiveEquipment);
         inactiveEquipment["statecode"] = new OptionSetValue(1);
         service.Add(new Entity("re_equipment", Guid.NewGuid()) {
             ["re_customeraccount"] = new EntityReference("account", accountId),
-            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_description"] = new string('X', 300)
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Long A",
+            ["re_sourceexportmetadata"] = rawLocation("Long A", new string('X', 300))
         });
         service.Add(new Entity("re_equipment", Guid.NewGuid()) {
             ["re_customeraccount"] = new EntityReference("account", accountId),
-            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_description"] = new string('Y', 301)
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Long B",
+            ["re_sourceexportmetadata"] = rawLocation("Long B", new string('Y', 301))
         });
         result = get();
         Assert(result.locationDescriptions.Count == 2 && result.locationDescriptionsTooLong &&
@@ -101,6 +120,20 @@ static class DraftServiceTests
         before = service.Rows.Count;
         get();
         Assert(service.Rows.Count == before && service.Deletes == 0, "Defaults must not mutate records");
+        var missingName = new Entity("re_equipment", Guid.NewGuid()) {
+            ["re_customeraccount"] = new EntityReference("account", accountId),
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Missing",
+            ["re_description"] = "Must never become a location"
+        };
+        service.Add(missingName);
+        Assert(get().locationNamesUnavailable && !get().locationDescriptions.Contains("Must never become a location"),
+            "Missing raw name is explicit and never falls back to Equipment Description");
+        missingName["re_sourceexportmetadata"] = rawLocation("Wrong number", "Unverified");
+        Assert(get().locationNamesUnavailable && !get().locationDescriptions.Contains("Unverified"),
+            "Source number must agree with the typed imported functional-location number");
+        missingName["re_sourceexportmetadata"] = "not JSON";
+        Reject(() => get(), "source location metadata is invalid");
+        service.Rows.Remove(missingName.Id);
         input.search = "S";
         Reject(() => get(), "at least two characters");
         input.search = "Source";
@@ -118,14 +151,29 @@ static class DraftServiceTests
             service.Add(new Entity("re_equipment", Guid.NewGuid()) {
                 ["re_customeraccount"] = new EntityReference("account", accountId),
                 ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Extra " + i,
-                ["re_description"] = "Extra Building " + i
+                ["re_sourceexportmetadata"] = rawLocation("Extra " + i, "Extra Building " + i)
             });
         }
         result = get();
         Assert(result.contactsTruncated && result.contacts.Count == 20, "Contact truncation must be explicit");
         Assert(result.locationsTruncated && result.locations.Count == 20, "Location truncation must be explicit");
         Assert(result.locationDescriptionsTruncated && result.locationDescriptions.Count <= 20,
-            "Bounded Equipment description reads cannot infer uniqueness from an incomplete list");
+            "Distinct location result limits are explicit");
+        var bounded = Setup();
+        bounded.Add(service.Rows[accountId]);
+        for (var i = 0; i < 2001; i++)
+            bounded.Add(new Entity("re_equipment", Guid.NewGuid()) {
+                ["re_customeraccount"] = new EntityReference("account", accountId),
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_functionallocation"] = "Repeated",
+                ["re_sourceexportmetadata"] = rawLocation("Repeated", "Repeated building")
+            });
+        result = (Draft)search.Invoke(null, new object[] { bounded, input });
+        Assert(result.locationOptions.Count == 1 && result.locationDescriptionsTruncated,
+            "The 2,000-row scan cap prevents an inferred sole location from incomplete data");
+        bounded.Rows.Remove(bounded.Rows.Values.Last(row => row.LogicalName == "re_equipment").Id);
+        result = (Draft)search.Invoke(null, new object[] { bounded, input });
+        Assert(result.locationOptions.Count == 1 && !result.locationDescriptionsTruncated,
+            "Exactly 2,000 rows with no further page is complete");
     }
 
     static FakeService Setup()

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Branch } from './data/repairEstimatorRepository'
 
-export function BranchSelect({ branches, value, onChange, language, disabled = false }: {
+export function BranchSelect({ branches, value, onChange, language, disabled = false, error }: {
   branches: Branch[]
   value: string
   onChange: (id: string) => void
   language: 'en' | 'fr'
   disabled?: boolean
+  error?: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -46,6 +47,7 @@ export function BranchSelect({ branches, value, onChange, language, disabled = f
           disabled={disabled}
           aria-expanded={open} aria-controls="branch-options" aria-autocomplete="list"
           aria-required="true"
+          aria-invalid={!!error} aria-describedby={error ? 'branch-select-error' : undefined}
           aria-activedescendant={open && activeOption ? `branch-option-${active}` : undefined}
           autoComplete="off"
           placeholder={language === 'fr' ? 'Rechercher par nom ou numéro de succursale' : 'Search branch name or number'}
