@@ -87,6 +87,40 @@ def column_index(reference):
     return result - 1
 
 
+def workbook_number_formats(workbook):
+    if "xl/styles.xml" not in workbook.namelist():
+        return ["General"]
+    styles = ET.fromstring(workbook.read("xl/styles.xml"))
+    formats = {0: "General", 1: "0", 49: "@"}
+    for entry in styles.findall(NS + "numFmts/" + NS + "numFmt"):
+        formats[int(entry.get("numFmtId"))] = entry.get("formatCode")
+    return [formats.get(int(entry.get("numFmtId", "0")))
+            for entry in styles.findall(NS + "cellXfs/" + NS + "xf")]
+
+
+def account_number_cell(cell, typ, value, formats):
+    if cell.find(NS + "f") is not None:
+        return "invalid_account_number_formula", value
+    if typ != "n" or value in ("", None):
+        return typ, value
+    style = int(cell.get("s", "0"))
+    if not 0 <= style < len(formats):
+        return "invalid_account_number_style", value
+    code = formats[style]
+    if code not in ("General", "@") and (not code or re.fullmatch(r"0{1,100}", code) is None):
+        return "unsupported_account_number_format", value
+    try:
+        amount = decimal.Decimal(value)
+    except decimal.InvalidOperation:
+        return "invalid_account_number_numeric_value", value
+    if (not amount.is_finite() or amount < 0 or amount != amount.to_integral_value()
+            or amount >= decimal.Decimal("1e15")):
+        return "ambiguous_account_number_numeric_value", value
+    if code in ("General", "@"):
+        return typ, value
+    return "text", format(amount.quantize(decimal.Decimal(1)), "f").zfill(len(code))
+
+
 def source_rows(path, sheet_name):
     """Stream cells and retain shared strings in a disposable local database."""
     descriptor, db_path = tempfile.mkstemp(prefix="repair-master-", suffix=".sqlite")
@@ -95,6 +129,8 @@ def source_rows(path, sheet_name):
     try:
         db.execute("CREATE TABLE shared(id INTEGER PRIMARY KEY, value TEXT)")
         with zipfile.ZipFile(path) as workbook:
+            formats = workbook_number_formats(workbook)
+            account_columns = set()
             if "xl/sharedStrings.xml" in workbook.namelist():
                 with workbook.open("xl/sharedStrings.xml") as source:
                     root = None
@@ -142,7 +178,12 @@ def source_rows(path, sheet_name):
                             typ, value = "text", "".join(t.text or "" for t in cell.iter(NS + "t"))
                         elif typ == "str":
                             typ = "text"
+                        if index in account_columns:
+                            typ, value = account_number_cell(cell, typ, value, formats)
                         cells[index] = (typ, value)
+                    if elem.get("r") == "1":
+                        account_columns = {index for index, (_, value) in cells.items()
+                                           if value in ("AccountNumber", "Account.AccountNumber")}
                     yield int(elem.get("r", "0")), cells
                     sheet_data.remove(elem)
     finally:
@@ -152,6 +193,8 @@ def source_rows(path, sheet_name):
 
 def text(cell):
     typ, value = cell
+    if "account_number" in typ:
+        raise Rejected(typ)
     if typ in ("e", "uncached_formula"):
         raise Rejected("source_error_or_uncached_formula")
     if value in ("", None):

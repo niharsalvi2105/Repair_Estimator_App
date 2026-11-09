@@ -2,6 +2,14 @@
 
 ## 1. Scope and evidence
 
+### Exact Account numbers and location control selection (2026-11-09, local source)
+
+Location Description now uses an input for one available source value or missing data, and a dropdown only for multiple verified number/name pairs. A complete sole value autofills a blank input; an incomplete response retains warnings and requires explicit use of the linked value rather than guessing a sole default. Missing data permits a free-text description (existing 300-character limit). Multiple choices retain SAP pair identity, custom-entry support and saved/manual text preservation. No account-number padding is performed in the frontend.
+
+The Account/Contact Excel readers now preserve source-defined leading zeros in numeric AccountNumber / Account.AccountNumber cells using explicit all-zero Excel number formats. Text is preserved exactly; General-format numbers are not arbitrarily padded. Ambiguous formats, formulas and unsafe numeric precision are rejected. This fixes a reproduced synthetic reader defect, not proof that every reported tenant mismatch came from number formatting.
+
+Local evidence: 100 Python automation tests and 10 focused mocked EN/FR browser cases passed; frontend build/type-check, changed-source lint and Pylance syntax checks passed. The user subsequently chose the Equipment export's Account.AccountNumber matched by Account.Id as the correction authority. A complete source scan found 428,400 Equipment rows, 101,841 Account IDs and no conflicting numbers per ID. Read-only comparison scanned 441,206 tenant Accounts: 64,447 covered Accounts were already exact, 36,215 had missing source-confirmed leading zeros, and 1,179 source Accounts were absent. All 36,215 approved number corrections were applied with identity/ETag guards and individual readback. A subsequent independent full source/tenant audit found 100,662 covered Accounts exactly matching and zero remaining eligible corrections. Accounts outside source coverage were not inferred or padded. Location UI remains local source only, not published. No source-file edits, app/plugin publication or production UI verification occurred; tenant data correction is distinct from app deployment.
+
 ### Freestyle names, unobscured locations and click-time validation (2026-11-09, local source)
 
 Opportunity Name is now an initially empty, free-text 100-character field. Clearing it stays empty rather than regenerating a `Repair - ...` title; Account changes do not replace entered names. New drafts, clones and preset-created requests require their own name, while reopening retains the saved name.

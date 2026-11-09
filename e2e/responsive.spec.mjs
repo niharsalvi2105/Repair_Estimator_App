@@ -2528,7 +2528,10 @@ test('location descriptions offer explicit choices and preserve edits while inco
   await expect(page.locator('.customer-master-select')).toContainText('Incomplete list')
   await expect(page.locator('.customer-master-select')).toContainText('300-character limit')
   await expect(page.locator('.customer-master-select')).toContainText('verifiable source location number/name pair')
-  await expect(page.locator('#account-location-description')).toHaveValue('')
+  await expect(page.locator('#account-location-description')).toHaveCount(0)
+  await expect(page.locator('#opportunity-building')).toHaveValue('')
+  await page.getByRole('button', { name: 'Use linked location', exact: true }).click()
+  await expect(page.locator('#opportunity-building')).toHaveValue('Building A')
   await page.getByRole('button', { name: 'Change account', exact: true }).click()
   await page.evaluate(() => {
     window.__locationDescriptionsTruncated = false
@@ -2540,6 +2543,41 @@ test('location descriptions offer explicit choices and preserve edits while inco
   await page.locator('#account-master-options button').click()
   await expect(page.locator('#account-location-description')).toHaveCount(0)
   await expect(page.locator('#opportunity-building')).toHaveValue('Manual building before lookup')
+})
+
+for (const language of ['en', 'fr']) test(`Location description uses a value, multiple dropdown or missing free text (${language})`, async ({ page }) => {
+  await mockData(page, language, 'light')
+  await page.setViewportSize({ width: language === 'fr' ? 390 : 1366, height: 900 })
+  await page.goto('/')
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.locator('#branch-select').fill('020')
+  await page.locator('#branch-select').press('ArrowDown')
+  await page.locator('#branch-select').press('Enter')
+  for (const names of [['Sole source location'], ['First source location', 'Second source location'], []]) {
+    await page.evaluate(values => {
+      window.__accountLocationDescriptions = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': values }
+    }, names)
+    await page.locator('#account-master-search').fill('00042')
+    await page.locator('#account-master-options button').first().click()
+    await expect(page.locator('.customer-defaults-state')).not.toContainText(/Fetching linked|Chargement des données/)
+    if (names.length > 1) {
+      await expect(page.locator('#opportunity-building')).toHaveCount(0)
+      const dropdown = page.locator('#account-location-description')
+      await expect(dropdown).toBeVisible()
+      await dropdown.selectOption(JSON.stringify(['FL00000002', names[1]]))
+      await expect(dropdown.locator('option:checked')).toContainText(names[1])
+    } else {
+      await expect(page.locator('#account-location-description')).toHaveCount(0)
+      const input = page.locator('#opportunity-building')
+      await expect(input).toHaveValue(names[0] ?? '')
+      await expect(input).toBeEditable()
+      if (!names.length) {
+        await input.fill('Estimate-only location description')
+        await expect(input).toHaveValue('Estimate-only location description')
+      }
+    }
+    await page.getByRole('button', { name: /^(Change account|Changer de compte)$/ }).click()
+  }
 })
 
 for (const language of ['en', 'fr']) test(`Account location dropdown distinguishes equal names at different SAP locations (${language})`, async ({ page }) => {
