@@ -2,6 +2,36 @@
 
 ## 1. Scope and evidence
 
+### Submission validation focus and errors (2026-11-09, local source)
+
+Submit still requires a positive selling price and Billing Plan; no submission
+or pricing rule changed. Failed required-field validation now focuses the first
+invalid control after changing steps instead of subsequently focusing the step
+header. If a choice is still loading, its error receives focus until the control
+becomes available; user-initiated focus changes are respected. Missing Billing
+Plan has a specific English/French instruction. Save and Submit operation errors
+appear and receive focus beside the workspace footer, including on mobile; submit
+server details are not prefixed by an unrelated deployment/permission diagnosis.
+The existing reload action and server error details remain available.
+
+Required-field coverage was then checked individually with 34 mocked browser
+cases: all 17 prerequisites in English desktop and French mobile. These cover
+Opportunity Name, Branch, Account, Contact name/email, location description,
+equipment type, province, currency, proposal language, equipment, packages,
+time category, CSTM tax/freight, selling price and Billing Plan. Each case
+verifies visible error text, invalid-control/error association, focus and no
+Save/Submit API call. Disabled saved-Branch/province controls focus their error
+instead. This does not certify field-level highlighting for conditional
+server-only business rules; those continue to use the focused operation error.
+
+Read-only inspection of the reported CKE draft confirmed that its saved Billing
+Plan is blank and its selling price is positive. It remains a draft; unsaved
+browser inputs, the exact published client bundle and any later server-side
+blockers were not verified. Local mocked browser tests cover required focus,
+English/French, submission confirmation/success and a server rejection. Build
+and lint were run locally. This change is source-only, not published or verified
+in the tenant; no business record, plug-in or schema was changed.
+
 ### Freestyle names, unobscured locations and click-time validation (2026-11-09, local source)
 
 Opportunity Name is now an initially empty, free-text 100-character field. Clearing it stays empty rather than regenerating a `Repair - ...` title; Account changes do not replace entered names. New drafts, clones and preset-created requests require their own name, while reopening retains the saved name.

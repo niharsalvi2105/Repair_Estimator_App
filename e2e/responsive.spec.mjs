@@ -2715,9 +2715,85 @@ test('Save and submit return to missing fields on earlier steps with inline mess
   await expect(submit).toBeEnabled()
   await submit.click()
   await expect(page.locator('#request-re_sellprice-error')).toContainText('greater than zero')
-  await expect(page.locator('#request-re_billingplan-error')).toHaveText('Required field.')
+  await expect(page.locator('#request-re_billingplan-error')).toHaveText('Select a billing plan before submitting.')
+  await expect(page.locator('#request-re_sellprice')).toBeFocused()
   expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
 })
+
+for (const language of ['en', 'fr']) test(`Submit focuses the missing billing plan (${language})`, async ({ page }) => {
+  await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
+  await page.locator('.form-footer > button').click()
+  await page.locator('#request-re_billingplan').selectOption('')
+  await next(page)
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('#request-re_billingplan')).toBeFocused()
+  await expect(page.locator('#request-re_billingplan-error')).toHaveText(language === 'fr'
+    ? 'Sélectionnez un plan de facturation avant de soumettre.'
+    : 'Select a billing plan before submitting.')
+  expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+  await page.locator('#request-re_billingplan').selectOption('126110000')
+  await next(page)
+  page.once('dialog', dialog => dialog.accept())
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('.unsaved-badge')).toContainText(language === 'fr' ? 'Soumis' : 'Submitted')
+  expect(await page.evaluate(() => (window.__draftCalls ?? []).map(call => call.mode))).toEqual(['submit'])
+})
+
+const requiredFieldCases = [
+  { id: 'estimate-title', property: 'title' },
+  { id: 'branch-select', property: 'branchId', disabled: true },
+  { id: 'account-master-search', property: 'accountId' },
+  { id: 'customer-name', property: 'customer' },
+  { id: 'customer-email', property: 'email' },
+  { id: 'opportunity-building', property: 'building' },
+  { id: 'equipment-type', property: 'equipmentTypeId' },
+  { id: 'draft-province', property: 'stateId', disabled: true },
+  { id: 'draft-currency', currency: true },
+  { id: 'request-re_proposallanguage', field: 're_proposallanguage' },
+  { id: 'equipment-search', collection: 'equipment' },
+  { id: 'package-search', collection: 'packages' },
+  { id: 'request-re_timecategory', field: 're_timecategory' },
+  { id: 'request-re_usetax', field: 're_usetax', custom: true },
+  { id: 'request-re_freight', field: 're_freight', custom: true },
+  { id: 'request-re_sellprice', field: 're_sellprice', submit: true },
+  { id: 'request-re_billingplan', field: 're_billingplan', submit: true },
+]
+
+for (const language of ['en', 'fr']) {
+  for (const missing of requiredFieldCases) test(`Required field highlights and blocks persistence: ${missing.id} (${language})`, async ({ page }) => {
+    await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-saved')).toBeVisible()
+    await page.evaluate(missing => {
+      const record = window.__draftSaved
+      if (missing.property) record[missing.property] = ''
+      if (missing.collection) record[missing.collection] = []
+      if (missing.field) record.fields = record.fields.filter(field => field.key !== missing.field)
+      if (missing.custom) record.packages[0].isCustom = true
+      if (missing.currency) record.branchId = 'missing-branch-configuration'
+      if (missing.property === 'customer') {
+        record.contactId = ''
+        record.contactMaster = undefined
+        window.__contactMasterRecords = []
+      }
+      window.__draftCalls = []
+    }, missing)
+    await page.locator('.draft-secondary-actions button').nth(1).click()
+    await expect(page.locator('#estimate-title')).toBeVisible()
+    if (missing.submit) {
+      for (let step = 0; step < 4; step++) await next(page)
+      await page.locator('.footer-actions .button').click()
+    } else await page.locator('.draft-save-action').click()
+    const control = page.locator(`#${missing.id}`)
+    const error = page.locator(`#${missing.id}-error`)
+    await expect(error).toBeVisible()
+    await expect(control).toHaveAttribute('aria-invalid', 'true')
+    await expect(control).toHaveAttribute('aria-describedby', new RegExp(`${missing.id}-error`))
+    await expect(missing.disabled ? error : control).toBeFocused()
+    expect(await page.evaluate(() => (window.__draftCalls ?? []).filter(call =>
+      call.mode === 'save' || call.mode === 'submit'))).toEqual([])
+  })
+}
 
 for (const language of ['en', 'fr']) test(`Unified customer fields offer one control and linked dropdown or custom entry (${language})`, async ({ page }) => {
   await mockData(page, language, 'light')
@@ -3146,6 +3222,9 @@ test('Choice adapter uses global choice metadata when stringmaps are unavailable
 
 test('Review submission confirms, sends current edits and locks the submitted estimate', async ({ page }) => {
   await completeDraft(page)
+  await page.locator('.form-footer > button').click()
+  await page.locator('#request-re_billingplan').selectOption('126110000')
+  await next(page)
   const submit = page.getByRole('button', { name: 'Submit estimate', exact: true })
   await expect(submit).toBeVisible()
   await page.locator('#request-re_notesforcttteam').fill('Current submission notes')
@@ -3168,10 +3247,16 @@ test('Review submission confirms, sends current edits and locks the submitted es
 
 test('submission failure preserves edits and permits correction without claiming success', async ({ page }) => {
   await completeDraft(page)
+  await page.locator('.form-footer > button').click()
+  await page.locator('#request-re_billingplan').selectOption('126110000')
+  await next(page)
   await page.evaluate(() => { window.__draftFailure = 'RE-101|MARGIN_COMMENT_REQUIRED' })
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Submit estimate', exact: true }).click()
   await expect(page.locator('.draft-error')).toContainText('MARGIN_COMMENT_REQUIRED')
+  await expect(page.locator('.draft-error')).toContainText('Add a margin justification')
+  await expect(page.locator('.draft-error')).not.toContainText('Check that the Dataverse')
+  await expect(page.locator('.draft-error')).toBeFocused()
   await expect(page.locator('.draft-saved')).toHaveCount(0)
   await expect(page.locator('#request-re_notesforcttteam')).toBeEditable()
   await expect(page.locator('.customer-summary')).toContainText('Draft customer')

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from 'react'
 import type { Branch, DraftReferences, Equipment, RepairPackage, ReferenceOption } from './data/repairEstimatorRepository'
 import type { AppSession } from './data/sessionRepository'
 import type { Market } from './data/estimateQuery'
@@ -195,6 +195,8 @@ export default function EstimatorWorkspace({
   const assignmentValid = selectedPackages.every((p) => validPackageEquipment(p, selectedEquipment))
   const [attemptedFields, setAttemptedFields] = useState<string[]>([])
   const [validationAttempt, setValidationAttempt] = useState(0)
+  const pendingInvalidField = useRef<string | null>(null)
+  const operationError = useRef<HTMLDivElement>(null)
   const mandatory = language === 'fr' ? 'Champ obligatoire.' : 'Required field.'
   const requirements = [
     { id: 'estimate-title', step: 1, valid: !!estimateTitle.trim(), navigation: true },
@@ -216,7 +218,8 @@ export default function EstimatorWorkspace({
     { id: 'request-re_freight', step: 3, valid: !!requestInputs.re_freight?.trim() },
     { id: 'request-re_sellprice', step: 4, valid: Number(requestInputs.re_sellprice) > 0, submitOnly: true,
       message: language === 'fr' ? 'Saisissez un prix de vente supérieur à zéro.' : 'Enter a selling price greater than zero.' },
-    { id: 'request-re_billingplan', step: 4, valid: !!requestInputs.re_billingplan, submitOnly: true },
+    { id: 'request-re_billingplan', step: 4, valid: !!requestInputs.re_billingplan, submitOnly: true,
+      message: language === 'fr' ? 'Sélectionnez un plan de facturation avant de soumettre.' : 'Select a billing plan before submitting.' },
   ]
   const errors: Record<string, string | undefined> = Object.fromEntries(requirements
     .filter(field => attemptedFields.includes(field.id) && !field.valid)
@@ -226,19 +229,50 @@ export default function EstimatorWorkspace({
       ? field.step === step && field.navigation
       : !field.submitOnly || action === 'submit')
     setAttemptedFields(previous => [...new Set([...previous, ...fields.map(field => field.id)])])
-    setValidationAttempt(previous => previous + 1)
     const missing = fields.find(field => !field.valid)
-    if (missing) { setActiveCustom(undefined); setStep(missing.step); return false }
+    if (missing) {
+      pendingInvalidField.current = missing.id
+      setValidationAttempt(previous => previous + 1)
+      setActiveCustom(undefined); setStep(missing.step); return false
+    }
     return true
   }
   function saveValidated(submit = false) {
     if (validateRequired(submit ? 'submit' : 'save')) void saveDraft(submit)
   }
   useEffect(() => {
-    if (!validationAttempt) return
-    const control = requestSection.current?.querySelector<HTMLElement>('[aria-invalid="true"]:not(:disabled)')
-    control?.focus()
+    const section = requestSection.current
+    const invalid = pendingInvalidField.current
+    pendingInvalidField.current = null
+    if (!invalid || !section) {
+      section?.querySelector<HTMLElement>('[aria-current="step"]')?.focus()
+      return
+    }
+    const findControl = () => section.querySelector<HTMLElement>(`[id="${invalid}"]:not(:disabled)`)
+    const control = findControl()
+    if (control) {
+      control.focus()
+      return
+    }
+    const error = section.querySelector<HTMLElement>(`[id="${invalid}-error"]`)
+    if (!error) {
+      section.querySelector<HTMLElement>('[aria-current="step"]')?.focus()
+      return
+    }
+    error.focus()
+    const observer = new MutationObserver(() => {
+      const enabled = findControl()
+      if (enabled) {
+        observer.disconnect()
+        if (document.activeElement === error) enabled.focus()
+      }
+    })
+    observer.observe(section, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled'] })
+    return () => observer.disconnect()
   }, [validationAttempt, step, requestSection])
+  useEffect(() => {
+    if (draftError) operationError.current?.focus()
+  }, [draftError])
   const previewSignature = JSON.stringify({ selectedPackages, selectedEquipment, requestInputs, rates, laborLines, materialLines, currency })
   function additionalCost() {
     const values = ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous'].map((field) => {
@@ -372,9 +406,6 @@ export default function EstimatorWorkspace({
       : 'Package subtotal + additional cost, counted once. Cost preview, not a selling price.'}</p>
     </>}
   </section>
-  useEffect(() => {
-    requestSection.current?.querySelector<HTMLElement>('[aria-current="step"]')?.focus()
-  }, [step, requestSection])
   return (
     <section className="page-content" ref={requestSection}>
       <div className="page-heading new-heading">
@@ -1004,6 +1035,10 @@ export default function EstimatorWorkspace({
         </div>
       </div>
       </fieldset>
+      {draftError && <div ref={operationError} tabIndex={-1} className="error-box draft-error" role="alert">
+        <span>{draftError}</span>
+        <button className="button secondary" disabled={draftBusy} onClick={() => void openDraft(draftId)}>{dt.reload}</button>
+      </div>}
     </section>
   )
 }

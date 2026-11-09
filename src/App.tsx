@@ -1019,7 +1019,7 @@ function App() {
       applyDraft(record); setDraftNotice(record.exportDelivery
         ? `${submissionDeliveryMessage(record.exportDelivery.state, language)} ${record.number || record.id}`
         : `${submit ? language === 'fr' ? 'Devis soumis' : 'Estimate submitted' : dt.saved}: ${record.number || record.id}`)
-    } catch (reason) { setDraftError(`${dt.error} ${submit ? submissionErrorMessage(message(reason), language) : message(reason)}`) }
+    } catch (reason) { setDraftError(submit ? submissionErrorMessage(message(reason), language) : `${dt.error} ${message(reason)}`) }
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
 
@@ -1222,7 +1222,7 @@ function App() {
             <p className="draft-notice" role="status">{t.developmentAdminNotice}</p>
           )}
           {draftBusy && <p className="inline-state" role="status">{dt.working}</p>}
-          {draftError && <div className="error-box draft-error" role="alert">
+          {draftError && view !== 'new' && <div className="error-box draft-error" role="alert">
             <span>{draftError}</span>
             <button className="button secondary" disabled={draftBusy} onClick={() => void openDraft(draftId)}>{dt.reload}</button>
           </div>}
