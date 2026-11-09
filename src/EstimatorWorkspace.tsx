@@ -174,14 +174,18 @@ export default function EstimatorWorkspace({
     return request
   }, [draftReadRevision])
   useEffect(() => {
+    const key = `${branchId}:${draftReadRevision}:${equipmentDetailsAttempt}`
+    if (equipmentCache.current.key !== key) equipmentCache.current = { key, rows: new Map() }
     if (!branchId || !selectedEquipment.some(item => item.matched)) return
     let active = true
     async function loadDetails() {
       try {
         const numbers = selectedEquipment.filter(item => item.matched).map(item => item.number)
-        const key = `${branchId}:${draftReadRevision}:${equipmentDetailsAttempt}`
-        if (equipmentCache.current.key !== key) equipmentCache.current = { key, rows: new Map() }
         const cache = equipmentCache.current.rows
+        const selectedRequests = numbers.flatMap(number => {
+          const request = cache.get(number)
+          return request ? [request] : []
+        })
         const missing = numbers.filter(number => !cache.has(number))
         for (let offset = 0; offset < missing.length; offset += EQUIPMENT_LOOKUP_BATCH_SIZE) {
           const batch = missing.slice(offset, offset + EQUIPMENT_LOOKUP_BATCH_SIZE)
@@ -189,6 +193,7 @@ export default function EstimatorWorkspace({
           for (const number of batch) {
             const detail = request.then(rows => rows.find(row => row.re_equipment === number))
             cache.set(number, detail)
+            selectedRequests.push(detail)
             void detail.catch(() => {
               if (cache.get(number) === detail) cache.delete(number)
             })
@@ -196,7 +201,7 @@ export default function EstimatorWorkspace({
           await request
           if (!active) return
         }
-        const records = await Promise.all(numbers.map(number => cache.get(number)))
+        const records = await Promise.all(selectedRequests)
         if (active) setEquipmentDetails({ branchId, records: records.filter((row): row is Equipment => row != null) })
       } catch (reason) {
         if (active) setEquipmentDetails({ branchId, error: reason instanceof Error ? reason.message : String(reason) })

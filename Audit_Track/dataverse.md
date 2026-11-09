@@ -2,6 +2,17 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Equipment-cache race corrections (frontend only)
+
+Branch changes invalidate the component-memory equipment cache even with no
+selected equipment. Active loads retain their original selected promises so a
+failed `re_equipment` read cannot disappear through cache eviction while another
+batch is pending; errors remain visible with Retry. No queries, columns,
+payloads, persistence, snapshots, permissions, pricing or plugin behavior changed.
+Five focused mocked browser tests, build/type-check, changed-source lint and
+diff checks passed. Source only, not published or tenant-verified; no tenant
+reads/writes or schema/plugin deployment occurred.
+
 ### Change Contact layout (frontend only)
 
 The existing selected Contact email/phone display and Change Contact action

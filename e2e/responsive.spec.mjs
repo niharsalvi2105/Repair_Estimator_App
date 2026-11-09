@@ -264,6 +264,11 @@ async function mockData(page, language, theme, state = 'records') {
       export async function findEquipmentByNumbers(branchId, numbers) {
         window.__equipmentLookups ??= [];
         window.__equipmentLookups.push({ branchId, numbers });
+        const gate = window.__equipmentLookupGates?.[numbers[0]];
+        if (gate) {
+          const error = await gate;
+          if (error) throw new Error(error);
+        }
         if (window.__equipmentLookupError) throw new Error(window.__equipmentLookupError);
         if (window.__equipmentLookupDelay) await new Promise(resolve => setTimeout(resolve, window.__equipmentLookupDelay));
         if (window.__equipmentResults) return window.__equipmentResults.filter((item) => numbers.includes(item.re_equipment));
@@ -1341,6 +1346,63 @@ test('Pricing navigation shares an in-flight saved-pricing request', async ({ pa
   await page.evaluate(() => { window.__releasePricing() })
   await expect(page.locator('.pricing-kpi')).toHaveCount(4)
   expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+})
+
+test('Equipment details invalidate when Branch changes with no selected units', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__branches = ['test-branch', 'second-branch'].map((id, index) => ({
+      re_branchid: id, re_branchname: `Branch ${index}`, re_branchnumber: index ? '021' : '020',
+      re_market: 126110000, _re_country_value: 'test-country',
+      _re_currency_value: 'test-currency', _re_stateprovince_value: 'test-state',
+    }))
+  })
+  await completeDraft(page)
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups.length)).toBe(1)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  page.once('dialog', dialog => dialog.accept())
+  for (const number of ['021', '020']) {
+    await page.locator('#branch-select').fill(number)
+    await page.locator('#branch-select').press('ArrowDown')
+    await page.locator('#branch-select').press('Enter')
+  }
+  await page.locator('#opportunity-building').fill('Branch return test')
+  await next(page)
+  await page.locator('#equipment-search').fill('TEST123')
+  await page.locator('#equipment-options button').first().click()
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups.length)).toBe(2)
+  expect(await page.evaluate(() => window.__equipmentLookups.map(call => call.branchId)))
+    .toEqual(['test-branch', 'test-branch'])
+})
+
+test('An overlapping equipment detail failure remains visible until Retry', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__equipmentResults = ['TEST456', 'TEST789'].map(number => ({
+      re_equipmentid: number, re_equipment: number, re_equipmentname: `Unit ${number}`,
+    }))
+    window.__equipmentLookupGates = {}
+    window.__releaseEquipment = {}
+    for (const number of ['TEST456', 'TEST789']) {
+      window.__equipmentLookupGates[number] = new Promise(resolve => {
+        window.__releaseEquipment[number] = resolve
+      })
+    }
+  })
+  for (const number of ['TEST456', 'TEST789']) {
+    await page.locator('#equipment-search').fill(number)
+    await page.locator('#equipment-options button').filter({ hasText: number }).first().click()
+  }
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups.length)).toBe(3)
+  await page.evaluate(() => { window.__releaseEquipment.TEST456('First unit detail failed') })
+  await page.evaluate(() => { window.__releaseEquipment.TEST789() })
+  const error = page.locator('.selected-list .error-box')
+  await expect(error).toContainText('First unit detail failed')
+  await page.evaluate(() => { window.__equipmentLookupGates = {} })
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  expect(await page.evaluate(() => window.__equipmentLookups.at(-1).numbers))
+    .toEqual(['TEST123', 'TEST456', 'TEST789'])
 })
 
 test('Equipment detail retry clears failed reads and reloads selected units', async ({ page }) => {

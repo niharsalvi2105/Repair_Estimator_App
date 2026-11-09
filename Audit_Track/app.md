@@ -2,6 +2,22 @@
 
 ## 1. Scope and evidence
 
+### Equipment-cache invalidation and overlapping failures (local source only)
+
+The equipment cache key now resets before checking for an empty selection.
+Changing Branch A to B and back to A without selecting units in B therefore
+requires fresh details in A. The active detail load retains selected cached
+promises before awaiting new batches, plus all newly requested promises;
+evicting a failed cached request cannot turn that failure into partial success.
+The existing visible error and Retry action remain available.
+
+Five mocked browser tests passed for Branch round-trip invalidation, an older
+unit failing while a newer unit loads, retry recovery, incremental/reselection
+reuse, Save/Reload refresh and batches exceeding 50 units. Build/type-check,
+changed-source lint and diff checks passed. Sequential batches, obsolete-effect
+guards and backend behavior are unchanged. No publication or tenant writes;
+local mocks do not certify deployed behavior.
+
 ### Responsive Change Contact spacing (local source only)
 
 The selected Contact email/phone and Change Contact button use a wrapping row
