@@ -65,6 +65,7 @@ async function mockData(page, language, theme, state = 'records') {
       static async get(id, options) {
         window.__pricingReads ??= [];
         window.__pricingReads.push({id,options});
+        if (window.__pricingGate) await window.__pricingGate;
         if (window.__pricingDelay) await new Promise((resolve) => setTimeout(resolve, window.__pricingDelay));
         if (window.__pricingError) return {success:false,error:{message:window.__pricingError}};
         return {success:true,data:{
@@ -790,8 +791,11 @@ for (const [format, text] of [
     }
     await expect(cards.locator('.unbound-tag')).toHaveCount(0)
     await expect(page.locator('#equipment-search')).toHaveValue('')
+    const matchingBatches = Math.ceil(numbers.length / 50)
+    await expect.poll(() => page.evaluate(() => window.__equipmentLookups.length)).toBe(matchingBatches * 2)
     const lookups = await page.evaluate(() => window.__equipmentLookups)
-    expect(lookups.flatMap((lookup) => lookup.numbers)).toEqual(numbers)
+    expect(lookups.slice(0, matchingBatches).flatMap((lookup) => lookup.numbers)).toEqual(numbers)
+    expect(lookups.slice(matchingBatches).flatMap((lookup) => lookup.numbers)).toEqual(numbers)
     expect(lookups.every((lookup) => lookup.branchId === 'test-branch' && lookup.numbers.length <= 50)).toBe(true)
   })
 }
@@ -1103,6 +1107,109 @@ async function pickEquipmentAndPackage(page) {
   await page.locator('#package-options button').first().click()
   await page.locator('#package-search').press('Escape')
 }
+
+test('Equipment details fetch only added units and reuse removed units until reload', async ({ page }) => {
+  await completeDraft(page)
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups?.length)).toBe(1)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__equipmentResults = ['TEST123', 'TEST456'].map(number => ({
+      re_equipmentid: number === 'TEST123' ? 'test-equipment' : 'second-equipment',
+      re_equipment: number, re_equipmentname: `Catalog ${number}`, re_oem: 'OEM', re_equipmentage: 20,
+    }))
+  })
+  await page.locator('#equipment-search').fill('TEST456')
+  await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups?.length)).toBe(2)
+  expect(await page.evaluate(() => window.__equipmentLookups.map(call => call.numbers))).toEqual([['TEST123'], ['TEST456']])
+  await page.getByRole('button', { name: 'Remove TEST456', exact: true }).click()
+  await page.locator('#equipment-search').fill('')
+  await page.locator('#equipment-search').focus()
+  await page.locator('#equipment-search').fill('TEST456')
+  await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+  await next(page)
+  expect(await page.evaluate(() => window.__equipmentLookups.length)).toBe(2)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups?.length)).toBe(3)
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups?.length)).toBe(4)
+})
+
+test('Pricing reads are reused across steps and invalidated by save and explicit reload', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  await next(page)
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+  await page.locator('.draft-save-action').click()
+  await expect.poll(() => page.evaluate(() => window.__pricingReads.length)).toBe(2)
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  for (let i = 0; i < 3; i++) await next(page)
+  await expect.poll(() => page.evaluate(() => window.__pricingReads.length)).toBe(3)
+})
+
+test('Failed pricing reads can retry after navigating between Pricing and Review', async ({ page }) => {
+  await completeDraft(page)
+  await page.evaluate(() => { window.__pricingError = 'Pricing read denied' })
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.pricing-summary')).toContainText('Pricing read denied')
+  await page.evaluate(() => { window.__pricingError = '' })
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(2)
+})
+
+test('Pricing navigation shares an in-flight saved-pricing request', async ({ page }) => {
+  await completeDraft(page)
+  await page.evaluate(() => {
+    window.__pricingGate = new Promise(resolve => { window.__releasePricing = resolve })
+  })
+  await page.locator('.draft-save-action').click()
+  await expect.poll(() => page.evaluate(() => window.__pricingReads?.length)).toBe(1)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.pricing-summary')).toContainText('Loading saved pricing')
+  await next(page)
+  await expect(page.locator('.pricing-summary')).toContainText('Loading saved pricing')
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+  await page.evaluate(() => { window.__releasePricing() })
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+})
+
+test('Equipment detail retry clears failed reads and reloads selected units', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__equipmentLookupError = 'Detail access denied'
+    window.__equipmentResults = [{
+      re_equipmentid: 'second-equipment', re_equipment: 'TEST456', re_equipmentname: 'Second unit',
+    }]
+  })
+  await page.locator('#equipment-search').fill('TEST456')
+  await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+  const error = page.locator('.selected-list .error-box')
+  await expect(error).toContainText('Detail access denied')
+  await page.evaluate(() => { window.__equipmentLookupError = '' })
+  await error.getByRole('button', { name: 'Retry' }).click()
+  await expect(error).toHaveCount(0)
+  expect(await page.evaluate(() => window.__equipmentLookups.at(-1).numbers)).toEqual(['TEST123', 'TEST456'])
+})
+
+test('Pricing retry reloads failed requests instead of retaining an error', async ({ page }) => {
+  await completeDraft(page)
+  await page.evaluate(() => { window.__pricingError = 'Temporary read failure' })
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.pricing-summary')).toContainText('Temporary read failure')
+  await page.evaluate(() => { window.__pricingError = '' })
+  await page.locator('.pricing-summary').getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(2)
+})
 
 async function completeDraft(page, viewport = { width: 1366, height: 768 }, language = 'en', theme = 'light') {
   await page.setViewportSize(viewport)
@@ -2772,6 +2879,8 @@ test('Save and submit return to missing fields on earlier steps with inline mess
 for (const language of ['en', 'fr']) test(`Submit focuses the missing billing plan (${language})`, async ({ page }) => {
   await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
   await page.locator('.form-footer > button').click()
+  await expect(page.locator('label[for="request-re_billingplan"] .required')).toHaveText('*')
+  await expect(page.locator('#request-re_billingplan')).toHaveAttribute('aria-required', 'true')
   await page.locator('#request-re_billingplan').selectOption('')
   await next(page)
   await page.locator('.footer-actions .button').click()

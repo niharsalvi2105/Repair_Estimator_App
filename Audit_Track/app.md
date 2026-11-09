@@ -2,6 +2,55 @@
 
 ## 1. Scope and evidence
 
+### Billing Plan required marker (local source only)
+
+Billing Plan now displays the existing red required star in English and French,
+and its choice control exposes `aria-required`. It remains required only for
+Submit; saving/calculating a draft without a Billing Plan remains allowed.
+This corrects the missing visual indicator, not the validation rule.
+Validation and deployment evidence is recorded after local checks; no
+publication or tenant writes are part of this change.
+
+### Equipment and saved-pricing read reuse (local source only)
+
+**What changed**
+
+- Equipment details are reused within the open estimator workspace. Adding a
+  matched unit reads only missing numbers; removing/reselecting a cached unit
+  does not reread it. In-flight requests are shared. Missing batches remain
+  sequential, with at most 50 numbers per request. Obsolete effects cannot
+  update the UI or issue subsequent batches after their current batch finishes.
+- Pricing and Review share one saved-pricing request for the current estimate
+  ID, saved version and draft-read revision. Changing steps no longer rereads
+  the same saved results.
+
+**Refresh and limits**
+
+Equipment cache resets on Branch change, Retry or application of a saved/
+reloaded draft. Saved-pricing cache refreshes after Save/Calculate/Reload and
+explicit Retry. Failed requests are evicted and errors remain visible. Both
+caches live only in component memory and disappear when the workspace closes
+or a different estimate opens. Unsaved inputs still mark saved pricing stale;
+this does not introduce browser-side pricing or change saved snapshots.
+
+Bulk equipment matching and richer detail loading remain separate reads for
+new units. No timed expiry, parallel batch loading, account-search optimization
+or backend calculation changes are included.
+
+**Evidence and deployment**
+
+26 targeted mocked browser cases passed, including incremental detail reads,
+removal/reselection, Save/Reload invalidation, equipment/pricing Retry, failed
+pricing navigation recovery, in-flight pricing sharing, Save/Submit and stale
+update regressions, bulk lists exceeding 50 numbers and English/French
+equipment/pricing display at mobile/desktop widths. Request-count checks show
+one added unit reads only that unit, reselection adds zero reads and Pricing/
+Review navigation retains one saved-pricing read. Local build/type-check,
+changed-source lint and 24 related unit/documentation tests passed.
+No published-app latency measurements, tenant writes, schema/plugin
+changes or publication were performed; these mocks do not certify live speed,
+permissions or production behavior.
+
 ### Linked-location and repeated-error focus corrections (2026-11-09, source only)
 
 Required-field focus resolves enabled input/select/textarea controls by their

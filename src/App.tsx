@@ -478,6 +478,7 @@ function App() {
   const [savedSnapshot, setSavedSnapshot] = useState('')
   const [draftBusy, setDraftBusy] = useState(false)
   const [draftError, setDraftError] = useState('')
+  const [draftReadRevision, setDraftReadRevision] = useState(0)
   const [draftAttempt, setDraftAttempt] = useState(0)
   const [draftNotice, setDraftNotice] = useState('')
   const [cloneSource, setCloneSource] = useState<{ id: string; name: string }>()
@@ -881,6 +882,7 @@ function App() {
       laborLines, materialLines, language))
 
   function applyDraft(record: DraftRecord) {
+    setDraftReadRevision(previous => previous + 1)
     equipmentPasteRequest.current++
     setEquipmentBulkBusy(false)
     setEquipmentPasteResult(undefined)
@@ -1314,7 +1316,7 @@ function App() {
               newDraft,
               onSaveOpportunity: () => navigate('clone'),
               draftBusy,
-              draftError, draftAttempt,
+              draftError, draftAttempt, draftReadRevision,
               canStart,
               openDraft,
               draftId,

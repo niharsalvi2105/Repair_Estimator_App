@@ -2,6 +2,42 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Billing Plan required marker (frontend only)
+
+The existing `re_repairestimate.re_billingplan` choice now has a red required
+star and accessible required indication in the UI. Submit still requires it;
+draft Save/Calculate still permit it to be blank. No schema requirement level,
+choice values, API payload, persistence, pricing or plugin behavior changed.
+Local validation evidence is recorded after checks; no deployment or tenant
+writes are included.
+
+### Frontend read reuse (local source only)
+
+**Affected reads:** existing Branch-filtered `re_equipment` detail reads and
+saved calculation outputs on `re_repairestimate`. No columns, relationships,
+API operations/payloads, security roles, persistence, calculations, snapshots,
+registration or export lifecycle changed.
+
+**Expected behavior:** component-memory equipment reads reuse completed and
+in-flight results for selected numbers, fetching only missing units in
+sequential batches of 50. Branch changes, Retry and saved/reloaded drafts reset
+this cache. Pricing and Review reuse one request keyed by estimate ID, saved
+version and UI-only draft-read revision; Save/Calculate/Reload and Retry trigger
+fresh reads. Failed requests are evicted, not converted into successful empty
+responses. Closing the workspace or opening another estimate discards caches.
+Unsaved edits still mark saved pricing stale. Bulk matching and new-unit detail
+reads remain separate; no new persisted cache fields or pricing source exist.
+
+**Actual local evidence:** 26 targeted mocked browser cases passed for request
+counts, invalidation, in-flight sharing, error recovery, Save/Submit and stale
+update regressions, bulk equipment and bilingual mobile/desktop display.
+Adding one unit reads only the added number; reselecting it
+adds no read; Pricing/Review navigation shares one saved-pricing read. Build,
+changed-source lint and 24 related unit/documentation tests passed.
+This is frontend source/mock evidence only. No tenant verification,
+business/master writes, schema/plugin deployment or frontend publication
+occurred; live latency and non-admin behavior remain unmeasured/unverified.
+
 ### Validation focus variants (2026-11-09, frontend only)
 
 The location dropdown now receives required-field focus through its existing
