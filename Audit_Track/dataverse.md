@@ -2,6 +2,41 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Validation focus variants (2026-11-09, frontend only)
+
+The location dropdown now receives required-field focus through its existing
+`opportunity-building-error` association. Its source location selection still
+copies to `re_repairestimate.re_buildingname`; no new persisted field is added.
+A UI-only operation-attempt counter retriggers identical local Save/Calculate/
+Submit errors. Neither change modifies API dispatch/payload, validation rules,
+permissions, pricing or export lifecycle. Eight focused mocked browser cases
+passed for dropdown/repeated-error focus and previous submission regressions,
+including English desktop and French mobile. All 34 required-field-category
+browser cases, build/type-check, changed-source lint and 10 validation/
+documentation unit tests also passed. No tenant reads/writes, schema or
+plugin changes, or deployment occurred in this correction.
+
+### Submission error visibility (2026-11-09, frontend source only)
+
+The saved reported CKE estimate was inspected read-only: `re_billingplan` is
+null, `re_sellprice` is positive and `re_estimatestatus` remains Draft. This is
+one saved-record observation, not evidence of unsaved client state or of every
+condition required for submission. No customer data or record values were
+changed. The source UI now focuses the first invalid field, provides an explicit
+Billing Plan instruction and focuses operation errors near the footer. The
+`re_billingplan` choice, server validation, API payload, permissions, calculation
+and export lifecycle are unchanged. Focused mocked browser tests, local build
+and lint are frontend evidence only; the update has not been published or
+verified with a live submission.
+
+Follow-up frontend evidence: 34 mocked browser cases passed, testing each of
+the 17 required UI prerequisites independently in English desktop and French
+mobile, including conditional CSTM tax/freight and submit-only selling price/
+Billing Plan. They assert invalid-control/error associations, visible errors,
+focus and blocked persistence. Read-only/disabled derived fields use focusable
+errors where the control cannot accept focus. No additional Dataverse reads,
+writes, schema changes or deployment were performed for this coverage check.
+
 ### Click-time form validation and freestyle Opportunity Name (2026-11-09, frontend source only)
 
 Opportunity Name is now blank/free-text for new requests, clones and presets, with no generated replacement on clear. It continues to map to `re_repairestimate.re_estimatename` (required, 100 characters); existing saved names are unchanged. A complete empty Contact result uses a plain name input rather than a lookup popup. Linked `re_customercontact`, source-authoritative nonblank master values and estimate-only `re_customername`/`re_customeremail`/`re_customerphone` snapshots retain their existing rules and 100/100/50-character limits. No shared `account` or `contact` writes are introduced.

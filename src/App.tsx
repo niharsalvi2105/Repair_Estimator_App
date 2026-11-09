@@ -478,6 +478,7 @@ function App() {
   const [savedSnapshot, setSavedSnapshot] = useState('')
   const [draftBusy, setDraftBusy] = useState(false)
   const [draftError, setDraftError] = useState('')
+  const [draftAttempt, setDraftAttempt] = useState(0)
   const [draftNotice, setDraftNotice] = useState('')
   const [cloneSource, setCloneSource] = useState<{ id: string; name: string }>()
   const [cloneError, setCloneError] = useState('')
@@ -947,6 +948,7 @@ function App() {
 
   async function saveDraft(submit = false) {
     if (draftInFlight.current || submitted || exportDelivery || equipmentBulkBusy) return
+    setDraftAttempt(previous => previous + 1)
     setDraftError(''); setDraftNotice('')
     const koneConflict = konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
     if (koneConflict) { setDraftError(koneConflict); setStep(4); return }
@@ -1019,7 +1021,7 @@ function App() {
       applyDraft(record); setDraftNotice(record.exportDelivery
         ? `${submissionDeliveryMessage(record.exportDelivery.state, language)} ${record.number || record.id}`
         : `${submit ? language === 'fr' ? 'Devis soumis' : 'Estimate submitted' : dt.saved}: ${record.number || record.id}`)
-    } catch (reason) { setDraftError(`${dt.error} ${submit ? submissionErrorMessage(message(reason), language) : message(reason)}`) }
+    } catch (reason) { setDraftError(submit ? submissionErrorMessage(message(reason), language) : `${dt.error} ${message(reason)}`) }
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
 
@@ -1222,7 +1224,7 @@ function App() {
             <p className="draft-notice" role="status">{t.developmentAdminNotice}</p>
           )}
           {draftBusy && <p className="inline-state" role="status">{dt.working}</p>}
-          {draftError && <div className="error-box draft-error" role="alert">
+          {draftError && view !== 'new' && <div className="error-box draft-error" role="alert">
             <span>{draftError}</span>
             <button className="button secondary" disabled={draftBusy} onClick={() => void openDraft(draftId)}>{dt.reload}</button>
           </div>}
@@ -1312,7 +1314,7 @@ function App() {
               newDraft,
               onSaveOpportunity: () => navigate('clone'),
               draftBusy,
-              draftError,
+              draftError, draftAttempt,
               canStart,
               openDraft,
               draftId,
