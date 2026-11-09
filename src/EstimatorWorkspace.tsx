@@ -38,6 +38,7 @@ type Props = {
   onSaveOpportunity: () => void
   draftBusy: boolean
   draftError: string
+  draftAttempt: number
   canStart: boolean
   openDraft: (id: string) => Promise<void>
   draftId: string
@@ -117,7 +118,7 @@ type Props = {
 
 export default function EstimatorWorkspace({
   requestSection, t, draftVersion, draftDirty, dt,
-  draftNumber, newDraft, onSaveOpportunity, draftBusy, draftError, canStart, openDraft,
+  draftNumber, newDraft, onSaveOpportunity, draftBusy, draftError, draftAttempt, canStart, openDraft,
   draftId, selectedAccount, selectedContact, onSelectAccount, onSelectContact,
   onCustomerName, onCustomerEmail, onCustomerPhone,
   canWork, draftComplete, saveDraft, submitted, exportDelivery, step,
@@ -248,7 +249,9 @@ export default function EstimatorWorkspace({
       section?.querySelector<HTMLElement>('[aria-current="step"]')?.focus()
       return
     }
-    const findControl = () => section.querySelector<HTMLElement>(`[id="${invalid}"]:not(:disabled)`)
+    const findControl = () => section.querySelector<HTMLElement>(
+      `input:not(:disabled)[id="${invalid}"], select:not(:disabled)[id="${invalid}"], textarea:not(:disabled)[id="${invalid}"], ` +
+      `input:not(:disabled)[aria-describedby~="${invalid}-error"], select:not(:disabled)[aria-describedby~="${invalid}-error"], textarea:not(:disabled)[aria-describedby~="${invalid}-error"]`)
     const control = findControl()
     if (control) {
       control.focus()
@@ -272,7 +275,7 @@ export default function EstimatorWorkspace({
   }, [validationAttempt, step, requestSection])
   useEffect(() => {
     if (draftError) operationError.current?.focus()
-  }, [draftError])
+  }, [draftError, draftAttempt])
   const previewSignature = JSON.stringify({ selectedPackages, selectedEquipment, requestInputs, rates, laborLines, materialLines, currency })
   function additionalCost() {
     const values = ['re_additionallaborhours', 're_additionalmaterial', 're_additionalmiscellaneous'].map((field) => {

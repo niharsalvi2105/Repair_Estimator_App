@@ -478,6 +478,7 @@ function App() {
   const [savedSnapshot, setSavedSnapshot] = useState('')
   const [draftBusy, setDraftBusy] = useState(false)
   const [draftError, setDraftError] = useState('')
+  const [draftAttempt, setDraftAttempt] = useState(0)
   const [draftNotice, setDraftNotice] = useState('')
   const [cloneSource, setCloneSource] = useState<{ id: string; name: string }>()
   const [cloneError, setCloneError] = useState('')
@@ -947,6 +948,7 @@ function App() {
 
   async function saveDraft(submit = false) {
     if (draftInFlight.current || submitted || exportDelivery || equipmentBulkBusy) return
+    setDraftAttempt(previous => previous + 1)
     setDraftError(''); setDraftNotice('')
     const koneConflict = konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
     if (koneConflict) { setDraftError(koneConflict); setStep(4); return }
@@ -1312,7 +1314,7 @@ function App() {
               newDraft,
               onSaveOpportunity: () => navigate('clone'),
               draftBusy,
-              draftError,
+              draftError, draftAttempt,
               canStart,
               openDraft,
               draftId,

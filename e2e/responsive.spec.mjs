@@ -2494,6 +2494,55 @@ test('customer defaults do not guess ambiguous or truncated data and recover exp
   await expect(page.locator('#opportunity-building')).toHaveValue('')
 })
 
+for (const language of ['en', 'fr']) test(`Required location dropdown receives focus on repeated validation (${language})`, async ({ page }) => {
+  await mockData(page, language, 'light')
+  await page.setViewportSize({ width: language === 'fr' ? 390 : 1366, height: 900 })
+  await page.goto('/')
+  await page.locator('.main-nav .nav-item').nth(1).click()
+  await page.locator('#estimate-title').fill('Location validation')
+  await page.locator('#branch-select').fill('020')
+  await page.locator('#branch-select').press('ArrowDown')
+  await page.locator('#branch-select').press('Enter')
+  await page.locator('#equipment-type').selectOption('test-type')
+  await page.evaluate(() => {
+    window.__accountLocationDescriptions = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Building A', 'Building B'] }
+  })
+  await page.locator('#account-master-search').fill('00042')
+  await page.locator('#account-master-options button').click()
+  const location = page.locator('#account-location-description')
+  await expect(location.locator('option')).toHaveCount(4)
+  for (const action of [page.locator('.draft-save-action'), page.locator('.draft-save-action'), page.locator('.footer-actions .button')]) {
+    await action.click()
+    await expect(location).toBeFocused()
+    await expect(location).toHaveAttribute('aria-invalid', 'true')
+    await expect(page.locator('#opportunity-building-error')).toBeVisible()
+  }
+  expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+  await location.selectOption(JSON.stringify(['FL00000002', 'Building B']))
+  await expect(page.locator('#opportunity-building-error')).toHaveCount(0)
+})
+
+for (const language of ['en', 'fr']) test(`Repeated local save errors refocus the operation banner (${language})`, async ({ page }) => {
+  await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  await page.locator('#request-re_statedlaborrate').fill('-4')
+  const error = page.locator('.draft-error')
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.locator('.draft-save-action').click()
+    await expect(error).toBeFocused()
+    await expect(error).toContainText(language === 'fr' ? 'Saisissez un taux horaire valide' : 'Enter a valid hourly rate')
+  }
+  expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+  const rate = page.locator('#request-re_statedlaborrate')
+  await rate.focus()
+  await rate.press('ControlOrMeta+A')
+  await rate.press('Backspace')
+  await page.locator('.draft-save-action').click()
+  await expect(error).toHaveCount(0)
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  expect(await page.evaluate(() => window.__draftCalls.map(call => call.mode))).toEqual(['save'])
+})
+
 test('location descriptions offer explicit choices and preserve edits while incomplete defaults never autofill', async ({ page }) => {
   await mockData(page, 'en', 'light')
   await page.goto('/')

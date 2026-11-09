@@ -2,6 +2,25 @@
 
 ## 1. Scope and evidence
 
+### Linked-location and repeated-error focus corrections (2026-11-09, source only)
+
+Required-field focus resolves enabled input/select/textarea controls by their
+ID or exact error token in `aria-describedby`. Multiple linked locations use
+the location dropdown, not the absent manual-input ID; loading/disabled controls
+retain the focusable-error fallback and do not steal focus after user navigation.
+Each accepted Save/Calculate/Submit attempt advances a UI-only counter so an
+identical synchronous error on the same step focuses the operation banner again.
+Required-field checks and all persistence/submission rules remain unchanged.
+
+Eight focused mocked browser cases passed, covering English desktop/French
+mobile dropdown focus on repeated Save and Next, repeated stated-rate failures,
+correction/save and existing hidden-step/Billing Plan/server-error regressions.
+All 34 required-field-category browser cases passed again; build/type-check,
+changed-source lint and 10 validation/documentation unit tests passed.
+These close variants not covered by the earlier 34-field-category checks.
+No Dataverse data/schema/plugin changes or frontend publication were performed;
+published-client/non-admin behavior is not verified by these local tests.
+
 ### Submission validation focus and errors (2026-11-09, local source)
 
 Submit still requires a positive selling price and Billing Plan; no submission

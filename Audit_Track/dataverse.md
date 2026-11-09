@@ -2,6 +2,20 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Validation focus variants (2026-11-09, frontend only)
+
+The location dropdown now receives required-field focus through its existing
+`opportunity-building-error` association. Its source location selection still
+copies to `re_repairestimate.re_buildingname`; no new persisted field is added.
+A UI-only operation-attempt counter retriggers identical local Save/Calculate/
+Submit errors. Neither change modifies API dispatch/payload, validation rules,
+permissions, pricing or export lifecycle. Eight focused mocked browser cases
+passed for dropdown/repeated-error focus and previous submission regressions,
+including English desktop and French mobile. All 34 required-field-category
+browser cases, build/type-check, changed-source lint and 10 validation/
+documentation unit tests also passed. No tenant reads/writes, schema or
+plugin changes, or deployment occurred in this correction.
+
 ### Submission error visibility (2026-11-09, frontend source only)
 
 The saved reported CKE estimate was inspected read-only: `re_billingplan` is
