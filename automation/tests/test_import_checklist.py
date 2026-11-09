@@ -68,6 +68,25 @@ class ChecklistTests(unittest.TestCase):
         self.assertIn("Accounts - validated candidates | [ ] In progress (last verified checkpoint)", text)
         self.assertIn("not a process-health check", text)
 
+    def test_reconciled_checkpoint_does_not_infer_worker_is_paused(self):
+        text = checklist.render(self.report(
+            {"pending": 441205}, "uncertain_reconciled_read_only"))
+        self.assertIn("Reconciled checkpoint; awaiting next verified batch", text)
+        self.assertNotIn("Pending / paused", text)
+
+    def test_written_checklist_has_visible_refresh_separate_from_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "customer-bulk-report.json"
+            output_path = Path(directory) / "dataverse-import-checklist.md"
+            report_path.write_text(json.dumps(self.report({"pending": 441205})), encoding="utf-8")
+            checklist.write_checklist(report_path, output_path)
+            text = output_path.read_text(encoding="utf-8")
+        self.assertIn("Last checklist refresh: **", text)
+        self.assertIn("Refresh time is not import progress.", text)
+        self.assertIn("preflight reads do not increase counts", text)
+        self.assertIn("Evidence checkpoints (report file UTC modification times)", text)
+        self.assertIn("0 / 441,205", text)
+
     def test_invalid_or_unknown_states_cannot_fake_completion(self):
         for states in ({"verified": 441206, "pending": -1},
                        {"verified": 441204, "unknown": 1},

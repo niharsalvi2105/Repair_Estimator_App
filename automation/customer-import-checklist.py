@@ -68,6 +68,8 @@ def render(report, equipment_report=None, *, mko_equipment_report=None, parts_re
             status = "[ ] Queued after Accounts"
         elif report["status"] in ("applying", "measuring_verified_batches"):
             status = "[ ] In progress (last verified checkpoint)"
+        elif report["status"] == "uncertain_reconciled_read_only":
+            status = "[ ] Reconciled checkpoint; awaiting next verified batch"
         else:
             status = "[ ] Pending / paused"
         lines.append(
@@ -203,6 +205,17 @@ def write_checklist(report_path, checklist_path):
         if path.is_file():
             reports[key] = json.loads(path.read_text(encoding="utf-8"))
     text = render(json.loads(report_path.read_text(encoding="utf-8")), **reports)
+    refreshed = datetime.datetime.now(datetime.timezone.utc)
+    local_refreshed = refreshed.astimezone()
+    refresh_note = (
+        f"Last checklist refresh: **{local_refreshed.isoformat(timespec='seconds')}** "
+        f"(UTC: {refreshed.isoformat(timespec='seconds')}).\n\n"
+        "Refresh time is not import progress. Verified counts change only when a new "
+        "read-back-verified batch is checkpointed; preflight reads do not increase counts. "
+        "Report checkpoint times appear below. Worker health is not inferred from unchanged counts.\n\n"
+    )
+    text = text.replace("# Dataverse import checklist\n\n",
+                        "# Dataverse import checklist\n\n" + refresh_note, 1)
     for path in inputs:
         if path.is_file():
             modified = datetime.datetime.fromtimestamp(path.stat().st_mtime, datetime.timezone.utc)

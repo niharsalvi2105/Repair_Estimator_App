@@ -5,6 +5,7 @@ import { statedRateError } from './data/requestValidation'
 import { getDraftChoices } from './data/draftChoiceRepository'
 import type { DraftChoices } from './data/draftChoices'
 import { ChoiceSelect } from './ChoiceSelect'
+import { FieldError } from './FieldError'
 import type { Re_repairestimatesBase } from './generated/models/Re_repairestimatesModel'
 
 type Field = {
@@ -91,7 +92,7 @@ function useDraftChoices(enabled: boolean) {
   return { ...result, retry: () => { setResult(undefined); setAttempt((n) => n + 1) } }
 }
 
-export function RequestFields({ stage, language, value, onChange, readOnly = false, custom = false, currency }: {
+export function RequestFields({ stage, language, value, onChange, readOnly = false, custom = false, currency, errors = {} }: {
   stage: 'request' | 'cost' | 'pricing' | 'partner' | 'materialrates'
   language: 'en' | 'fr'
   value: RequestInputs
@@ -99,6 +100,7 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
   readOnly?: boolean
   custom?: boolean
   currency?: string
+  errors?: Record<string, string | undefined>
 }) {
   const [focusedKey, setFocusedKey] = useState<InputKey>()
   const fields: readonly (Omit<Field, 'key'> & { key: InputKey })[] = {
@@ -160,19 +162,22 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
         const rateField = key === 're_statedlaborrate'
         const taxOrFreight = key === 're_usetax' || key === 're_freight'
         const fixedRate = taxOrFreight && !custom
-        const error = rateField ? statedRateError(value[key], language) : undefined
+        const error = errors[id] ?? (rateField ? statedRateError(value[key], language) : undefined)
+        const required = ['re_proposallanguage', 're_timecategory', 're_usetax', 're_freight'].includes(key)
         return (
           <div className="field-label" key={key}>
-            <label htmlFor={id}>{label}{taxOrFreight && custom ? ' (CSTM)' : ''}</label>
+            <label htmlFor={id}>{label}{taxOrFreight && custom ? ' (CSTM)' : ''}{required && <span className="required">*</span>}</label>
+            <FieldError id={id} message={error} />
             {field.choice ? <ChoiceSelect id={id} language={language} value={value[key] ?? ''}
-              options={choices.choices?.[key]} onChange={(next) => onChange(key, next)} readOnly={readOnly} />
+              options={choices.choices?.[key]} onChange={(next) => onChange(key, next)} readOnly={readOnly} error={error} required={required} />
             : field.type === 'textarea' ? (
               <textarea id={id} className="text-input request-textarea" value={value[key] ?? ''}
                 onChange={(event) => onChange(key, event.target.value)} readOnly={readOnly} />
             ) : (
               <input id={id} className="text-input" type={field.type ?? 'text'}
                 aria-invalid={error ? true : undefined}
-                aria-describedby={taxOrFreight ? `${id}-help` : rateField ? `${id}-help${error ? ` ${id}-error` : ''}` : undefined}
+                aria-required={required}
+                aria-describedby={[taxOrFreight || rateField ? `${id}-help` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
                 min={field.type === 'number' ? field.integer ? 1 : 0 : undefined}
                 max={field.percent ? 100 : field.max}
                 step={field.type === 'number' ? field.integer ? 1 : 'any' : undefined}
@@ -194,7 +199,6 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
             {rateField && <p className="field-help" id={`${id}-help`}>{language === 'fr'
               ? 'Facultatif. Taux horaire de vente négocié, et non le prix total du devis. Laissez vide (ou zéro) pour le calcul standard du CMII. Un taux faible peut empêcher le calcul des prix; le serveur valide la marge lors de l’enregistrement.'
               : 'Optional. Negotiated hourly selling rate, not the total estimate price. Leave blank (or zero) for standard CMII pricing. A low rate may prevent pricing; the server validates the margin on save.'}</p>}
-            {error && <p id={`${id}-error`} role="alert">{error}</p>}
           </div>
         )
       })}

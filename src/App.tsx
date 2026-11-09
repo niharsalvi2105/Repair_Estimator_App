@@ -472,8 +472,7 @@ function App() {
   const [draftReferenceError, setDraftReferenceError] = useState('')
   const [stateId, setStateId] = useState('')
   const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID())
-  const [enteredEstimateTitle, setEstimateTitle] = useState('')
-  const estimateTitle = enteredEstimateTitle || `Repair - ${(selectedAccount?.name || (market === 126110000 ? 'MKO' : market === 126110001 ? 'CKE' : 'CKQ')).slice(0, 80)} - ${draftId.slice(0, 8)}`
+  const [estimateTitle, setEstimateTitle] = useState('')
   const [draftVersion, setDraftVersion] = useState<string | null>(null)
   const [draftNumber, setDraftNumber] = useState('')
   const [savedSnapshot, setSavedSnapshot] = useState('')
@@ -536,7 +535,7 @@ function App() {
   }), [branchId, stateId, estimateTitle, buildingName, customerName, customerEmail, customerPhone,
     selectedAccount, selectedContact,
     equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages, laborLines, materialLines])
-  const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || enteredEstimateTitle
+  const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || estimateTitle
     || customerName || customerEmail || customerPhone || selectedAccount || selectedContact ||
     equipmentTypeId || jobTypeId || Object.values(editableRequestInputs).some(Boolean))
   const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty || masterDirty || masterBusy || reuseBusy)
@@ -1303,7 +1302,7 @@ function App() {
               </section>
             </section>
           ) : (
-            <LazyWorkspace load={loadEstimator} language={language} workspaceProps={{
+            <LazyWorkspace key={draftId} load={loadEstimator} language={language} workspaceProps={{
               requestSection,
               t,
               draftVersion,

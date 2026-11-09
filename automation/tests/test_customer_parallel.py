@@ -87,6 +87,32 @@ class ParallelTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 parallel.run_dataset(self.state, api, "contacts", size, set())
 
+    def test_mko_scope_excludes_other_markets_and_wrong_market_parents(self):
+        with closing(sqlite3.connect(self.state)) as db:
+            db.execute("UPDATE source SET payload=? WHERE dataset='accounts'",
+                       ('{"re_salesorganizations":"MKOF"}',))
+            db.execute("UPDATE source SET payload=? WHERE dataset='contacts'",
+                       ('{"re_sourcesalesorganization":"MKOF"}',))
+            db.executemany("INSERT INTO source VALUES (?,?,?,?,?,?,?)", [
+                ("accounts", 5, "cad-parent", None, '{"re_salesorganizations":"CKE"}', "verified", "cad-native"),
+                ("accounts", 6, "cad-pending", None, '{"re_salesorganizations":"CKQ"}', "pending", None),
+                ("contacts", 7, "cad-contact", "verified-parent", '{"re_sourcesalesorganization":"CKE"}', "pending", None),
+                ("contacts", 8, "wrong-parent", "cad-parent", '{"re_sourcesalesorganization":"MKOF"}', "pending", None),
+            ])
+            db.commit()
+        seen = {}
+
+        def apply_batch(db, api, dataset, rows):
+            seen[dataset] = [row["source_id"] for row in rows]
+            return len(rows)
+
+        with patch.object(parallel.bulk, "records_for_batch", return_value={}), \
+                patch.object(parallel.bulk, "apply_batch", side_effect=apply_batch):
+            parallel.run_round(self.state, self.apis, 500, self.deferred, "MKOF")
+        self.assertEqual(seen, {"accounts": ["pending-parent"], "contacts": ["safe-contact"]})
+        with self.assertRaisesRegex(ValueError, "organization"):
+            parallel.run_dataset(self.state, object(), "accounts", 500, set(), "MKO")
+
 
 if __name__ == "__main__":
     unittest.main()

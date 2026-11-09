@@ -5,7 +5,7 @@ import type { AppCopy } from './App'
 
 const PAGE_SIZE = 50
 
-export function PackageSelect({ packages, selectedIds, onToggle, language, t, loading, disabled = false }: {
+export function PackageSelect({ packages, selectedIds, onToggle, language, t, loading, disabled = false, error }: {
   packages: RepairPackage[]
   selectedIds: Set<string>
   onToggle: (repairPackage: RepairPackage) => void
@@ -13,6 +13,7 @@ export function PackageSelect({ packages, selectedIds, onToggle, language, t, lo
   t: AppCopy
   loading: boolean
   disabled?: boolean
+  error?: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -45,6 +46,7 @@ export function PackageSelect({ packages, selectedIds, onToggle, language, t, lo
     }}>
       <div className="branch-combobox-control">
         <input ref={input} id="package-search" className="text-input" role="combobox"
+          aria-invalid={!!error} aria-describedby={error ? 'package-search-error' : undefined}
           disabled={disabled}
           aria-expanded={open} aria-controls="package-options" aria-autocomplete="list"
           aria-activedescendant={open && activeOption ? `package-option-${active}` : undefined}

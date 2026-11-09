@@ -14,9 +14,11 @@ SPEC.loader.exec_module(apply)
 bulk = apply.bulk
 
 
-def run_dataset(state, api, dataset, batch_size, deferred):
+def run_dataset(state, api, dataset, batch_size, deferred, organization=None):
     if dataset not in ("accounts", "contacts") or not 1 <= batch_size <= 1000:
         raise ValueError("Expected Accounts/Contacts and batch size 1..1000")
+    if organization not in (None, "MKOF", "CKE", "CKQ"):
+        raise ValueError("Unsupported source organization")
     started = time.monotonic()
     with closing(sqlite3.connect(state, timeout=60)) as db:
         db.row_factory = sqlite3.Row
@@ -25,11 +27,14 @@ def run_dataset(state, api, dataset, batch_size, deferred):
                 "SELECT c.* FROM source c JOIN source a ON a.dataset='accounts' "
                 "AND a.source_id=c.parent AND a.status='verified' AND a.native_id IS NOT NULL "
                 "WHERE c.dataset='contacts' AND c.status='pending' "
-                "ORDER BY c.row_number LIMIT ?", (batch_size,)).fetchall()
+                "AND (? IS NULL OR (json_extract(c.payload,'$.re_sourcesalesorganization')=? "
+                "AND json_extract(a.payload,'$.re_salesorganizations')=?)) "
+                "ORDER BY c.row_number LIMIT ?", (organization, organization, organization, batch_size)).fetchall()
         else:
             rows = db.execute(
                 "SELECT * FROM source WHERE dataset='accounts' AND status='pending' "
-                "ORDER BY row_number LIMIT ?", (batch_size,)).fetchall()
+                "AND (? IS NULL OR json_extract(payload,'$.re_salesorganizations')=?) "
+                "ORDER BY row_number LIMIT ?", (organization, organization, batch_size)).fetchall()
         if not rows:
             return None
         spec = bulk.customer.SPECS[dataset]
@@ -58,12 +63,12 @@ def run_dataset(state, api, dataset, batch_size, deferred):
                 "verified_records_per_second": round(len(safe) / elapsed, 3)}
 
 
-def run_round(state, apis, batch_size, deferred):
+def run_round(state, apis, batch_size, deferred, organization=None):
     if set(apis) != {"accounts", "contacts"} or apis["accounts"] is apis["contacts"]:
         raise ValueError("Separate Account and Contact API instances are required")
     started = time.monotonic()
     with ThreadPoolExecutor(max_workers=2, thread_name_prefix="customer-import") as pool:
-        futures = {dataset: pool.submit(run_dataset, state, api, dataset, batch_size, deferred[dataset])
+        futures = {dataset: pool.submit(run_dataset, state, api, dataset, batch_size, deferred[dataset], organization)
                    for dataset, api in apis.items()}
         # All submitted workers settle before an error escapes; never leave an unseen write running.
         results = []

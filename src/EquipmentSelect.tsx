@@ -11,7 +11,7 @@ type Option = { kind: 'equipment'; equipment: Equipment } | { kind: 'unlisted' }
 export function EquipmentSelect({
   results, selectedNumbers, onToggle, query, onQueryChange, loading, disabled = false, t,
   onAddUnlisted,
-  onPasteList,
+  onPasteList, error,
 }: {
   results: Equipment[]
   selectedNumbers: Set<string>
@@ -23,6 +23,7 @@ export function EquipmentSelect({
   t: AppCopy
   onAddUnlisted: () => void
   onPasteList: (text: string) => void
+  error?: string
 }) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
@@ -59,6 +60,7 @@ export function EquipmentSelect({
     }}>
       <div className="branch-combobox-control">
         <input ref={input} id="equipment-search" className="text-input" role="combobox"
+          aria-invalid={!!error} aria-describedby={error ? 'equipment-search-error' : undefined}
           disabled={disabled}
           aria-expanded={open} aria-controls="equipment-options" aria-autocomplete="list"
           aria-activedescendant={open && activeOption ? `equipment-option-${active}` : undefined}
