@@ -1,13 +1,16 @@
 import { Re_DraftEstimateService } from '../generated/services/Re_DraftEstimateService'
 import { unwrap, withTimeout } from './dataverseOperation'
 import { parseDraft, serializeDraft, type DraftRecord } from './draftContract'
+import { measureOperation } from './performance'
 
 export { draftInputs, type DraftRecord } from './draftContract'
 
 export async function draftOperation(input: DraftRecord | { mode: 'load' | 'clonesource'; id: string }): Promise<DraftRecord> {
-  const result = unwrap(await withTimeout(
-    Re_DraftEstimateService.re_DraftEstimate(serializeDraft(input)), 120000,
-  ))
-  if (typeof result?.ResultJson !== 'string') throw new Error('The draft service returned an invalid response.')
-  return parseDraft(JSON.parse(result.ResultJson))
+  return measureOperation(`draft-${input.mode}`, async () => {
+    const result = unwrap(await withTimeout(
+      Re_DraftEstimateService.re_DraftEstimate(serializeDraft(input)), 120000,
+    ))
+    if (typeof result?.ResultJson !== 'string') throw new Error('The draft service returned an invalid response.')
+    return parseDraft(JSON.parse(result.ResultJson))
+  })
 }

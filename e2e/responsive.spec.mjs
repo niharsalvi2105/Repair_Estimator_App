@@ -126,6 +126,7 @@ async function mockData(page, language, theme, state = 'records') {
         if (input.mode === 'accountsearch' || input.mode === 'contactsearch') {
           window.__masterSearchCalls ??= [];
           window.__masterSearchCalls.push(structuredClone(input));
+          if (input.mode === 'contactsearch' && !input.search && window.__defaultsGate) await window.__defaultsGate;
           if (window.__masterSearchError) throw new Error(window.__masterSearchError);
           if (window.__masterSearchDelay) await new Promise(resolve => setTimeout(resolve, window.__masterSearchDelay));
           const account = {id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',number:'00042',name:'Acme Corporation',market:126110000};
@@ -1106,6 +1107,167 @@ async function pickEquipmentAndPackage(page) {
   await page.locator('#package-search').fill('PK')
   await page.locator('#package-options button').first().click()
   await page.locator('#package-search').press('Escape')
+}
+
+for (const language of ['en', 'fr']) test(`Customer defaults reuse prevents repeated scans and records data-free timings (${language})`, async ({ page }) => {
+  await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
+  const countDefaults = () => page.evaluate(() =>
+    window.__masterSearchCalls.filter(call => call.mode === 'contactsearch' && !call.search).length)
+  expect(await countDefaults()).toBe(1)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  await next(page)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  expect(await countDefaults()).toBe(1)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  await expect.poll(countDefaults).toBe(2)
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await expect.poll(countDefaults).toBe(3)
+  await expect.poll(() => page.evaluate(() =>
+    performance.getEntriesByName('repair-estimator:customer-defaults', 'measure').length)).toBe(3)
+  const timings = await page.evaluate(() => performance.getEntriesByType('measure')
+    .filter(entry => entry.name.startsWith('repair-estimator:'))
+    .map(entry => ({ name: entry.name, duration: entry.duration, detail: entry.detail })))
+  for (const operation of ['session-startup', 'account-search', 'customer-defaults', 'power-apps-request']) {
+    expect(timings.filter(entry => entry.name === `repair-estimator:${operation}`).length, operation).toBeGreaterThan(0)
+  }
+  expect(timings.every(entry => entry.duration >= 0 &&
+    JSON.stringify(entry.detail) === '{"outcome":"completed"}')).toBe(true)
+  expect(timings.filter(entry => entry.name === 'repair-estimator:customer-defaults')).toHaveLength(3)
+})
+
+test('Customer defaults share in-flight reads and retry a failed refresh', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__defaultsGate = new Promise(resolve => { window.__releaseDefaults = resolve })
+  })
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  const countDefaults = () => page.evaluate(() =>
+    window.__masterSearchCalls.filter(call => call.mode === 'contactsearch' && !call.search).length)
+  await expect.poll(countDefaults).toBe(2)
+  await next(page)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.customer-defaults-state')).toContainText('Fetching linked customer data')
+  expect(await countDefaults()).toBe(2)
+  await page.evaluate(() => {
+    window.__masterSearchError = 'Defaults access denied'
+    window.__releaseDefaults()
+  })
+  const error = page.locator('.customer-defaults-state .error-box')
+  await expect(error).toContainText('Defaults access denied')
+  await page.evaluate(() => { window.__masterSearchError = '' })
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  expect(await countDefaults()).toBe(3)
+  expect(await page.evaluate(() => performance.getEntriesByName('repair-estimator:customer-defaults', 'measure')
+    .map(entry => entry.detail.outcome))).toEqual(['completed', 'failed', 'completed'])
+})
+
+test('Changing Account discards previous customer defaults', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__accountMasterRecords = [{
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', number: '00099', name: 'Second Account', market: 126110000,
+    }]
+    window.__contactMasterRecords = [{
+      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Second contact',
+      email: 'second@example.invalid', phone: '', accountId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    }]
+  })
+  await page.getByRole('button', { name: 'Change account', exact: true }).click()
+  await page.locator('#account-master-search').fill('00099')
+  await page.locator('#account-master-options button').first().click()
+  await expect(page.locator('#customer-name')).toHaveValue('Second contact')
+  const defaults = await page.evaluate(() =>
+    window.__masterSearchCalls.filter(call => call.mode === 'contactsearch' && !call.search))
+  expect(defaults.map(call => call.accountId)).toEqual([
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  ])
+})
+
+test('Equipment adapter timings preserve scoped queries and explicit service errors', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.route('**/src/generated/services/Re_equipmentsService.ts*', route => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export class Re_equipmentsService {
+      static async getAll(options) {
+        (window.__equipmentTimingQueries ??= []).push(options);
+        if (window.__equipmentTimingError) return {success:false,error:{message:'Equipment access denied'}};
+        return {success:true,data:[{re_equipmentid:'unit',re_equipment:'TEST123'}]};
+      }
+    }`,
+  }))
+  await page.goto('/')
+  await page.unroute('**/src/data/repairEstimatorRepository.ts*')
+  const result = await page.evaluate(async () => {
+    const { searchEquipment, findEquipmentByNumbers } = await import('/src/data/repairEstimatorRepository.ts?timing-test')
+    performance.clearMeasures('repair-estimator:equipment-search')
+    performance.clearMeasures('repair-estimator:equipment-details')
+    performance.clearMeasures('repair-estimator:power-apps-request')
+    const branch = '11111111-1111-1111-1111-111111111111'
+    const search = await searchEquipment(branch, "TEST'123")
+    const details = await findEquipmentByNumbers(branch, ['TEST123'])
+    window.__equipmentTimingError = true
+    let error
+    try { await searchEquipment(branch, 'TEST') }
+    catch (reason) { error = reason.message }
+    return {
+      search, details, error, queries: window.__equipmentTimingQueries,
+      timings: performance.getEntriesByType('measure').filter(entry => entry.name.startsWith('repair-estimator:'))
+        .map(entry => ({ name: entry.name, duration: entry.duration, detail: entry.detail })),
+    }
+  })
+  expect(result.search).toEqual(result.details)
+  expect(result.error).toBe('Equipment access denied')
+  expect(result.queries[0].filter).toContain("startswith(re_equipment,'TEST''123')")
+  expect(result.queries[0].top).toBe(20)
+  expect(result.queries[1].filter).toContain("re_equipment eq 'TEST123'")
+  expect(result.queries.every(query => query.filter.includes(
+    'statecode eq 0 and _re_branch_value eq 11111111-1111-1111-1111-111111111111'))).toBe(true)
+  expect(result.timings.filter(entry => entry.name === 'repair-estimator:equipment-search')
+    .map(entry => entry.detail.outcome)).toEqual(['completed', 'failed'])
+  expect(result.timings.filter(entry => entry.name === 'repair-estimator:equipment-details')).toHaveLength(1)
+  expect(result.timings.filter(entry => entry.name === 'repair-estimator:power-apps-request')).toHaveLength(3)
+})
+
+for (const width of [320, 768, 1366]) {
+  for (const language of ['en', 'fr']) test(`Change Contact spacing follows text width at ${width}px ${language}`, async ({ page }) => {
+    await completeDraft(page, { width, height: 900 }, language)
+    for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+    const row = page.locator('.customer-contact-actions')
+    const checkSpacing = async () => {
+      const text = await row.locator('span').boundingBox()
+      const button = await row.getByRole('button').boundingBox()
+      const bounds = await row.boundingBox()
+      const sameLine = button.x >= text.x + text.width + 15
+      expect(sameLine || button.y >= text.y + text.height + 7).toBe(true)
+      expect(button.x + button.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1)
+      expect(button.height).toBeGreaterThanOrEqual(44)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      return sameLine
+    }
+    if (width === 1366) expect(await checkSpacing()).toBe(true)
+    else await checkSpacing()
+    await page.evaluate(() => {
+      window.__contactMasterRecords = [{
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Long contact',
+        email: 'longcontact'.repeat(7) + '@example.invalid', phone: '12345678901234567890123456789012345678901234567890',
+        accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      }]
+    })
+    await row.getByRole('button').click()
+    await page.locator('#customer-name').fill('Long')
+    await page.locator('#customer-name-options button').first().click()
+    await expect(row.locator('span')).toContainText('longcontact')
+    expect(await checkSpacing()).toBe(false)
+    await row.getByRole('button').click()
+    await expect(page.locator('#customer-name')).not.toHaveAttribute('readonly')
+  })
 }
 
 test('Equipment details fetch only added units and reuse removed units until reload', async ({ page }) => {
@@ -4029,6 +4191,18 @@ test('draft adapter uses generated action service and validates its response', a
   }, record)
   expect(result.input).toEqual({ mode: 'load', id: record.id })
   expect(result.loaded).toEqual(record)
+  for (const mode of ['save', 'submit']) {
+    await page.evaluate(async (input) => {
+      const { draftOperation } = await import('/src/data/draftRepository.ts')
+      await draftOperation(input)
+    }, { ...record, mode })
+    const timing = await page.evaluate(operation =>
+      performance.getEntriesByName(`repair-estimator:draft-${operation}`, 'measure')
+        .map(entry => ({ duration: entry.duration, detail: entry.detail })), mode)
+    expect(timing).toHaveLength(1)
+    expect(timing[0].duration).toBeGreaterThanOrEqual(0)
+    expect(timing[0].detail).toEqual({ outcome: 'completed' })
+  }
   for (const response of [
     { success: true, data: {} },
     { success: true, data: { ResultJson: '{}' } },
@@ -4042,6 +4216,9 @@ test('draft adapter uses generated action service and validates its response', a
     }, response)
     expect(error).toMatch(/invalid response|incomplete data|Permission denied/)
   }
+  expect(await page.evaluate(() =>
+    performance.getEntriesByName('repair-estimator:draft-load', 'measure')
+      .map(entry => entry.detail.outcome))).toEqual(['completed', 'failed', 'failed', 'failed'])
 })
 
 test('saved draft explicitly reports unavailable pricing without claiming a failed save', async ({ page }) => {

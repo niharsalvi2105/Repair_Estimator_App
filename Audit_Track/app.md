@@ -2,6 +2,84 @@
 
 ## 1. Scope and evidence
 
+### Responsive Change Contact spacing (local source only)
+
+The selected Contact email/phone and Change Contact button use a wrapping row
+with a 16px horizontal and 8px vertical gap. The button follows the actual text
+width when both fit and moves below when space is insufficient. Long contact
+text wraps within the available width; the button retains its touch target.
+English/French labels and contact-change behavior remain unchanged. No
+publication or tenant changes are included. Six mocked browser tests passed at
+320/768/1366px in English/French for short/long text, minimum gaps, no page
+overflow, 44px-or-larger targets and unchanged contact switching. Build/
+type-check, changed-source lint and diff checks passed.
+
+### Performance timings and Account/location reuse (local source only)
+
+**What changed**
+
+- Returning to the customer step reuses the current Account/Branch/market
+  defaults, including an in-flight request. This avoids repeating the backend
+  equipment scan and source-location metadata parsing for the same context.
+- Save/Calculate/Reload, changed Account/Branch/market and Retry fetch fresh
+  defaults. Clearing Account/Branch or closing the workspace discards the cache.
+  Only one defaults response is retained, in component memory. Failures are
+  evicted; existing visible errors, retry and stale-response guards remain.
+- Browser User Timing entries cover session startup, Account/Contact search,
+  customer defaults, equipment search/details, saved pricing and draft
+  Save/Submit/Load/clone-source operations. Calculate uses the existing Save
+  operation, so its backend duration appears as `draft-save`.
+
+**How to measure**
+
+In browser developer tools, clear the `repair-estimator:` measures before a
+representative workflow, then inspect them in the Performance panel or console:
+
+```js
+performance.getEntriesByType('measure')
+  .filter(entry => entry.name.startsWith('repair-estimator:'))
+  .forEach(entry => performance.clearMeasures(entry.name))
+// Perform the workflow, then inspect only data-free metrics:
+console.table(performance.getEntriesByType('measure')
+  .filter(entry => entry.name.startsWith('repair-estimator:'))
+  .map(entry => ({
+    operation: entry.name, milliseconds: entry.duration,
+    outcome: entry.detail.outcome
+  })))
+```
+
+Entries contain static operation names, durations and completed/failed outcomes
+only: no IDs, query text, customer/equipment data, pricing, payloads or error
+messages. Nothing is transmitted or persisted. Retention resets per operation
+after 100 recorded entries; counts are not lifetime totals. Nested
+`power-apps-request` entries count timed SDK/context promises, not raw HTTP
+requests; a fulfilled SDK error envelope is completed at that layer but failed
+at the validated operation layer. Use the browser Network panel for actual HTTP
+counts/throttling. Session startup measures identity/access loading, not total
+page paint or dashboard readiness. Operation durations exclude debounce and UI
+validation; existing SDK timeouts do not cancel underlying requests.
+
+**Evidence and limits**
+
+Local mocked checks verify one initial defaults request, zero additional
+requests on repeated step returns, and one fresh request each after Save and
+Reload, in English desktop/French mobile. In-flight sharing, failed-refresh
+Retry, Account isolation, ambiguous/truncated defaults and manual edits during
+pending reads remain covered. Real repository adapters with mocked services
+verify timing entries, SDK-call counts, scoped/escaped equipment queries and
+unchanged explicit errors. Unit checks cover bounded retention, data exclusion
+and preserved timeout/error behavior.
+
+Validation: 17 focused mocked browser cases, all 162 unit tests, production
+build/type-check, changed-source lint and diff checks passed.
+
+No backend query, scan/result limit, source parser, authorization, formula or
+snapshot changed. Existing 2,000-row/20-location limits and source-data gaps
+remain; this does not make the first location scan cheaper. Account-search
+queries remain unchanged. Local evidence is not a live latency benchmark or
+permissions certification. No tenant reads/writes or app/plugin deployment
+were performed for this change.
+
 ### Billing Plan required marker (local source only)
 
 Billing Plan now displays the existing red required star in English and French,

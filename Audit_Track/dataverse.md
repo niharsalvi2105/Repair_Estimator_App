@@ -2,6 +2,51 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Change Contact layout (frontend only)
+
+The existing selected Contact email/phone display and Change Contact action
+now use content-width spacing with responsive wrapping. No field mapping,
+length limits, selection, snapshots, API, permissions or persistence changed.
+This is source-only styling, not deployed or tenant-verified.
+Six local mocked browser tests passed at mobile/tablet/desktop widths in
+English/French; build/type-check, changed-source lint and diff checks passed.
+
+### Performance measurement and customer-defaults reuse (frontend source only)
+
+**Affected reads:** existing Account/Contact search and Account/Branch defaults
+through `re_DraftEstimate`, linked `re_equipment` location metadata, equipment
+search/details, saved `re_repairestimate` pricing and draft operations.
+No new columns/tables, API payloads, choice values, plugin queries/registration,
+permissions, persistence, formulas, locking or export lifecycle changes.
+
+The open workspace retains one current defaults promise keyed by native
+Account, Branch, market and UI-only draft-read revision. Reopening the customer
+step reuses it, avoiding repeated location scans/metadata parsing. Save/
+Calculate/Reload, different context and Retry refresh it. Clearing Account/
+Branch or leaving the workspace discards it. Failed requests are evicted and
+reported normally; manual edits and superseded-response guards are preserved.
+The per-request backend scan remains bounded to 2,000 Equipment rows and 20
+location pairs with all source/active/market checks unchanged.
+
+User Timing records contain static operation labels, elapsed milliseconds and
+completed/failed outcomes only. They remain in browser memory, with at most
+100 entries per label before that label resets. No record IDs, search strings,
+financial/customer data, errors or tokens are recorded. Nested timed SDK/
+context promises are counted separately from validated operations; these are
+not raw HTTP counts or production latency measurements. Session startup is
+identity/access loading; Calculate uses the existing `draft-save` timing.
+See [the app reference](./app.md) for inspection instructions and limits.
+
+Local mocked evidence verifies defaults reuse, Save/Reload refresh, pending
+request sharing, failure Retry, Account isolation and existing customer/
+submission behavior. Real adapters with mocked services verify timing/error
+contracts, scoped equipment queries and SDK-call counts; unit tests cover
+data-free bounded retention and timeout/error preservation. Seventeen focused
+mocked browser cases, all 162 unit tests, build/type-check, changed-source lint
+and diff checks passed. No tenant
+verification, business/master writes, schema/plugin changes or frontend
+publication occurred. Existing incomplete source-data and scan limits remain.
+
 ### Billing Plan required marker (frontend only)
 
 The existing `re_repairestimate.re_billingplan` choice now has a red required

@@ -8,7 +8,8 @@ import { PricingSummary } from './PricingSummary'
 import { BranchSelect } from './BranchSelect'
 import { CustomerMasterSelect } from './CustomerMasterSelect'
 import { packageEquipmentNumbers, validPackageEquipment } from './data/packageEquipment'
-import type { AccountMasterOption, ContactMasterOption } from './data/customerMasterRepository'
+import { getCustomerDefaults, type AccountMasterOption, type ContactMasterOption } from './data/customerMasterRepository'
+import type { CustomerDefaults } from './data/customerMasterContract'
 import { CustomCostLines } from './CustomCostLines'
 import { PackageSelect } from './PackageSelect'
 import { EquipmentSelect } from './EquipmentSelect'
@@ -148,6 +149,20 @@ export default function EstimatorWorkspace({
   const [equipmentDetailsAttempt, setEquipmentDetailsAttempt] = useState(0)
   const equipmentCache = useRef<{ key: string; rows: Map<string, Promise<Equipment | undefined>> }>({ key: '', rows: new Map() })
   const pricingCache = useRef<{ id: string; version: string; revision: number; request: Promise<PricingRecord> } | null>(null)
+  const customerDefaultsCache = useRef<{ key: string; request: Promise<CustomerDefaults> } | null>(null)
+  const loadCustomerDefaults = useCallback((accountId: string, branch: string, selectedMarket: Market, refresh = false) => {
+    const key = `${accountId}:${branch}:${selectedMarket}:${draftReadRevision}`
+    if (!refresh && customerDefaultsCache.current?.key === key) return customerDefaultsCache.current.request
+    const request = getCustomerDefaults(accountId, branch, selectedMarket)
+    customerDefaultsCache.current = { key, request }
+    void request.catch(() => {
+      if (customerDefaultsCache.current?.request === request) customerDefaultsCache.current = null
+    })
+    return request
+  }, [draftReadRevision])
+  useEffect(() => {
+    if (!selectedAccount || !branchId) customerDefaultsCache.current = null
+  }, [selectedAccount, branchId])
   const loadPricing = useCallback((id: string, version: string, refresh = false) => {
     const cached = pricingCache.current
     if (!refresh && cached?.id === id && cached.version === version && cached.revision === draftReadRevision) return cached.request
@@ -566,7 +581,7 @@ export default function EstimatorWorkspace({
               <CustomerMasterSelect key={`${market}:${branchId}:${selectedAccount?.id ?? 'no-account'}`}
                 market={market} branchId={branchId} account={selectedAccount} contact={selectedContact}
                 customerName={customerName} onCustomerName={onCustomerName}
-                errors={errors}
+                errors={errors} loadDefaults={loadCustomerDefaults}
                 building={buildingName} onBuilding={setBuildingName}
                 onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted} />
               <div className="customer-details-grid">

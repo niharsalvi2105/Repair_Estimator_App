@@ -20,11 +20,12 @@ type Props = {
   customerName: string
   onCustomerName: (value: string) => void
   errors?: Record<string, string | undefined>
+  loadDefaults?: (accountId: string, branchId: string, market: Market, refresh?: boolean) => Promise<CustomerDefaults>
 }
 
 export function CustomerMasterSelect({
   market, account, contact, onAccount, onContact, language, disabled, branchId, building, onBuilding,
-  customerName, onCustomerName, errors = {},
+  customerName, onCustomerName, errors = {}, loadDefaults = getCustomerDefaults,
 }: Props) {
   const fr = language === 'fr'
   const [accountQuery, setAccountQuery] = useState('')
@@ -61,7 +62,7 @@ export function CustomerMasterSelect({
   useEffect(() => {
     if (!accountId || !branchId) return
     let active = true
-    void getCustomerDefaults(accountId, branchId, market).then(
+    void loadDefaults(accountId, branchId, market, defaultsAttempt > 0).then(
       (result) => {
         if (!active) return
         setDefaults(result); setDefaultsError('')
@@ -72,7 +73,7 @@ export function CustomerMasterSelect({
       },
     )
     return () => { active = false }
-  }, [accountId, branchId, market, defaultsAttempt])
+  }, [accountId, branchId, market, defaultsAttempt, loadDefaults])
 
   useEffect(() => {
     const query = accountQuery.trim()
@@ -195,8 +196,8 @@ export function CustomerMasterSelect({
             setContactOptionsOpen(!manualContact)
           }} />
       </label>
-      {contact && <p className="field-help">
-        {contact.email}{contact.phone ? ` — ${contact.phone}` : ''}
+      {contact && <p className="field-help customer-contact-actions">
+        <span>{contact.email}{contact.phone ? ` — ${contact.phone}` : ''}</span>
         <button className="button secondary" type="button" disabled={disabled}
           onClick={() => { onContact(null); setContactQuery(''); setContactResults([]); setContactOptionsOpen(true) }}>
           {fr ? 'Changer de contact' : 'Change Contact'}

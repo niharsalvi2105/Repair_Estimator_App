@@ -36,6 +36,7 @@ import { CloneRequestWorkspace } from './CloneRequestWorkspace'
 import { CloneRequestDialog } from './CloneRequestDialog'
 import type { AccountMasterOption, ContactMasterOption } from './data/customerMasterRepository'
 import { requestReuseErrorMessage } from './data/dataverseOperation'
+import { measureOperation } from './data/performance'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -577,7 +578,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
-    void loadSession()
+    void measureOperation('session-startup', loadSession)
       .then((result) => { if (!cancelled) setSession(result) })
       .catch((error: unknown) => { if (!cancelled) setSessionError(message(error)) })
       .finally(() => { if (!cancelled) setSessionLoading(false) })
