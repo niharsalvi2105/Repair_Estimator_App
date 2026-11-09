@@ -19,6 +19,7 @@ import type { Re_equipments } from '../generated/models/Re_equipmentsModel'
 import type { Re_repairpackages } from '../generated/models/Re_repairpackagesModel'
 import type { IGetAllOptions } from '../generated/models/CommonModels'
 import type { EquipmentSourceDetails } from './equipmentDisplay'
+import { measureOperation } from './performance'
 
 export const getBranchCustomerNames = createCustomerNameLoader(Re_equipmentsService)
 
@@ -144,50 +145,54 @@ export async function searchEquipment(
   branchId: string,
   searchText: string,
 ): Promise<Equipment[]> {
-  const escapedSearch = searchText.replaceAll("'", "''")
-  const result = await withTimeout(Re_equipmentsService.getAll({
-    select: [
-      're_equipmentid',
-      're_equipment',
-      're_equipmentname',
-      're_functionallocation',
-      're_soldtoname',
-      're_oem',
-      're_equipmentage',
-      're_description',
-      're_manufacturer',
-      're_constructionyear',
-    ],
-    filter: `statecode eq 0 and _re_branch_value eq ${branchId}${escapedSearch ? ` and (startswith(re_equipment,'${escapedSearch}') or startswith(re_equipmentname,'${escapedSearch}'))` : ''}`,
-    orderBy: ['re_equipment asc'],
-    top: 20,
-    maxPageSize: 20,
-  }))
+  return measureOperation('equipment-search', async () => {
+    const escapedSearch = searchText.replaceAll("'", "''")
+    const result = await withTimeout(Re_equipmentsService.getAll({
+      select: [
+        're_equipmentid',
+        're_equipment',
+        're_equipmentname',
+        're_functionallocation',
+        're_soldtoname',
+        're_oem',
+        're_equipmentage',
+        're_description',
+        're_manufacturer',
+        're_constructionyear',
+      ],
+      filter: `statecode eq 0 and _re_branch_value eq ${branchId}${escapedSearch ? ` and (startswith(re_equipment,'${escapedSearch}') or startswith(re_equipmentname,'${escapedSearch}'))` : ''}`,
+      orderBy: ['re_equipment asc'],
+      top: 20,
+      maxPageSize: 20,
+    }))
 
-  return unwrap(result)
+    return unwrap(result)
+  })
 }
 
 export async function findEquipmentByNumbers(branchId: string, numbers: string[]): Promise<Equipment[]> {
   if (numbers.length === 0) return []
-  const matches = numbers.map((number) => `re_equipment eq '${number.replaceAll("'", "''")}'`).join(' or ')
-  const result = await withTimeout(Re_equipmentsService.getAll({
-    select: [
-      're_equipmentid',
-      're_equipment',
-      're_equipmentname',
-      're_functionallocation',
-      're_soldtoname',
-      're_oem',
-      're_equipmentage',
-      're_description',
-      're_manufacturer',
-      're_constructionyear',
-    ],
-    filter: `statecode eq 0 and _re_branch_value eq ${branchId} and (${matches})`,
-    orderBy: ['re_equipment asc', 're_equipmentid asc'],
-    maxPageSize: 500,
-  }))
-  return unwrap(result)
+  return measureOperation('equipment-details', async () => {
+    const matches = numbers.map((number) => `re_equipment eq '${number.replaceAll("'", "''")}'`).join(' or ')
+    const result = await withTimeout(Re_equipmentsService.getAll({
+      select: [
+        're_equipmentid',
+        're_equipment',
+        're_equipmentname',
+        're_functionallocation',
+        're_soldtoname',
+        're_oem',
+        're_equipmentage',
+        're_description',
+        're_manufacturer',
+        're_constructionyear',
+      ],
+      filter: `statecode eq 0 and _re_branch_value eq ${branchId} and (${matches})`,
+      orderBy: ['re_equipment asc', 're_equipmentid asc'],
+      maxPageSize: 500,
+    }))
+    return unwrap(result)
+  })
 }
 
 export async function listPackages(branchCountryId: string, branchCurrencyId: string): Promise<RepairPackage[]> {

@@ -2,6 +2,14 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Teammate integration (2026-11-09, local merge)
+
+The merged frontend retains source-exact `account.accountnumber` handling and the existing estimate-only customer/location snapshots while adding the teammate's component-memory read reuse, timings and validation-focus corrections. No new tables, columns, API operations/payloads, formulas, permissions, locks, plugin registrations or export lifecycle changes are introduced by this integration. Branch/Account/market isolation, failed-request eviction, Retry and Save/Reload invalidation remain required. Single/multiple/missing location selection continues to use the existing 300-character `re_repairestimate.re_buildingname`; SAP pair identity and cache revisions remain UI-only.
+
+Integration evidence: production build/type-check, full lint, 162 frontend unit tests, 100 Python automation tests and all 102 distinct selected mocked browser cases passed across the main run and isolated recheck. New EN/FR cases combine cached defaults with adaptive location controls and manual Contacts. Pricing regression coverage now explicitly verifies cached step navigation, Reload rejecting a different saved version, and Retry recovery. An initial local dev-server connection-refused failure passed in isolation; the pre-existing ExcelJS chunk-size warning remains. No live persistence, production latency or non-admin behavior was certified.
+
+Work is local only, without GitHub push, app/plugin publication or tenant reads/writes. Earlier authorized Account-number corrections and tenant observations below are historical evidence, not actions repeated by this merge.
+
 ### Source-exact Account numbers and location UI (2026-11-09, local source only)
 
 Both customer Excel readers now honor explicit all-zero number formats for AccountNumber and Account.AccountNumber numeric cells, preserving source-defined leading zeros before payload/staging creation. Literal text remains exact and General-format numbers are not padded to an invented width. Formula identifiers, unsupported numeric formats, fractional/nonfinite/negative identifiers and numeric values beyond Excel's reliable 15-digit precision are explicitly rejected. Existing source IDs, GUID relationship resolution, collision checks and post-write exact comparisons remain unchanged. The change affects source mapping into `account.accountnumber`, `contact.re_sourceaccountnumber` and mapped Equipment account-number copies through the shared bulk reader; no columns or schemas are added.
@@ -17,6 +25,133 @@ The new `automation\repair-account-number-zeros.py` defaults to read-only auditi
 Approved tenant correction completed: **36,215 Account numbers updated and readback-verified**. Before writes, the script saved a private outside-repository backup of affected values/IDs/ETags and source fingerprint. Each bounded atomic batch patched **only** `account.accountnumber`, using individual If-Match headers, a fresh collision check and exact source-ID/GUID/number readback. A changed candidate count aborts before writes; uncertain responses stop for reconciliation rather than blind replay. Sanitized progress reports contain counts only. A subsequent independent dry-run reread the entire source and all 441,206 tenant Accounts: **100,662 covered Accounts exactly match the Equipment source; zero missing-leading-zero corrections remain**. The 1,179 source Accounts absent from the tenant were not created, and 340,544 tenant Accounts without coverage in this workbook were left unchanged.
 
 No Contact/Equipment records, estimate snapshots, schema, permissions, relationships, plugins or source workbooks were modified. The Account primary GUIDs/source identities were preserved. Frontend location changes remain local source and are not published; tenant correction is not frontend deployment or end-to-end UI certification. No Contact-export override or Account creation was authorized/performed.
+
+### Equipment-cache race corrections (frontend only)
+
+Branch changes invalidate the component-memory equipment cache even with no
+selected equipment. Active loads retain their original selected promises so a
+failed `re_equipment` read cannot disappear through cache eviction while another
+batch is pending; errors remain visible with Retry. No queries, columns,
+payloads, persistence, snapshots, permissions, pricing or plugin behavior changed.
+Five focused mocked browser tests, build/type-check, changed-source lint and
+diff checks passed. Source only, not published or tenant-verified; no tenant
+reads/writes or schema/plugin deployment occurred.
+
+### Change Contact layout (frontend only)
+
+The existing selected Contact email/phone display and Change Contact action
+now use content-width spacing with responsive wrapping. No field mapping,
+length limits, selection, snapshots, API, permissions or persistence changed.
+This is source-only styling, not deployed or tenant-verified.
+Six local mocked browser tests passed at mobile/tablet/desktop widths in
+English/French; build/type-check, changed-source lint and diff checks passed.
+
+### Performance measurement and customer-defaults reuse (frontend source only)
+
+**Affected reads:** existing Account/Contact search and Account/Branch defaults
+through `re_DraftEstimate`, linked `re_equipment` location metadata, equipment
+search/details, saved `re_repairestimate` pricing and draft operations.
+No new columns/tables, API payloads, choice values, plugin queries/registration,
+permissions, persistence, formulas, locking or export lifecycle changes.
+
+The open workspace retains one current defaults promise keyed by native
+Account, Branch, market and UI-only draft-read revision. Reopening the customer
+step reuses it, avoiding repeated location scans/metadata parsing. Save/
+Calculate/Reload, different context and Retry refresh it. Clearing Account/
+Branch or leaving the workspace discards it. Failed requests are evicted and
+reported normally; manual edits and superseded-response guards are preserved.
+The per-request backend scan remains bounded to 2,000 Equipment rows and 20
+location pairs with all source/active/market checks unchanged.
+
+User Timing records contain static operation labels, elapsed milliseconds and
+completed/failed outcomes only. They remain in browser memory, with at most
+100 entries per label before that label resets. No record IDs, search strings,
+financial/customer data, errors or tokens are recorded. Nested timed SDK/
+context promises are counted separately from validated operations; these are
+not raw HTTP counts or production latency measurements. Session startup is
+identity/access loading; Calculate uses the existing `draft-save` timing.
+See [the app reference](./app.md) for inspection instructions and limits.
+
+Local mocked evidence verifies defaults reuse, Save/Reload refresh, pending
+request sharing, failure Retry, Account isolation and existing customer/
+submission behavior. Real adapters with mocked services verify timing/error
+contracts, scoped equipment queries and SDK-call counts; unit tests cover
+data-free bounded retention and timeout/error preservation. Seventeen focused
+mocked browser cases, all 162 unit tests, build/type-check, changed-source lint
+and diff checks passed. No tenant
+verification, business/master writes, schema/plugin changes or frontend
+publication occurred. Existing incomplete source-data and scan limits remain.
+
+### Billing Plan required marker (frontend only)
+
+The existing `re_repairestimate.re_billingplan` choice now has a red required
+star and accessible required indication in the UI. Submit still requires it;
+draft Save/Calculate still permit it to be blank. No schema requirement level,
+choice values, API payload, persistence, pricing or plugin behavior changed.
+Local validation evidence is recorded after checks; no deployment or tenant
+writes are included.
+
+### Frontend read reuse (local source only)
+
+**Affected reads:** existing Branch-filtered `re_equipment` detail reads and
+saved calculation outputs on `re_repairestimate`. No columns, relationships,
+API operations/payloads, security roles, persistence, calculations, snapshots,
+registration or export lifecycle changed.
+
+**Expected behavior:** component-memory equipment reads reuse completed and
+in-flight results for selected numbers, fetching only missing units in
+sequential batches of 50. Branch changes, Retry and saved/reloaded drafts reset
+this cache. Pricing and Review reuse one request keyed by estimate ID, saved
+version and UI-only draft-read revision; Save/Calculate/Reload and Retry trigger
+fresh reads. Failed requests are evicted, not converted into successful empty
+responses. Closing the workspace or opening another estimate discards caches.
+Unsaved edits still mark saved pricing stale. Bulk matching and new-unit detail
+reads remain separate; no new persisted cache fields or pricing source exist.
+
+**Actual local evidence:** 26 targeted mocked browser cases passed for request
+counts, invalidation, in-flight sharing, error recovery, Save/Submit and stale
+update regressions, bulk equipment and bilingual mobile/desktop display.
+Adding one unit reads only the added number; reselecting it
+adds no read; Pricing/Review navigation shares one saved-pricing read. Build,
+changed-source lint and 24 related unit/documentation tests passed.
+This is frontend source/mock evidence only. No tenant verification,
+business/master writes, schema/plugin deployment or frontend publication
+occurred; live latency and non-admin behavior remain unmeasured/unverified.
+
+### Validation focus variants (2026-11-09, frontend only)
+
+The location dropdown now receives required-field focus through its existing
+`opportunity-building-error` association. Its source location selection still
+copies to `re_repairestimate.re_buildingname`; no new persisted field is added.
+A UI-only operation-attempt counter retriggers identical local Save/Calculate/
+Submit errors. Neither change modifies API dispatch/payload, validation rules,
+permissions, pricing or export lifecycle. Eight focused mocked browser cases
+passed for dropdown/repeated-error focus and previous submission regressions,
+including English desktop and French mobile. All 34 required-field-category
+browser cases, build/type-check, changed-source lint and 10 validation/
+documentation unit tests also passed. No tenant reads/writes, schema or
+plugin changes, or deployment occurred in this correction.
+
+### Submission error visibility (2026-11-09, frontend source only)
+
+The saved reported CKE estimate was inspected read-only: `re_billingplan` is
+null, `re_sellprice` is positive and `re_estimatestatus` remains Draft. This is
+one saved-record observation, not evidence of unsaved client state or of every
+condition required for submission. No customer data or record values were
+changed. The source UI now focuses the first invalid field, provides an explicit
+Billing Plan instruction and focuses operation errors near the footer. The
+`re_billingplan` choice, server validation, API payload, permissions, calculation
+and export lifecycle are unchanged. Focused mocked browser tests, local build
+and lint are frontend evidence only; the update has not been published or
+verified with a live submission.
+
+Follow-up frontend evidence: 34 mocked browser cases passed, testing each of
+the 17 required UI prerequisites independently in English desktop and French
+mobile, including conditional CSTM tax/freight and submit-only selling price/
+Billing Plan. They assert invalid-control/error associations, visible errors,
+focus and blocked persistence. Read-only/disabled derived fields use focusable
+errors where the control cannot accept focus. No additional Dataverse reads,
+writes, schema changes or deployment were performed for this coverage check.
 
 ### Click-time form validation and freestyle Opportunity Name (2026-11-09, frontend source only)
 

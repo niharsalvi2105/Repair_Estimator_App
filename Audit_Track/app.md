@@ -2,6 +2,14 @@
 
 ## 1. Scope and evidence
 
+### Teammate integration (2026-11-09, local merge)
+
+The latest `feature/optimize-equipment-pricing` changes are integrated with the local source-exact Account-number import/repair and single/multiple/missing-location controls. Both change histories and documentation are retained. The combined UI keeps free-text Opportunity Name, click-time mandatory errors, linked-Contact fallback and responsive Change Contact spacing; it also includes equipment/customer-default/saved-pricing read reuse, explicit Retry/invalidation, privacy-safe timings, Billing Plan required indication and repeated-error/dropdown focus fixes. A single or incomplete sole location still uses an input, multiple pairs use a dropdown and missing names permit free text.
+
+Integration evidence: production build/type-check, full lint, all 162 frontend unit tests and all 100 Python automation tests passed. Across the focused browser run and isolated recheck, all 102 distinct mocked browser cases passed, including 34 required-field variants and two new EN/FR regressions combining cached defaults with incomplete-single/multiple/missing locations and manual Contacts. One existing pricing regression was updated to assert cached navigation followed by explicit Reload version-mismatch detection and Retry recovery; the old expectation of a new read on every step return no longer matches the intended caching contract. The initial browser run also hit a local dev-server connection-refused failure loading the workspace; that case passed the single-worker recheck without a production-code change. Build retains the existing large ExcelJS chunk warning.
+
+This merge is local only: no GitHub push, frontend/plugin deployment, tenant reads/writes or new production verification is part of the integration. Mocked cases do not certify live latency, user permissions or published behavior. Earlier tenant correction and deployment evidence below remains separately scoped.
+
 ### Exact Account numbers and location control selection (2026-11-09, local source)
 
 Location Description now uses an input for one available source value or missing data, and a dropdown only for multiple verified number/name pairs. A complete sole value autofills a blank input; an incomplete response retains warnings and requires explicit use of the linked value rather than guessing a sole default. Missing data permits a free-text description (existing 300-character limit). Multiple choices retain SAP pair identity, custom-entry support and saved/manual text preservation. No account-number padding is performed in the frontend.
@@ -9,6 +17,198 @@ Location Description now uses an input for one available source value or missing
 The Account/Contact Excel readers now preserve source-defined leading zeros in numeric AccountNumber / Account.AccountNumber cells using explicit all-zero Excel number formats. Text is preserved exactly; General-format numbers are not arbitrarily padded. Ambiguous formats, formulas and unsafe numeric precision are rejected. This fixes a reproduced synthetic reader defect, not proof that every reported tenant mismatch came from number formatting.
 
 Local evidence: 100 Python automation tests and 10 focused mocked EN/FR browser cases passed; frontend build/type-check, changed-source lint and Pylance syntax checks passed. The user subsequently chose the Equipment export's Account.AccountNumber matched by Account.Id as the correction authority. A complete source scan found 428,400 Equipment rows, 101,841 Account IDs and no conflicting numbers per ID. Read-only comparison scanned 441,206 tenant Accounts: 64,447 covered Accounts were already exact, 36,215 had missing source-confirmed leading zeros, and 1,179 source Accounts were absent. All 36,215 approved number corrections were applied with identity/ETag guards and individual readback. A subsequent independent full source/tenant audit found 100,662 covered Accounts exactly matching and zero remaining eligible corrections. Accounts outside source coverage were not inferred or padded. Location UI remains local source only, not published. No source-file edits, app/plugin publication or production UI verification occurred; tenant data correction is distinct from app deployment.
+
+### Equipment-cache invalidation and overlapping failures (local source only)
+
+The equipment cache key now resets before checking for an empty selection.
+Changing Branch A to B and back to A without selecting units in B therefore
+requires fresh details in A. The active detail load retains selected cached
+promises before awaiting new batches, plus all newly requested promises;
+evicting a failed cached request cannot turn that failure into partial success.
+The existing visible error and Retry action remain available.
+
+Five mocked browser tests passed for Branch round-trip invalidation, an older
+unit failing while a newer unit loads, retry recovery, incremental/reselection
+reuse, Save/Reload refresh and batches exceeding 50 units. Build/type-check,
+changed-source lint and diff checks passed. Sequential batches, obsolete-effect
+guards and backend behavior are unchanged. No publication or tenant writes;
+local mocks do not certify deployed behavior.
+
+### Responsive Change Contact spacing (local source only)
+
+The selected Contact email/phone and Change Contact button use a wrapping row
+with a 16px horizontal and 8px vertical gap. The button follows the actual text
+width when both fit and moves below when space is insufficient. Long contact
+text wraps within the available width; the button retains its touch target.
+English/French labels and contact-change behavior remain unchanged. No
+publication or tenant changes are included. Six mocked browser tests passed at
+320/768/1366px in English/French for short/long text, minimum gaps, no page
+overflow, 44px-or-larger targets and unchanged contact switching. Build/
+type-check, changed-source lint and diff checks passed.
+
+### Performance timings and Account/location reuse (local source only)
+
+**What changed**
+
+- Returning to the customer step reuses the current Account/Branch/market
+  defaults, including an in-flight request. This avoids repeating the backend
+  equipment scan and source-location metadata parsing for the same context.
+- Save/Calculate/Reload, changed Account/Branch/market and Retry fetch fresh
+  defaults. Clearing Account/Branch or closing the workspace discards the cache.
+  Only one defaults response is retained, in component memory. Failures are
+  evicted; existing visible errors, retry and stale-response guards remain.
+- Browser User Timing entries cover session startup, Account/Contact search,
+  customer defaults, equipment search/details, saved pricing and draft
+  Save/Submit/Load/clone-source operations. Calculate uses the existing Save
+  operation, so its backend duration appears as `draft-save`.
+
+**How to measure**
+
+In browser developer tools, clear the `repair-estimator:` measures before a
+representative workflow, then inspect them in the Performance panel or console:
+
+```js
+performance.getEntriesByType('measure')
+  .filter(entry => entry.name.startsWith('repair-estimator:'))
+  .forEach(entry => performance.clearMeasures(entry.name))
+// Perform the workflow, then inspect only data-free metrics:
+console.table(performance.getEntriesByType('measure')
+  .filter(entry => entry.name.startsWith('repair-estimator:'))
+  .map(entry => ({
+    operation: entry.name, milliseconds: entry.duration,
+    outcome: entry.detail.outcome
+  })))
+```
+
+Entries contain static operation names, durations and completed/failed outcomes
+only: no IDs, query text, customer/equipment data, pricing, payloads or error
+messages. Nothing is transmitted or persisted. Retention resets per operation
+after 100 recorded entries; counts are not lifetime totals. Nested
+`power-apps-request` entries count timed SDK/context promises, not raw HTTP
+requests; a fulfilled SDK error envelope is completed at that layer but failed
+at the validated operation layer. Use the browser Network panel for actual HTTP
+counts/throttling. Session startup measures identity/access loading, not total
+page paint or dashboard readiness. Operation durations exclude debounce and UI
+validation; existing SDK timeouts do not cancel underlying requests.
+
+**Evidence and limits**
+
+Local mocked checks verify one initial defaults request, zero additional
+requests on repeated step returns, and one fresh request each after Save and
+Reload, in English desktop/French mobile. In-flight sharing, failed-refresh
+Retry, Account isolation, ambiguous/truncated defaults and manual edits during
+pending reads remain covered. Real repository adapters with mocked services
+verify timing entries, SDK-call counts, scoped/escaped equipment queries and
+unchanged explicit errors. Unit checks cover bounded retention, data exclusion
+and preserved timeout/error behavior.
+
+Validation: 17 focused mocked browser cases, all 162 unit tests, production
+build/type-check, changed-source lint and diff checks passed.
+
+No backend query, scan/result limit, source parser, authorization, formula or
+snapshot changed. Existing 2,000-row/20-location limits and source-data gaps
+remain; this does not make the first location scan cheaper. Account-search
+queries remain unchanged. Local evidence is not a live latency benchmark or
+permissions certification. No tenant reads/writes or app/plugin deployment
+were performed for this change.
+
+### Billing Plan required marker (local source only)
+
+Billing Plan now displays the existing red required star in English and French,
+and its choice control exposes `aria-required`. It remains required only for
+Submit; saving/calculating a draft without a Billing Plan remains allowed.
+This corrects the missing visual indicator, not the validation rule.
+Validation and deployment evidence is recorded after local checks; no
+publication or tenant writes are part of this change.
+
+### Equipment and saved-pricing read reuse (local source only)
+
+**What changed**
+
+- Equipment details are reused within the open estimator workspace. Adding a
+  matched unit reads only missing numbers; removing/reselecting a cached unit
+  does not reread it. In-flight requests are shared. Missing batches remain
+  sequential, with at most 50 numbers per request. Obsolete effects cannot
+  update the UI or issue subsequent batches after their current batch finishes.
+- Pricing and Review share one saved-pricing request for the current estimate
+  ID, saved version and draft-read revision. Changing steps no longer rereads
+  the same saved results.
+
+**Refresh and limits**
+
+Equipment cache resets on Branch change, Retry or application of a saved/
+reloaded draft. Saved-pricing cache refreshes after Save/Calculate/Reload and
+explicit Retry. Failed requests are evicted and errors remain visible. Both
+caches live only in component memory and disappear when the workspace closes
+or a different estimate opens. Unsaved inputs still mark saved pricing stale;
+this does not introduce browser-side pricing or change saved snapshots.
+
+Bulk equipment matching and richer detail loading remain separate reads for
+new units. No timed expiry, parallel batch loading, account-search optimization
+or backend calculation changes are included.
+
+**Evidence and deployment**
+
+26 targeted mocked browser cases passed, including incremental detail reads,
+removal/reselection, Save/Reload invalidation, equipment/pricing Retry, failed
+pricing navigation recovery, in-flight pricing sharing, Save/Submit and stale
+update regressions, bulk lists exceeding 50 numbers and English/French
+equipment/pricing display at mobile/desktop widths. Request-count checks show
+one added unit reads only that unit, reselection adds zero reads and Pricing/
+Review navigation retains one saved-pricing read. Local build/type-check,
+changed-source lint and 24 related unit/documentation tests passed.
+No published-app latency measurements, tenant writes, schema/plugin
+changes or publication were performed; these mocks do not certify live speed,
+permissions or production behavior.
+
+### Linked-location and repeated-error focus corrections (2026-11-09, source only)
+
+Required-field focus resolves enabled input/select/textarea controls by their
+ID or exact error token in `aria-describedby`. Multiple linked locations use
+the location dropdown, not the absent manual-input ID; loading/disabled controls
+retain the focusable-error fallback and do not steal focus after user navigation.
+Each accepted Save/Calculate/Submit attempt advances a UI-only counter so an
+identical synchronous error on the same step focuses the operation banner again.
+Required-field checks and all persistence/submission rules remain unchanged.
+
+Eight focused mocked browser cases passed, covering English desktop/French
+mobile dropdown focus on repeated Save and Next, repeated stated-rate failures,
+correction/save and existing hidden-step/Billing Plan/server-error regressions.
+All 34 required-field-category browser cases passed again; build/type-check,
+changed-source lint and 10 validation/documentation unit tests passed.
+These close variants not covered by the earlier 34-field-category checks.
+No Dataverse data/schema/plugin changes or frontend publication were performed;
+published-client/non-admin behavior is not verified by these local tests.
+
+### Submission validation focus and errors (2026-11-09, local source)
+
+Submit still requires a positive selling price and Billing Plan; no submission
+or pricing rule changed. Failed required-field validation now focuses the first
+invalid control after changing steps instead of subsequently focusing the step
+header. If a choice is still loading, its error receives focus until the control
+becomes available; user-initiated focus changes are respected. Missing Billing
+Plan has a specific English/French instruction. Save and Submit operation errors
+appear and receive focus beside the workspace footer, including on mobile; submit
+server details are not prefixed by an unrelated deployment/permission diagnosis.
+The existing reload action and server error details remain available.
+
+Required-field coverage was then checked individually with 34 mocked browser
+cases: all 17 prerequisites in English desktop and French mobile. These cover
+Opportunity Name, Branch, Account, Contact name/email, location description,
+equipment type, province, currency, proposal language, equipment, packages,
+time category, CSTM tax/freight, selling price and Billing Plan. Each case
+verifies visible error text, invalid-control/error association, focus and no
+Save/Submit API call. Disabled saved-Branch/province controls focus their error
+instead. This does not certify field-level highlighting for conditional
+server-only business rules; those continue to use the focused operation error.
+
+Read-only inspection of the reported CKE draft confirmed that its saved Billing
+Plan is blank and its selling price is positive. It remains a draft; unsaved
+browser inputs, the exact published client bundle and any later server-side
+blockers were not verified. Local mocked browser tests cover required focus,
+English/French, submission confirmation/success and a server rejection. Build
+and lint were run locally. This change is source-only, not published or verified
+in the tenant; no business record, plug-in or schema was changed.
 
 ### Freestyle names, unobscured locations and click-time validation (2026-11-09, local source)
 

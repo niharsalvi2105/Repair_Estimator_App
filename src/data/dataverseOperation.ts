@@ -1,4 +1,5 @@
 import type { IOperationResult } from '@microsoft/power-apps/data'
+import { measureOperation } from './performance.ts'
 
 export class DataverseError extends Error {
   readonly status?: number
@@ -48,18 +49,20 @@ export function unwrap<T>(result: IOperationResult<T>): T {
 }
 
 export async function withTimeout<T>(request: Promise<T>, milliseconds = 15000): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      request,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new DataverseError(
-          'The Power Apps request timed out. Open this app in the authenticated Power Apps player and retry.',
-          408,
-        )), milliseconds)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
+  return measureOperation('power-apps-request', async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        request,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new DataverseError(
+            'The Power Apps request timed out. Open this app in the authenticated Power Apps player and retry.',
+            408,
+          )), milliseconds)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  })
 }

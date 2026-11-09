@@ -36,6 +36,7 @@ import { CloneRequestWorkspace } from './CloneRequestWorkspace'
 import { CloneRequestDialog } from './CloneRequestDialog'
 import type { AccountMasterOption, ContactMasterOption } from './data/customerMasterRepository'
 import { requestReuseErrorMessage } from './data/dataverseOperation'
+import { measureOperation } from './data/performance'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -478,6 +479,8 @@ function App() {
   const [savedSnapshot, setSavedSnapshot] = useState('')
   const [draftBusy, setDraftBusy] = useState(false)
   const [draftError, setDraftError] = useState('')
+  const [draftReadRevision, setDraftReadRevision] = useState(0)
+  const [draftAttempt, setDraftAttempt] = useState(0)
   const [draftNotice, setDraftNotice] = useState('')
   const [cloneSource, setCloneSource] = useState<{ id: string; name: string }>()
   const [cloneError, setCloneError] = useState('')
@@ -575,7 +578,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
-    void loadSession()
+    void measureOperation('session-startup', loadSession)
       .then((result) => { if (!cancelled) setSession(result) })
       .catch((error: unknown) => { if (!cancelled) setSessionError(message(error)) })
       .finally(() => { if (!cancelled) setSessionLoading(false) })
@@ -880,6 +883,7 @@ function App() {
       laborLines, materialLines, language))
 
   function applyDraft(record: DraftRecord) {
+    setDraftReadRevision(previous => previous + 1)
     equipmentPasteRequest.current++
     setEquipmentBulkBusy(false)
     setEquipmentPasteResult(undefined)
@@ -947,6 +951,7 @@ function App() {
 
   async function saveDraft(submit = false) {
     if (draftInFlight.current || submitted || exportDelivery || equipmentBulkBusy) return
+    setDraftAttempt(previous => previous + 1)
     setDraftError(''); setDraftNotice('')
     const koneConflict = konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
     if (koneConflict) { setDraftError(koneConflict); setStep(4); return }
@@ -1019,7 +1024,7 @@ function App() {
       applyDraft(record); setDraftNotice(record.exportDelivery
         ? `${submissionDeliveryMessage(record.exportDelivery.state, language)} ${record.number || record.id}`
         : `${submit ? language === 'fr' ? 'Devis soumis' : 'Estimate submitted' : dt.saved}: ${record.number || record.id}`)
-    } catch (reason) { setDraftError(`${dt.error} ${submit ? submissionErrorMessage(message(reason), language) : message(reason)}`) }
+    } catch (reason) { setDraftError(submit ? submissionErrorMessage(message(reason), language) : `${dt.error} ${message(reason)}`) }
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
 
@@ -1222,7 +1227,7 @@ function App() {
             <p className="draft-notice" role="status">{t.developmentAdminNotice}</p>
           )}
           {draftBusy && <p className="inline-state" role="status">{dt.working}</p>}
-          {draftError && <div className="error-box draft-error" role="alert">
+          {draftError && view !== 'new' && <div className="error-box draft-error" role="alert">
             <span>{draftError}</span>
             <button className="button secondary" disabled={draftBusy} onClick={() => void openDraft(draftId)}>{dt.reload}</button>
           </div>}
@@ -1312,7 +1317,7 @@ function App() {
               newDraft,
               onSaveOpportunity: () => navigate('clone'),
               draftBusy,
-              draftError,
+              draftError, draftAttempt, draftReadRevision,
               canStart,
               openDraft,
               draftId,

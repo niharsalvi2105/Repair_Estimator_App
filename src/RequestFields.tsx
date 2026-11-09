@@ -163,7 +163,7 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
         const taxOrFreight = key === 're_usetax' || key === 're_freight'
         const fixedRate = taxOrFreight && !custom
         const error = errors[id] ?? (rateField ? statedRateError(value[key], language) : undefined)
-        const required = ['re_proposallanguage', 're_timecategory', 're_usetax', 're_freight'].includes(key)
+        const required = ['re_proposallanguage', 're_timecategory', 're_usetax', 're_freight', 're_billingplan'].includes(key)
         return (
           <div className="field-label" key={key}>
             <label htmlFor={id}>{label}{taxOrFreight && custom ? ' (CSTM)' : ''}{required && <span className="required">*</span>}</label>
