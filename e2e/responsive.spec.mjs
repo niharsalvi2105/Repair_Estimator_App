@@ -105,7 +105,8 @@ async function mockData(page, language, theme, state = 'records') {
           packages:input.packages.map((p) => {
             const packagePriced = input.materialLines?.some(m => m.packageId === p.id && m.pricingSource === 'package');
             const source = window.__extraPackages?.find(master => master.re_repairpackageid === p.id);
-            return {...p,nameEn:'Persisted package snapshot',nameFr:'Forfait enregistré',scopeEn:'Persisted scope',
+            return {...p,...(source?.re_iscustompackage && !window.__dropCustomDescriptions ? {} :
+              {nameEn:'Persisted package snapshot',nameFr:'Forfait enregistré',scopeEn:'Persisted scope'}),
               ...(window.__dropPackageEquipment ? {equipmentNumbers:null} : {}),
               hours:packagePriced ? source.re_mechanichours : 2.5,
               material:packagePriced ? source.re_materialmisctaxcost : 125,
@@ -389,6 +390,32 @@ async function next(page) {
   await page.locator('.footer-actions .button').click()
 }
 
+async function checkCustomerFieldLayout(page, width) {
+  const rows = [
+    ['#account-master-search', '#account-master-name'],
+    ['#customer-name', '#customer-email'],
+    ['#customer-phone', '#opportunity-building, #account-location-description'],
+    ['#salesperson', '#draft-province'],
+  ]
+  let previousBottom = -Infinity
+  for (const [leftSelector, rightSelector] of rows) {
+    const left = await page.locator(leftSelector).boundingBox()
+    const right = await page.locator(rightSelector).boundingBox()
+    expect(left).not.toBeNull()
+    expect(right).not.toBeNull()
+    expect(left.y).toBeGreaterThanOrEqual(previousBottom)
+    if (width > 640) {
+      expect(Math.abs(left.y - right.y)).toBeLessThan(2)
+      expect(right.x).toBeGreaterThanOrEqual(left.x + left.width)
+      expect(Math.abs(left.width - right.width)).toBeLessThan(2)
+    } else {
+      expect(Math.abs(left.x - right.x)).toBeLessThan(2)
+      expect(right.y).toBeGreaterThanOrEqual(left.y + left.height)
+    }
+    previousBottom = Math.max(left.y + left.height, right.y + right.height)
+  }
+}
+
 async function selectCustomerMasters(page, accountQuery = 'Acme', contactQuery = 'Draft') {
   await page.locator('#account-master-search').fill(accountQuery)
   await page.locator('#account-master-options button').first().click()
@@ -426,7 +453,7 @@ for (const viewport of viewports) {
       await expect(opportunity.locator('fieldset > legend')).toHaveCount(3)
       await expect(page.locator('#salesperson')).toHaveAttribute('readonly', '')
       await expect(page.locator('#equipment-type')).toHaveAttribute('aria-required', 'true')
-      await expect(page.locator('#opportunity-building')).toHaveAttribute('aria-required', 'true')
+      await expect(page.locator('#opportunity-building')).not.toHaveAttribute('aria-required', 'true')
       expect(await opportunity.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThanOrEqual(1120)
       const fieldMetrics = await opportunity.locator('.text-input').evaluateAll((fields) => fields.map((el) => ({
         height: el.getBoundingClientRect().height,
@@ -1444,7 +1471,7 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await expect(page.locator('#estimate-title')).toHaveAccessibleName(
     language === 'fr' ? 'Nom de l’opportunité*' : 'Opportunity Name*')
   await expect(page.locator('#opportunity-building')).toHaveAccessibleName(
-    language === 'fr' ? 'Description de l’emplacement fonctionnel*' : 'Functional Location Description*')
+    language === 'fr' ? 'Description de l’emplacement fonctionnel' : 'Functional Location Description')
   await page.locator('#estimate-title').fill('Motor repair draft')
   await page.locator('#branch-select').fill('020')
   await page.locator('#branch-select').press('ArrowDown')
@@ -2143,6 +2170,12 @@ for (const width of [320, 1366]) {
     await material.getByRole('textbox', { name: 'Part number', exact: true }).fill('MOTOR-1')
     await material.getByRole('spinbutton', { name: 'Quantity', exact: true }).fill('2')
     await material.getByRole('spinbutton', { name: 'Unit cost', exact: true }).fill('25')
+    await page.screenshot({ path: testInfo.outputPath('expanded-cost-grid.png'), fullPage: true })
+    await editor.getByRole('button', { name: 'Collapse all', exact: true }).first().click()
+    await editor.getByRole('button', { name: 'Collapse all', exact: true }).last().click()
+    await page.screenshot({ path: testInfo.outputPath('collapsed-cost-grid.png'), fullPage: true })
+    await editor.getByRole('button', { name: 'Expand all', exact: true }).first().click()
+    await editor.getByRole('button', { name: 'Expand all', exact: true }).last().click()
     await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
     await expect(page.locator('.equipment-package-card .equipment-package-price')).toHaveText(['259.50 USD', '257.50 USD'])
     await expect(page.locator('.equipment-package-costs').last()).toContainText('Entered CSTM hours and costs are shared equally')
@@ -2825,7 +2858,34 @@ test('customer defaults do not guess ambiguous or truncated data and recover exp
   await expect(page.locator('#opportunity-building')).toHaveValue('')
 })
 
-for (const language of ['en', 'fr']) test(`Required location dropdown receives focus on repeated validation (${language})`, async ({ page }) => {
+for (const language of ['en', 'fr']) test(`Optional location saves calculates reloads and submits while email stays mandatory (${language})`, async ({ page }) => {
+  await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
+  for (let step = 0; step < 4; step++) await page.locator('.form-footer > button').click()
+  const location = page.locator('#opportunity-building')
+  await expect(location).not.toHaveAttribute('required', '')
+  await expect(location).not.toHaveAttribute('aria-required', 'true')
+  await expect(page.locator('label[for="opportunity-building"] .required')).toHaveCount(0)
+  await expect(page.locator('#customer-email')).toHaveAttribute('required', '')
+  await expect(page.locator('#customer-email')).toHaveAttribute('aria-required', 'true')
+  await location.fill('')
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  expect(await page.evaluate(() => window.__draftSaved.building)).toBe('')
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await expect(location).toHaveValue('')
+  for (let step = 0; step < 3; step++) await next(page)
+  await page.locator('#request-re_billingplan').selectOption('126110000')
+  await page.locator('.pricing-summary').getByRole('button', { name: /^(Recalculate|Recalculer)$/ }).click()
+  await expect.poll(() => page.evaluate(() => window.__draftSaved.version)).toBe('2')
+  expect(await page.evaluate(() => window.__draftSaved.building)).toBe('')
+  await next(page)
+  page.once('dialog', dialog => dialog.accept())
+  await page.locator('.footer-actions .button').click()
+  await expect(page.locator('.unsaved-badge')).toContainText(language === 'fr' ? 'Soumis' : 'Submitted')
+  expect(await page.evaluate(() => window.__draftCalls.filter(call => call.mode === 'submit')[0].building)).toBe('')
+})
+
+for (const language of ['en', 'fr']) test(`Optional location dropdown permits empty selection and navigation (${language})`, async ({ page }) => {
   await mockData(page, language, 'light')
   await page.setViewportSize({ width: language === 'fr' ? 390 : 1366, height: 900 })
   await page.goto('/')
@@ -2842,15 +2902,21 @@ for (const language of ['en', 'fr']) test(`Required location dropdown receives f
   await page.locator('#account-master-options button').click()
   const location = page.locator('#account-location-description')
   await expect(location.locator('option')).toHaveCount(4)
-  for (const action of [page.locator('.draft-save-action'), page.locator('.draft-save-action'), page.locator('.footer-actions .button')]) {
-    await action.click()
-    await expect(location).toBeFocused()
-    await expect(location).toHaveAttribute('aria-invalid', 'true')
-    await expect(page.locator('#opportunity-building-error')).toBeVisible()
+  await expect(location).not.toHaveAttribute('required', '')
+  await expect(location).not.toHaveAttribute('aria-required', 'true')
+  await expect(page.locator('label[for="account-location-description"] .required')).toHaveCount(0)
+  await expect(location).toHaveValue('')
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('#equipment-search')).toBeVisible()
+    await page.locator('.form-footer > button').click()
+    await expect(location).toHaveValue('')
+    await expect(location).toHaveAttribute('aria-invalid', 'false')
+    await expect(page.locator('#opportunity-building-error')).toHaveCount(0)
   }
   expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
-  await location.selectOption(JSON.stringify(['FL00000002', 'Building B']))
-  await expect(page.locator('#opportunity-building-error')).toHaveCount(0)
+  await next(page)
+  await expect(page.locator('#equipment-search')).toBeVisible()
 })
 
 for (const language of ['en', 'fr']) test(`Repeated local save errors refocus the operation banner (${language})`, async ({ page }) => {
@@ -3106,7 +3172,7 @@ for (const [language, width] of [['en', 1366], ['fr', 390]]) {
     await expect(save).toBeEnabled()
     await expect(page.locator('.field-error')).toHaveCount(0)
     await nextButton.click()
-    for (const id of ['estimate-title', 'branch-select', 'opportunity-building', 'equipment-type'])
+    for (const id of ['estimate-title', 'branch-select', 'equipment-type'])
       await expect(page.locator(`#${id}-error`)).toHaveText(language === 'fr' ? 'Champ obligatoire.' : 'Required field.')
     await expect(page.locator('#estimate-title')).toBeFocused()
     await page.locator('#estimate-title').fill('Mandatory message regression')
@@ -3217,7 +3283,6 @@ const requiredFieldCases = [
   { id: 'account-master-search', property: 'accountId' },
   { id: 'customer-name', property: 'customer' },
   { id: 'customer-email', property: 'email' },
-  { id: 'opportunity-building', property: 'building' },
   { id: 'equipment-type', property: 'equipmentTypeId' },
   { id: 'draft-province', property: 'stateId', disabled: true },
   { id: 'draft-currency', currency: true },
@@ -3267,6 +3332,17 @@ for (const language of ['en', 'fr']) {
   })
 }
 
+for (const language of ['en', 'fr']) for (const width of [390, 1366]) {
+  test(`Customer details use paired rows and mobile stacking (${language}, ${width})`, async ({ page }) => {
+    await mockData(page, language, 'light')
+    await page.setViewportSize({ width, height: 1000 })
+    await page.goto('/')
+    await page.locator('.main-nav .nav-item').nth(1).click()
+    await checkCustomerFieldLayout(page, width)
+    await checkLayout(page, { width, height: 1000 }, 'customer field rows')
+  })
+}
+
 for (const language of ['en', 'fr']) test(`Unified customer fields offer one control and linked dropdown or custom entry (${language})`, async ({ page }) => {
   await mockData(page, language, 'light')
   const width = language === 'fr' ? 390 : 1366
@@ -3296,13 +3372,11 @@ for (const language of ['en', 'fr']) test(`Unified customer fields offer one con
   await expect(page.locator('#customer-email')).toHaveValue('second@example.invalid')
   await expect(page.locator('#customer-phone')).toHaveValue('222')
   await expect(page.locator('#opportunity-building')).toHaveCount(0)
+  await checkCustomerFieldLayout(page, width)
   await page.locator('#account-location-description').selectOption('custom')
   await page.locator('#opportunity-building').fill('Custom building')
   await expect(page.locator('#account-location-description')).toHaveCount(0)
-  const contact = await page.locator('#customer-name').boundingBox()
-  const location = await page.locator('#opportunity-building').boundingBox()
-  expect(Math.abs(contact.x - location.x)).toBeLessThan(2)
-  expect(location.y).toBeGreaterThan(contact.y + contact.height)
+  await checkCustomerFieldLayout(page, width)
   await checkLayout(page, { width, height: 1000 }, 'unified customer fields')
   await page.getByRole('button', { name: /^(Change account|Changer de compte)$/ }).click()
   await page.evaluate(() => {
@@ -3830,6 +3904,13 @@ for (const { language, theme } of modes) {
     }
     const custom = page.locator('.custom-cost-lines')
     await expect(custom).toBeVisible()
+    await custom.locator('#custom-package-name-custom').fill('Estimate-only custom package')
+    await custom.locator('#custom-package-scope-custom').fill('')
+    await custom.locator('#custom-package-scope-custom').pressSequentially('Custom scope line 1')
+    await custom.locator('#custom-package-scope-custom').press('Enter')
+    await custom.locator('#custom-package-scope-custom').pressSequentially('Custom scope line 2')
+    await expect(custom.locator('#custom-package-name-custom')).toHaveAttribute('maxlength', '500')
+    await expect(custom.locator('#custom-package-scope-custom')).toHaveAttribute('maxlength', '10000')
     await custom.getByRole('button', { name: language === 'fr' ? 'Ajouter main-d’œuvre' : 'Add labor', exact: true }).click()
     const labor = custom.locator('fieldset').first()
     await labor.locator('select').nth(0).selectOption('126110001')
@@ -3843,6 +3924,28 @@ for (const { language, theme } of modes) {
     await material.getByRole('textbox', { name: language === 'fr' ? 'Numéro de pièce' : 'Part number', exact: true }).fill('NONKONE-123')
     await material.getByRole('spinbutton', { name: language === 'fr' ? 'Quantité' : 'Quantity', exact: true }).fill('2')
     await material.getByRole('spinbutton', { name: language === 'fr' ? 'Coût unitaire' : 'Unit cost', exact: true }).fill('25.50')
+    const laborGrid = custom.getByRole('region', { name: language === 'fr' ? 'Grille de main-d’œuvre' : 'Labor grid', exact: true })
+    const materialGrid = custom.getByRole('region', { name: language === 'fr' ? 'Grille de matériaux' : 'Materials grid', exact: true })
+    const laborToggle = laborGrid.getByRole('button', { name: language === 'fr' ? 'Main-d’œuvre 1' : 'Labor 1', exact: true })
+    const materialToggle = materialGrid.getByRole('button', { name: language === 'fr' ? 'Matériau 1' : 'Material 1', exact: true })
+    await laborToggle.click()
+    await expect(laborToggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(labor).toBeHidden()
+    await expect(laborGrid.locator('.custom-grid-summary')).toContainText(language === 'fr' ? '3,25' : '3.25')
+    await laborToggle.press('Enter')
+    await expect(labor).toBeVisible()
+    await expect(labor.locator('input')).toHaveValue('3.25')
+    await materialToggle.click()
+    await expect(material).toBeHidden()
+    await expect(materialGrid.locator('.custom-grid-summary')).toContainText('Custom motor')
+    await expect(materialGrid.locator('.custom-grid-summary')).toContainText('51')
+    await materialToggle.press('Enter')
+    await expect(material).toBeVisible()
+    await expect(material.locator('textarea')).toHaveValue('Custom motor')
+    await custom.getByRole('button', { name: language === 'fr' ? 'Tout réduire' : 'Collapse all', exact: true }).last().click()
+    await expect(material).toBeHidden()
+    await custom.getByRole('button', { name: language === 'fr' ? 'Tout développer' : 'Expand all', exact: true }).last().click()
+    await expect(material).toBeVisible()
     await expect(page.locator('body')).toHaveJSProperty('scrollWidth', 320)
     await checkLayout(page, { width: 320, height: 700 }, 'custom cost entry')
     await page.locator('.footer-actions .button').click()
@@ -3856,13 +3959,28 @@ for (const { language, theme } of modes) {
     await expect(page.locator('.draft-saved')).toContainText('0000000042')
     const saved = await page.evaluate(() => window.__draftCalls.at(-1))
     expect(saved.packages).toHaveLength(5)
+    expect(saved.packages.find(p => p.id === 'custom')).toMatchObject(language === 'fr'
+      ? { nameFr: 'Estimate-only custom package', scopeFr: 'Custom scope line 1\nCustom scope line 2' }
+      : { nameEn: 'Estimate-only custom package', scopeEn: 'Custom scope line 1\nCustom scope line 2' })
+    await expect(custom.locator('#custom-package-name-custom')).toBeDisabled()
+    await expect(custom.locator('#custom-package-scope-custom')).toHaveValue('Custom scope line 1\nCustom scope line 2')
     expect(saved.laborLines[0]).toMatchObject({ role: 126110001, time: 126110001, hours: 3.25 })
     expect(saved.materialLines[0]).toMatchObject({ description: 'Custom motor', vendor: '', part: 'NONKONE-123', quantity: 2, unitCost: 25.5 })
     await page.locator('.draft-toolbar .draft-secondary-actions button').nth(1).click()
     await next(page)
     await page.getByRole('button', { name: language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs', exact: true }).click()
+    await expect(custom.locator('#custom-package-name-custom')).toHaveValue('Estimate-only custom package')
+    await expect(custom.locator('#custom-package-scope-custom')).toHaveValue('Custom scope line 1\nCustom scope line 2')
     await expect(page.locator('.custom-cost-lines fieldset').first().locator('input')).toHaveValue('3.25')
     await expect(page.locator('.custom-cost-lines fieldset').nth(1).locator('textarea')).toHaveValue('Custom motor')
+    await page.evaluate(() => { window.__dropCustomDescriptions = true })
+    await page.locator('.draft-save-action').click()
+    await expect(page.locator('.draft-error')).toContainText(language === 'fr'
+      ? 'Le serveur n’a pas conservé le nom ou la portée'
+      : 'The server did not retain the custom package name or scope')
+    await expect(custom.locator('#custom-package-name-custom')).toHaveValue('Estimate-only custom package')
+    await expect(custom.locator('#custom-package-scope-custom')).toHaveValue('Custom scope line 1\nCustom scope line 2')
+    page.once('dialog', dialog => dialog.accept())
     await page.locator('.draft-toolbar .draft-secondary-actions button').first().click()
     await expect(page.locator('#estimate-title')).toHaveValue('')
     await page.locator('#branch-select').fill('020')

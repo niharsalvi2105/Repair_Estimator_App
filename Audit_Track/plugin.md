@@ -2,6 +2,20 @@
 
 ## 1. Scope and evidence
 
+### CSTM editable description snapshots (2026-11-10, local source)
+
+Draft Save now applies supplied `nameEn`, `nameFr`, `scopeEn`, `scopeFr` only to a trusted CSTM package snapshot, after loading/copying the master/prior snapshot. Names are bounded to 500 characters and scopes to 10,000; null/omitted values preserve prior/master text and empty strings clear the column. Draft output normalizes absent English name/scope to empty strings for the frontend contract. Existing `re_estimatepackage` localized name/proposal-scope columns are reused; no master writes, new columns, dispatch/registration/images, permissions, numeric formulas, locks or export-lifecycle changes. Existing snapshot exports consume the edited text.
+
+Nine focused backend cases passed, including five CSTM snapshot/limit cases covering Save/Load/clear, unchanged master names, standard-package override rejection and 500/501-name plus 10000/10001-scope boundaries; four existing optional-location cases also passed. Build/type-check/lint, 38 frontend contract/clone/export/documentation tests and four mocked EN/FR/light/dark mobile browser cases passed. Selected legacy custom pricing-path tests still have unrelated missing-Account fixture failures. These local checks are not tenant certification; source only, no deployment or tenant verification, and the coordinated frontend/Drafts update remains required.
+
+### Optional location and required email (2026-11-10, local source)
+
+`DraftPlugin.Save` now validates `building` as optional text (300 characters after trimming), writing null into `re_repairestimate.re_buildingname` for empty/whitespace input. This also clears prior descriptions on update. Shared Save/Submit validation no longer rejects a missing description; response serialization returns an empty string for absent stored values so frontend Load/Save/Submit/clone contracts remain string-valued. Opportunity preset validation similarly accepts blank location text with the existing length bound. Customer email remains required, maximum 100 characters, with existing syntax checks and master/manual precedence unchanged.
+
+No API dispatch, source-location loader, pricing formulas, authorization, registration/images, locking or export lifecycle changes. Blank descriptions remain blank in downstream snapshots/exports. All 11 focused backend cases passed for null/empty/whitespace location Save/clear/Load/Submit, 300/301-character limits, presets and required-email rejection. All 37 selected frontend contract/clone/export/documentation tests and 14 mocked EN/FR browser cases passed, including a blank-location lifecycle and a blank export with contact email retained. Production build/type-check and changed-source/test lint passed. These local/fake-pipeline checks do not prove tenant behavior.
+
+Local implementation only: no assembly/frontend deployment, tenant schema/data changes or live verification; tenant-level required rules and external automation are unverified. Earlier mandatory-description documentation below is historical and superseded.
+
 ### Account source-location defaults (2026-11-07, source correction)
 
 Subsequently deployed to Dev in `RepairEstimatorApp`: signed Drafts assembly SHA-256 `1ac5903cc3455438ce900e7076de0053cd5230f3aca3f6252853ed4dfe8d0506`, full content readback verified, with existing signing/version/type identities and solution membership preserved. Guarded ETag update retained registrations. The matching published frontend bundle `index-eXQteb7d.js` was observed in a fresh tab; one live Account/Branch defaults pair matched independent native source-metadata reads and appeared/autofilled in the unsaved step-1 UI. No business/master writes, Save/Submit, email or pricing recalculation. Teammate/non-admin access remains untested.

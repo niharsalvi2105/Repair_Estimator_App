@@ -17,6 +17,154 @@ namespace RepairEstimator.Tests
 {
     public class PluginIntegrationTests
     {
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Custom_package_descriptions_save_reload_and_clear_without_changing_master(bool custom)
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = custom;
+            var masterName = db.Rows[db.PackageId].GetAttributeValue<string>("re_packagenameen");
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.packages[0].nameEn = "Estimate custom name";
+            request.packages[0].nameFr = "Estimate French name";
+            request.packages[0].scopeEn = "First line\nSecond line";
+            request.packages[0].scopeFr = "French scope";
+            if (custom) AddCustomDescriptionLines(request);
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal(custom ? request.packages[0].nameEn : masterName, saved.packages[0].nameEn);
+            Assert.Equal(masterName, db.Rows[db.PackageId].GetAttributeValue<string>("re_packagenameen"));
+            if (!custom) return;
+            Assert.Equal(request.packages[0].nameFr, saved.packages[0].nameFr);
+            Assert.Equal(request.packages[0].scopeEn, saved.packages[0].scopeEn);
+            Assert.Equal(request.packages[0].scopeFr, saved.packages[0].scopeFr);
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal(saved.packages[0].scopeEn, loaded.packages[0].scopeEn);
+            loaded.mode = "save";
+            loaded.packages[0].nameEn = "";
+            loaded.packages[0].scopeEn = "";
+            var cleared = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(loaded)));
+            Assert.Equal("", cleared.packages[0].nameEn);
+            Assert.Equal("", cleared.packages[0].scopeEn);
+            Assert.Equal("French scope", cleared.packages[0].scopeFr);
+        }
+
+        [Theory]
+        [InlineData(500, 10000, true)]
+        [InlineData(501, 10000, false)]
+        [InlineData(500, 10001, false)]
+        public void Custom_package_description_limits_are_enforced(int nameLength, int scopeLength, bool valid)
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.packages[0].nameEn = new string('n', nameLength);
+            request.packages[0].scopeEn = new string('s', scopeLength);
+            AddCustomDescriptionLines(request);
+            if (valid)
+            {
+                var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+                Assert.Equal(request.packages[0].nameEn, saved.packages[0].nameEn);
+                Assert.Equal(request.packages[0].scopeEn, saved.packages[0].scopeEn);
+            }
+            else
+            {
+                var error = Assert.Throws<InvalidPluginExecutionException>(() => db.Save(ExportSnapshot.Serialize(request)));
+                Assert.Contains((nameLength > 500 ? 500 : 10000) + " characters", error.Message);
+            }
+        }
+
+        static void AddCustomDescriptionLines(Draft request)
+        {
+            request.laborLines = new List<LaborInput> {
+                new LaborInput { id = "custom-labor", packageId = request.packages[0].id,
+                    role = 126110000, time = 126110000, hours = 1 }
+            };
+            request.materialLines = new List<MaterialInput> {
+                new MaterialInput { id = "custom-material", packageId = request.packages[0].id,
+                    description = "Manual part", vendor = "Independent", part = "P1",
+                    quantity = 1, unitCost = 25, pricingSource = "manual", partType = "non-kone" }
+            };
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void Optional_location_save_reload_clear_and_submit_preserve_required_email(string location)
+        {
+            var db = new Pipeline();
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            saved.mode = "save";
+            saved.building = location;
+            var cleared = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(saved)));
+            Assert.Equal("", cleared.building);
+            Assert.Null(db.Rows[db.EstimateId].GetAttributeValue<string>("re_buildingname"));
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal("", loaded.building);
+            Assert.Equal(saved.email, loaded.email);
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            loaded.mode = "submit";
+            loaded.fields.RemoveAll(field => field.key == "re_sellprice" || field.key == "re_billingplan");
+            loaded.fields.Add(new Field { key = "re_sellprice", value = "1000" });
+            loaded.fields.Add(new Field { key = "re_billingplan", value = "126110000" });
+            var submitted = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(loaded)));
+            Assert.Equal(Labels.SubmittedStatus, submitted.status);
+            Assert.Equal("", submitted.building);
+            Assert.Equal(saved.email, submitted.email);
+        }
+
+        [Fact]
+        public void Optional_location_still_enforces_300_character_limit()
+        {
+            var db = new Pipeline();
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.building = new string('x', 300);
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal(request.building, saved.building);
+            saved.mode = "save";
+            saved.building = new string('x', 301);
+            var error = Assert.Throws<InvalidPluginExecutionException>(() => db.Save(ExportSnapshot.Serialize(saved)));
+            Assert.Contains("300 characters", error.Message);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void Opportunity_presets_allow_blank_location_but_require_email(string location)
+        {
+            var db = new Pipeline();
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            var values = new OpportunityValues {
+                branchId = request.branchId, stateId = request.stateId, equipmentTypeId = request.equipmentTypeId,
+                jobTypeId = "", building = location, customer = request.customer, email = request.email,
+                phone = "", market = request.market, accountId = request.accountId, contactId = request.contactId,
+                fields = request.fields.Where(field => field.key == "re_proposallanguage").ToList()
+            };
+            var validate = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.OpportunityPresets")
+                .GetMethod("Validate", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            var result = (OpportunityValues)validate.Invoke(null, new object[] { db.Caller, values });
+            Assert.Equal("", result.building);
+            Assert.False(string.IsNullOrWhiteSpace(result.email));
+            values.contactId = null;
+            values.email = "";
+            var error = Assert.Throws<System.Reflection.TargetInvocationException>(() =>
+                validate.Invoke(null, new object[] { db.Caller, values }));
+            Assert.Contains("Customer email is required", error.InnerException.Message);
+        }
+
         [Fact]
         public void Customer_search_includes_partial_linked_contacts_without_email()
         {
@@ -119,6 +267,7 @@ namespace RepairEstimator.Tests
         [Theory]
         [InlineData("", "manual@example.invalid", "Customer name is required")]
         [InlineData("Manual", "", "Customer email is required")]
+        [InlineData("Manual", "   ", "Customer email is required")]
         [InlineData("Manual", "invalid-email", "valid email address")]
         public void Customer_manual_details_reject_invalid_required_values(string name, string email, string error)
         {

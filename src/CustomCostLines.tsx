@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import { Fragment, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import type { DraftLabor, DraftMaterial } from './data/draftContract'
 import type { Market } from './data/estimateQuery'
 import { getPartCatalog, type CatalogResult } from './data/partCatalogRepository'
@@ -15,7 +15,8 @@ type Props = {
   canAdd: boolean
   enabled: boolean
   readOnly?: boolean
-  packages?: { id: string; name: string; materialBeforeMarkup?: number; material?: number }[]
+  packages?: { id: string; name: string; customName?: string; scope?: string; materialBeforeMarkup?: number; material?: number }[]
+  onPackageDetails?: (id: string, field: 'name' | 'scope', value: string) => void
   activePackageId?: string
   market: Market
   currency?: string
@@ -24,10 +25,31 @@ type Props = {
 }
 
 export function CustomCostLines({ language, labor, materials, setLabor, setMaterials, canAdd, enabled, readOnly = false,
-  packages = [], activePackageId, market, currency, requestInputs, updateRequestInput }: Props) {
+  packages = [], onPackageDetails, activePackageId, market, currency, requestInputs, updateRequestInput }: Props) {
   const fr = language === 'fr'
   const [laborPage, setLaborPage] = useState(0)
   const [materialPage, setMaterialPage] = useState(0)
+  const [collapsedRows, setCollapsedRows] = useState<Set<string>>(new Set())
+  function toggleRow(key: string) {
+    setCollapsedRows(current => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  function rowControls(kind: 'labor' | 'material', ids: string[]) {
+    return ids.length > 0 && <div className="custom-grid-actions">
+      <button type="button" className="button secondary small" onClick={() =>
+        setCollapsedRows(current => new Set([...current].filter(key => !ids.some(id => key === `${kind}-${id}`))))}>
+        {fr ? 'Tout développer' : 'Expand all'}
+      </button>
+      <button type="button" className="button secondary small" onClick={() =>
+        setCollapsedRows(current => new Set([...current, ...ids.map(id => `${kind}-${id}`)]))}>
+        {fr ? 'Tout réduire' : 'Collapse all'}
+      </button>
+    </div>
+  }
   const size = 10
   const [capabilityState, setCapabilityState] = useState<{ market: Market; result?: CatalogResult; error?: string }>()
   const [catalogAttempt, setCatalogAttempt] = useState(0)
@@ -70,6 +92,20 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
   return <section className="form-card custom-cost-lines">
     <h2>{fr ? 'Coûts personnalisés (CSTM)' : 'Custom costs (CSTM)'}</h2>
     {activePackageId && <h3>{packages.find((p) => p.id === activePackageId)?.name}</h3>}
+    {packages.filter(p => !activePackageId || p.id === activePackageId).map(p => <div className="custom-package-details" key={p.id}>
+      <label className="field-label" htmlFor={`custom-package-name-${p.id}`}>
+        {fr ? 'Nom du forfait personnalisé' : 'Custom package name'}{!activePackageId && ` (${p.name})`}
+        <input id={`custom-package-name-${p.id}`} className="text-input" maxLength={500}
+          disabled={readOnly || !enabled} readOnly={!onPackageDetails} value={p.customName ?? ''}
+          onChange={event => onPackageDetails?.(p.id, 'name', event.target.value)} />
+      </label>
+      <label className="field-label" htmlFor={`custom-package-scope-${p.id}`}>
+        {fr ? 'Portée des travaux personnalisée' : 'Custom scope of work'}
+        <textarea id={`custom-package-scope-${p.id}`} className="text-input request-textarea" maxLength={10000}
+          disabled={readOnly || !enabled} readOnly={!onPackageDetails} value={p.scope ?? ''}
+          onChange={event => onPackageDetails?.(p.id, 'scope', event.target.value)} />
+      </label>
+    </div>)}
     <p>{fr ? 'Main-d’œuvre et matériaux ajoutés une seule fois au devis. Matériau = somme des coûts unitaires × quantités, avant taxe et fret. Les pièces KONE proviennent du catalogue approuvé. Les taux sont déterminés par le serveur.'
       : 'Labor and materials are added once per estimate. Material = sum of unit cost × quantity, before tax and freight. KONE parts come from the approved catalog. Labor rates are resolved by the server.'}</p>
     {enabled && <RequestFields stage="materialrates" language={language} value={requestInputs}
@@ -85,9 +121,33 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       ? 'Ajoutez un forfait CSTM ou supprimez explicitement toutes les lignes personnalisées et le prix VK13 avant d’enregistrer.'
       : 'Add a CSTM package or explicitly remove all custom lines and the VK13 price before saving.'}</p>}
     <h3>{fr ? 'Main-d’œuvre' : 'Labor'} ({visibleLabor.length})</h3>
+    {rowControls('labor', visibleLabor.map(line => line.id))}
+    <div className="custom-grid-scroll" role="region" aria-label={fr ? 'Grille de main-d’œuvre' : 'Labor grid'} tabIndex={0}>
+    <table className="custom-cost-grid">
+      <caption>{fr ? 'Détail de main-d’œuvre' : 'Labor breakdown'}</caption>
+      <thead><tr>{[fr ? 'Ligne' : 'Line', fr ? 'Forfait' : 'Package', fr ? 'Rôle' : 'Role',
+        fr ? 'Temps' : 'Time', fr ? 'Heures' : 'Hours', fr ? 'Taux enregistré' : 'Saved rate'].map(label =>
+        <th scope="col" key={label}>{label}</th>)}</tr></thead>
+      <tbody>
     {visibleLabor.slice(laborStart, laborStart + size).map((line, index) => {
       const number = laborStart + index + 1
-      return <fieldset className="custom-cost-line" key={line.id} disabled={readOnly}>
+      const key = `labor-${line.id}`
+      const expanded = !collapsedRows.has(key)
+      return <Fragment key={line.id}>
+        <tr className="custom-grid-summary">
+          <th scope="row"><button className="custom-row-toggle" type="button" aria-expanded={expanded}
+            aria-controls={`custom-detail-${key}`} onClick={() => toggleRow(key)}>
+            <span aria-hidden="true">{expanded ? '-' : '+'}</span> {fr ? 'Main-d’œuvre' : 'Labor'} {number}
+          </button></th>
+          <td>{packages.find(p => p.id === line.packageId)?.name || '—'}</td>
+          <td>{(fr ? ['Mécanicien', 'Aide', 'Régleur'] : ['Mechanic', 'Helper', 'Adjuster'])[line.role - 126110000] ?? '—'}</td>
+          <td>{line.time === 126110001 ? 'DT' : 'ST'}</td>
+          <td className="custom-grid-number">{line.hours.toLocaleString(fr ? 'fr-CA' : 'en-US')}</td>
+          <td className="custom-grid-number">{line.rate == null ? (fr ? 'À calculer' : 'Not calculated') : money(line.rate)}</td>
+        </tr>
+        <tr id={`custom-detail-${key}`} hidden={!expanded} className="custom-grid-detail"><td colSpan={6}>
+        <fieldset className="custom-cost-line" disabled={readOnly} onInvalidCapture={() =>
+          setCollapsedRows(current => new Set([...current].filter(id => id !== key)))}>
         <legend>{fr ? 'Main-d’œuvre' : 'Labor'} {number}</legend>
         <div className="input-grid">
           <label className="field-label">{fr ? 'Rôle' : 'Role'}
@@ -120,8 +180,13 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
           : line.rate.toLocaleString(fr ? 'fr-CA' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         {!readOnly && <button type="button" className="button tertiary small" onClick={() => setLabor((rows) => rows.filter((r) => r.id !== line.id))}>
           {fr ? 'Supprimer la main-d’œuvre' : 'Remove labor'} {number}</button>}
-      </fieldset>
+      </fieldset></td></tr>
+      </Fragment>
     })}
+      </tbody>
+    </table>
+    {visibleLabor.length === 0 && <p className="custom-grid-empty">{fr ? 'Aucune ligne de main-d’œuvre. Ajoutez une ligne pour commencer.' : 'No labor lines yet. Add a row to get started.'}</p>}
+    </div>
     {pageControls(visibleLabor.length, laborPage, setLaborPage)}
     {!readOnly && enabled && <button type="button" className="button secondary" disabled={!canAdd}
       onClick={() => { setLaborPage(Math.floor(visibleLabor.length / size)); setLabor((rows) => [...rows, {
@@ -129,6 +194,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         role: 126110000, time: 126110000, hours: 0,
       }]) }}>{fr ? 'Ajouter main-d’œuvre' : 'Add labor'}</button>}
     <h3>{fr ? 'Matériaux' : 'Materials'} ({visibleMaterials.length})</h3>
+    {rowControls('material', visibleMaterials.map(line => line.id))}
     {enabled && hasCatalogLines && !capability?.available && <div className="draft-notice" role="status">
       <p>{!catalogState ? (fr ? 'Vérification du catalogue de pièces…' : 'Checking spare-parts catalog…')
         : (fr ? 'Catalogue indisponible : le schéma, le serveur et les données approuvées doivent être déployés. La saisie manuelle existante reste disponible.'
@@ -139,6 +205,13 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         setCapabilityState(undefined); setCatalogAttempt((current) => current + 1)
       }}>{fr ? 'Réessayer' : 'Retry catalog'}</button>}
     </div>}
+    <div className="custom-grid-scroll" role="region" aria-label={fr ? 'Grille de matériaux' : 'Materials grid'} tabIndex={0}>
+    <table className="custom-cost-grid custom-material-grid">
+      <caption>{fr ? 'Détail des matériaux' : 'Material breakdown'}</caption>
+      <thead><tr>{[fr ? 'Ligne' : 'Line', 'Description', fr ? 'Fournisseur' : 'Vendor', fr ? 'Pièce' : 'Part',
+        fr ? 'Quantité' : 'Quantity', fr ? 'Coût unitaire' : 'Unit cost', fr ? 'Total avant taxe/fret' : 'Total before tax/freight'].map(label =>
+        <th scope="col" key={label}>{label}</th>)}</tr></thead>
+      <tbody>
     {visibleMaterials.slice(materialStart, materialStart + size).map((line, index) => {
       const number = materialStart + index + 1
       function update(change: Partial<DraftMaterial>) {
@@ -146,7 +219,26 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       }
       const sourcePackage = packages.find((p) => p.id === line.packageId)
       const packagePriced = line.pricingSource === 'package'
-      return <fieldset className="custom-cost-line" key={line.id} disabled={readOnly}>
+      const key = `material-${line.id}`
+      const expanded = !collapsedRows.has(key)
+      const validTotal = !materialEntryError(line, language) && !!line.description.trim() &&
+        Number.isFinite(line.unitCost) && line.unitCost > 0
+      return <Fragment key={line.id}>
+        <tr className="custom-grid-summary">
+          <th scope="row"><button className="custom-row-toggle" type="button" aria-expanded={expanded}
+            aria-controls={`custom-detail-${key}`} onClick={() => toggleRow(key)}>
+            <span aria-hidden="true">{expanded ? '-' : '+'}</span> {fr ? 'Matériau' : 'Material'} {number}
+          </button></th>
+          <td><span className="custom-grid-description">{line.description || '—'}</span></td>
+          <td>{line.vendor || '—'}</td><td>{line.part || '—'}</td>
+          <td className="custom-grid-number">{line.quantity.toLocaleString(fr ? 'fr-CA' : 'en-US')}</td>
+          <td className="custom-grid-number">{packagePriced ? (fr ? 'Forfait' : 'Package priced') : money(line.unitCost)}</td>
+          <td className="custom-grid-number">{packagePriced ? (fr ? 'Inclus au forfait' : 'Included in package')
+            : validTotal ? money(line.unitCost * line.quantity) : (fr ? 'Incomplet' : 'Incomplete')}</td>
+        </tr>
+        <tr id={`custom-detail-${key}`} hidden={!expanded} className="custom-grid-detail"><td colSpan={7}>
+        <fieldset className="custom-cost-line" disabled={readOnly} onInvalidCapture={() =>
+          setCollapsedRows(current => new Set([...current].filter(id => id !== key)))}>
         <legend>{fr ? 'Matériau' : 'Material'} {number}</legend>
         <div className="input-grid">
           <label className="field-label">{fr ? 'Forfait CSTM' : 'CSTM package'}
@@ -202,8 +294,13 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         </div>}
         {!readOnly && <button type="button" className="button tertiary small" onClick={() => setMaterials((rows) => rows.filter((r) => r.id !== line.id))}>
           {fr ? 'Supprimer le matériau' : 'Remove material'} {number}</button>}
-      </fieldset>
+      </fieldset></td></tr>
+      </Fragment>
     })}
+      </tbody>
+    </table>
+    {visibleMaterials.length === 0 && <p className="custom-grid-empty">{fr ? 'Aucun matériau. Ajoutez une ligne pour commencer.' : 'No material lines yet. Add a row to get started.'}</p>}
+    </div>
     {pageControls(visibleMaterials.length, materialPage, setMaterialPage)}
     {!readOnly && enabled && <button type="button" className="button secondary" disabled={!canAdd}
       onClick={() => { setMaterialPage(Math.floor(visibleMaterials.length / size)); setMaterials((rows) => [...rows, {

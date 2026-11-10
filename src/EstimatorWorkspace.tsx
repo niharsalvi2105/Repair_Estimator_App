@@ -254,7 +254,6 @@ export default function EstimatorWorkspace({
     { id: 'customer-name', step: 1, valid: !!customerName.trim() },
     { id: 'customer-email', step: 1, valid: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim()),
       message: customerEmail.trim() ? language === 'fr' ? 'Saisissez un courriel valide.' : 'Enter a valid email address.' : mandatory },
-    { id: 'opportunity-building', step: 1, valid: !!buildingName.trim(), navigation: true },
     { id: 'equipment-type', step: 1, valid: !!equipmentTypeId, navigation: true },
     { id: 'draft-province', step: 1, valid: !!stateId },
     { id: 'draft-currency', step: 1, valid: !!selectedBranch?._re_currency_value && !!draftReferences },
@@ -588,8 +587,8 @@ export default function EstimatorWorkspace({
                 customerName={customerName} onCustomerName={onCustomerName}
                 errors={errors} loadDefaults={loadCustomerDefaults}
                 building={buildingName} onBuilding={setBuildingName}
-                onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted} />
-              <div className="customer-details-grid">
+                onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted}
+                emailField={
                 <div className="field-label">
                   <label htmlFor="customer-email">{t.customerEmail}<span className="required" aria-hidden="true">*</span></label>
                   <FieldError id="customer-email" message={errors['customer-email']} />
@@ -598,15 +597,15 @@ export default function EstimatorWorkspace({
                     required aria-required="true" readOnly={!!selectedContact?.email.trim()}
                     disabled={!canWork || draftBusy || submitted || !selectedAccount}
                     value={customerEmail} onChange={event => onCustomerEmail(event.target.value)} />
-                </div>
+                </div>}
+                phoneField={
                 <div className="field-label">
                   <label htmlFor="customer-phone">{t.customerPhone}</label>
                   <input id="customer-phone" type="tel" className="text-input" maxLength={50}
                     readOnly={!!selectedContact?.phone.trim()}
                     disabled={!canWork || draftBusy || submitted || !selectedAccount}
                     value={customerPhone} onChange={event => onCustomerPhone(event.target.value)} />
-                </div>
-              </div>
+                </div>} />
               <div className="request-options">
                 {referenceError ? (
                   <div className="error-box" role="alert">
@@ -640,7 +639,6 @@ export default function EstimatorWorkspace({
                   <label htmlFor="salesperson">{t.salesperson}</label>
                   <input id="salesperson" className="text-input" value={draftVersion ? savedSalesperson : session?.displayName ?? ''} readOnly />
                 </div>
-              </div>
               <div className="field-label">
                 <label htmlFor="draft-province">{dt.province}<span className="required">*</span></label>
                 <FieldError id="draft-province" message={errors['draft-province']} />
@@ -656,6 +654,7 @@ export default function EstimatorWorkspace({
                   role={branchId && !stateId ? 'alert' : undefined}>
                   {!branchId || stateId ? t.provinceFromBranch : t.missingProvince}
                 </p>
+              </div>
               </div>
               {(!selectedAccount?.id || !customerName.trim() || !customerEmail.trim()) &&
                 <p id="customer-navigation-help" className="field-help" role="status">
@@ -941,9 +940,17 @@ export default function EstimatorWorkspace({
             {step === 3 && ((activeCustom && hasCustom) || (!hasCustom && (laborLines.length > 0 || materialLines.length > 0))) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
                 requestInputs={requestInputs} updateRequestInput={updateRequestInput}
-                setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd} readOnly={draftBusy}
+                setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd}
+                readOnly={draftBusy || submitted || !canWork || !!exportDelivery}
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
+                  customName: language === 'fr' ? p.re_packagenamefr ?? p.re_packagenameen : p.re_packagenameen,
+                  scope: (language === 'fr' ? p.re_proposalscopefr ?? p.re_proposalscopeen : p.re_proposalscopeen) ?? '',
                   materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))}
+                onPackageDetails={(id, field, value) => setSelectedPackages(current => current.map(p =>
+                  p.re_repairpackageid !== id ? p : { ...p,
+                    [field === 'name'
+                      ? language === 'fr' ? 're_packagenamefr' : 're_packagenameen'
+                      : language === 'fr' ? 're_proposalscopefr' : 're_proposalscopeen']: value }))}
                 activePackageId={activeCustom} currency={currency} />}
             {step === 3 && customValidation && <p role="alert" className="error-box">{customValidation}</p>}
             {step === 3 && customError && <p role="alert" className="error-box">{customError}</p>}
@@ -972,6 +979,8 @@ export default function EstimatorWorkspace({
                 requestInputs={requestInputs} updateRequestInput={updateRequestInput}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={false} readOnly
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
+                  customName: language === 'fr' ? p.re_packagenamefr ?? p.re_packagenameen : p.re_packagenameen,
+                  scope: (language === 'fr' ? p.re_proposalscopefr ?? p.re_proposalscopeen : p.re_proposalscopeen) ?? '',
                   materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))} currency={currency} />}
             <section className="form-card">
               <div className="section-heading">

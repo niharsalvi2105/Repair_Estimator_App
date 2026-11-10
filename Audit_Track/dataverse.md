@@ -2,6 +2,22 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### CSTM description snapshots (2026-11-10, local source)
+
+CSTM editor name/scope inputs map to existing `re_estimatepackage.re_packagenameen` / `re_packagenamefr` (500 characters) and `re_proposalscopeen` / `re_proposalscopefr` (10,000 characters), using the current UI language. Draft Save accepts these optional snapshot overrides only when the trusted master/prior snapshot identifies the package as CSTM; standard/T&M text remains server-derived. Omitted values retain master/prior values, empty text clears the corresponding snapshot, and absent English name/scope serialize as empty strings. Review/clone/export use these existing snapshots; master package records, IDs, numeric pricing, schema, permissions and locking are unchanged. The frontend checks response text retention and keeps edits visible with an error on an incompatible server.
+
+Local evidence: build/type-check/lint, 38 contract/clone/export/documentation tests, nine focused backend cases (including five custom text snapshot/limit cases) and four EN/FR/light/dark mobile mixed-package browser cases passed. Tests use fake persistence/mocked APIs; no deployment, tenant writes or live verification. Coordinated frontend/Drafts deployment is required.
+
+### Optional location snapshot, required email (2026-11-10, local source)
+
+`re_repairestimate.re_buildingname` is optional in the app and Draft API Save/Submit path, retaining its 300-character limit. Empty/whitespace input writes null (also clearing an existing value); Load/Save/Submit responses return `building: ""` when no value is stored. The frontend no longer blocks Next/Save/Calculate/Submit for missing description, and both location input/dropdown omit mandatory markers. Opportunity preset payloads and cloning permit blank location text too. Existing source-pair fetching/autofill, market/Branch scoping and province/state requirements are unchanged.
+
+`re_customeremail` remains required and syntactically validated, maximum 100 characters, using available authoritative Contact email or validated manual snapshot fallback. No new fields, master writes, schema-required-level edits, permissions, formulas, registration/images, locks or export lifecycle changes. Existing exports receive blank location text rather than a fabricated replacement.
+
+Local validation: 11 focused backend cases passed for optional-location persistence/clear/Load/Submit, text limits, presets and required email; 37 selected frontend contract/clone/export/documentation tests and 14 mocked EN/FR browser cases passed. Blank location export retains an empty cell and the contact email. Production build/type-check and changed-source/test lint passed. These fake-pipeline/browser results are not live persistence or schema evidence.
+
+Local source only, not pushed/deployed or tenant-verified. Coordinated Drafts assembly/frontend deployment is needed; tenant metadata, business rules and external downstream automation were not inspected or changed. Historical required-location wording below is superseded by this source behavior.
+
 ### Teammate integration (2026-11-09, local merge)
 
 The merged frontend retains source-exact `account.accountnumber` handling and the existing estimate-only customer/location snapshots while adding the teammate's component-memory read reuse, timings and validation-focus corrections. No new tables, columns, API operations/payloads, formulas, permissions, locks, plugin registrations or export lifecycle changes are introduced by this integration. Branch/Account/market isolation, failed-request eviction, Retry and Save/Reload invalidation remain required. Single/multiple/missing location selection continues to use the existing 300-character `re_repairestimate.re_buildingname`; SAP pair identity and cache revisions remain UI-only.

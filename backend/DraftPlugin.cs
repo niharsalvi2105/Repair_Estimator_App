@@ -395,7 +395,7 @@ namespace RepairEstimator.Drafts
 
             var header = new Entity(Estimate, id);
             header["re_estimatename"] = Required(input.title, 100, "Opportunity Name");
-            header["re_buildingname"] = Required(input.building, 300, "Functional Location Description");
+            header["re_buildingname"] = Optional(input.building?.Trim(), 300);
             header["re_branch"] = branch.ToEntityReference();
             header["re_country"] = country;
             header["re_buildingprovincestate"] = province.ToEntityReference();
@@ -519,6 +519,14 @@ namespace RepairEstimator.Drafts
                     row["re_materialcostperunit"] = master.GetAttributeValue<Money>("re_materialmisctaxcost");
                     row["re_iscustompackage"] = master.GetAttributeValue<bool>("re_iscustompackage");
                     row["re_istimematerial"] = master.GetAttributeValue<bool>("re_istimematerial");
+                }
+                if (row.GetAttributeValue<bool>("re_iscustompackage"))
+                {
+                    var details = input.packages[i];
+                    if (details.nameEn != null) row["re_packagenameen"] = Optional(details.nameEn, 500);
+                    if (details.nameFr != null) row["re_packagenamefr"] = Optional(details.nameFr, 500);
+                    if (details.scopeEn != null) row["re_proposalscopeen"] = Optional(details.scopeEn, 10000);
+                    if (details.scopeFr != null) row["re_proposalscopefr"] = Optional(details.scopeFr, 10000);
                 }
                 if (packagePriced)
                 {
@@ -1065,7 +1073,7 @@ namespace RepairEstimator.Drafts
                 number = row.GetAttributeValue<string>("re_name"), title = row.GetAttributeValue<string>("re_estimatename"),
                 branchId = Id(row, "re_branch"), stateId = Id(row, "re_buildingprovincestate"),
                 equipmentTypeId = Id(row, "re_equipmenttype"), jobTypeId = Id(row, "re_jobtype"),
-                building = row.GetAttributeValue<string>("re_buildingname"), customer = row.GetAttributeValue<string>("re_customername"),
+                building = row.GetAttributeValue<string>("re_buildingname") ?? "", customer = row.GetAttributeValue<string>("re_customername"),
                 email = row.GetAttributeValue<string>("re_customeremail"), phone = row.GetAttributeValue<string>("re_customerphone"),
                 salesperson = row.GetAttributeValue<EntityReference>("re_salesperson")?.Name,
                 pricingState = row.GetAttributeValue<string>("re_calculationversion"),
@@ -1160,8 +1168,8 @@ namespace RepairEstimator.Drafts
                 p.GetAttributeValue<OptionSetValue>("re_packagerole").Value - 126110000))
                 result.packages.Add(new PackageInput {
                     id = Id(p, "re_repairpackage"), number = p.GetAttributeValue<string>("re_packagenumber"),
-                    nameEn = p.GetAttributeValue<string>("re_packagenameen"), nameFr = p.GetAttributeValue<string>("re_packagenamefr"),
-                    scopeEn = p.GetAttributeValue<string>("re_proposalscopeen"), scopeFr = p.GetAttributeValue<string>("re_proposalscopefr"),
+                    nameEn = p.GetAttributeValue<string>("re_packagenameen") ?? "", nameFr = p.GetAttributeValue<string>("re_packagenamefr"),
+                    scopeEn = p.GetAttributeValue<string>("re_proposalscopeen") ?? "", scopeFr = p.GetAttributeValue<string>("re_proposalscopefr"),
                     hours = p.GetAttributeValue<decimal>("re_mechanichoursperunit"),
                     material = p.GetAttributeValue<Money>("re_materialcostperunit").Value,
                     materialBeforeMarkup = p.GetAttributeValue<Money>(PackageMaterialPricing.Cost)?.Value,

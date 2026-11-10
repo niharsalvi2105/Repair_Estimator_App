@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useEffect, useEffectEvent, useState, type ReactNode } from 'react'
 import {
   searchAccountMasters, searchContactMasters, getCustomerDefaults, type AccountMasterOption, type ContactMasterOption,
 } from './data/customerMasterRepository'
@@ -19,13 +19,15 @@ type Props = {
   onBuilding: (value: string) => void
   customerName: string
   onCustomerName: (value: string) => void
+  emailField: ReactNode
+  phoneField: ReactNode
   errors?: Record<string, string | undefined>
   loadDefaults?: (accountId: string, branchId: string, market: Market, refresh?: boolean) => Promise<CustomerDefaults>
 }
 
 export function CustomerMasterSelect({
   market, account, contact, onAccount, onContact, language, disabled, branchId, building, onBuilding,
-  customerName, onCustomerName, errors = {}, loadDefaults = getCustomerDefaults,
+  customerName, onCustomerName, emailField, phoneField, errors = {}, loadDefaults = getCustomerDefaults,
 }: Props) {
   const fr = language === 'fr'
   const [accountQuery, setAccountQuery] = useState('')
@@ -105,7 +107,7 @@ export function CustomerMasterSelect({
   }, [account, contactQuery, manualContact])
 
   return <div className="customer-master-select">
-    <div className="customer-master-field">
+    <div className="customer-master-field customer-account-fields">
       <div className="input-grid">
       <label className="field-label" htmlFor="account-master-search">
         <span>{fr ? 'Numéro de compte' : 'Account number'}<span className="required" aria-hidden="true">*</span></span>
@@ -226,15 +228,17 @@ export function CustomerMasterSelect({
         </ul>
       </div>}
     </div>
+    {emailField}
+    {phoneField}
     <div className="customer-master-field">
       <label className="field-label" htmlFor={locationDropdown ? 'account-location-description' : 'opportunity-building'}>
-        <span>{fr ? 'Description de l’emplacement fonctionnel' : 'Functional Location Description'}<span className="required">*</span></span>
+        <span>{fr ? 'Description de l’emplacement fonctionnel' : 'Functional Location Description'}</span>
         <FieldError id="opportunity-building" message={errors['opportunity-building']} />
-        {!locationDropdown && <input id="opportunity-building" className="text-input" required aria-required="true" maxLength={300}
+        {!locationDropdown && <input id="opportunity-building" className="text-input" maxLength={300}
           aria-invalid={!!errors['opportunity-building']} aria-describedby={errors['opportunity-building'] ? 'opportunity-building-error' : undefined}
           disabled={disabled} value={building}
           onChange={event => { setCustomLocation(true); setSelectedLocationKey(''); onBuilding(event.target.value) }} />}
-        {locationDropdown && <select id="account-location-description" className="text-input" disabled={disabled} required aria-required="true"
+        {locationDropdown && <select id="account-location-description" className="text-input" disabled={disabled}
           aria-invalid={!!errors['opportunity-building']} aria-describedby={errors['opportunity-building'] ? 'opportunity-building-error' : undefined}
           value={selectedLocation ? JSON.stringify([selectedLocation.number, selectedLocation.name]) : ''}
           onChange={event => {

@@ -54,8 +54,12 @@ export async function revalidateClone(record: DraftRecord, transport: {
   const packages = record.packages.map(row => {
     const current = catalog.find(item => item.re_repairpackageid === row.id)
     if (!current) throw new Error(`Package ${row.number} is no longer available for this branch.`)
-    return { id: current.re_repairpackageid, number: current.re_packagenumber, nameEn: current.re_packagenameen,
-      nameFr: current.re_packagenamefr, scopeEn: current.re_proposalscopeen ?? '', scopeFr: current.re_proposalscopefr,
+    const preserveCustom = row.isCustom && current.re_iscustompackage
+    return { id: current.re_repairpackageid, number: current.re_packagenumber,
+      nameEn: preserveCustom ? row.nameEn : current.re_packagenameen,
+      nameFr: preserveCustom ? row.nameFr : current.re_packagenamefr,
+      scopeEn: preserveCustom ? row.scopeEn : current.re_proposalscopeen ?? '',
+      scopeFr: preserveCustom ? row.scopeFr : current.re_proposalscopefr,
       hours: current.re_mechanichours, material: current.re_materialmisctaxcost,
       materialBeforeMarkup: current.re_materialbeforemarkup,
       isCustom: current.re_iscustompackage, isTimeMaterial: current.re_istimematerial,

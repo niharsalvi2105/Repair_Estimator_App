@@ -857,7 +857,7 @@ function App() {
     save: 'Enregistrer le brouillon', saving: 'Enregistrement…', saved: 'Brouillon enregistré',
     open: 'Ouvrir le brouillon', working: 'Opération en cours…', new: 'Nouveau brouillon',
     warning: 'Des modifications ne sont pas enregistrées. Les abandonner ?',
-    required: 'Renseignez le nom de l’opportunité, le compte, le contact, le courriel du contact, la description de l’emplacement fonctionnel, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
+    required: 'Renseignez le nom de l’opportunité, le compte, le contact, le courriel du contact, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
     note: 'Enregistrez un brouillon ou soumettez le devis depuis la vérification finale. La soumission valide les prix et verrouille les modifications, sans envoyer de courriel.',
     error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
     reload: 'Recharger le brouillon', locked: 'La succursale et le marché sont fixes pour un brouillon enregistré.',
@@ -866,12 +866,12 @@ function App() {
     save: 'Save draft', saving: 'Saving…', saved: 'Draft saved',
     open: 'Open draft', working: 'Operation in progress…', new: 'New draft',
     warning: 'There are unsaved changes. Discard them?',
-    required: 'Complete opportunity name, Account, Contact, Contact email, functional location description, province, equipment, packages, proposal language, time category, use tax and freight.',
+    required: 'Complete opportunity name, Account, Contact, Contact email, province, equipment, packages, proposal language, time category, use tax and freight.',
     note: 'Save a draft or submit from Review. Submission validates pricing and locks editing; no email is sent.',
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
   }
-  const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && buildingName.trim() && stateId
+  const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && stateId
     && selectedAccount?.id && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())
     && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
     && selectedPackages.every((item) => validPackageEquipment(item, selectedEquipment))
@@ -988,6 +988,7 @@ function App() {
         equipment: selectedEquipment.map((item) => ({ ...item, id: item.matched ? item.id : '' })),
         packages: selectedPackages.map((item) => ({ id: item.re_repairpackageid,
           number: item.re_packagenumber, nameEn: item.re_packagenameen, scopeEn: item.re_proposalscopeen ?? '',
+          nameFr: item.re_packagenamefr, scopeFr: item.re_proposalscopefr,
           hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial,
           equipmentNumbers: item.equipmentNumbers ?? null, allEquipment: item.equipmentNumbers == null })),
         laborLines, materialLines,
@@ -1007,10 +1008,18 @@ function App() {
           : saved.equipmentNumbers == null || saved.equipmentNumbers.length !== item.equipmentNumbers.length ||
             item.equipmentNumbers.some((number) => !saved.equipmentNumbers?.includes(number))
       })
-      if (missingDetails || missingAssignments) {
+      const missingCustomDescriptions = input.packages.filter(item => item.isCustom).some(item => {
+        const saved = record.packages.find(row => row.id === item.id)
+        return !saved || (['nameEn', 'nameFr', 'scopeEn', 'scopeFr'] as const).some(key =>
+          (item[key] ?? '') !== (saved[key] ?? ''))
+      })
+      if (missingDetails || missingAssignments || missingCustomDescriptions) {
         setDraftVersion(record.version); setDraftNumber(record.number || '')
         setSubmitted(record.status === 126110002)
         setExportDelivery(record.exportDelivery ?? undefined)
+        if (missingCustomDescriptions) throw new Error(language === 'fr'
+          ? 'Le serveur n’a pas conservé le nom ou la portée du forfait personnalisé. Vos textes restent à l’écran. Contactez votre administrateur pour déployer le plug-in de brouillon mis à jour.'
+          : 'The server did not retain the custom package name or scope. Your text remains on screen. Contact your administrator to deploy the updated draft plugin.')
         if (missingAssignments) throw new Error(language === 'fr'
           ? 'Le serveur n’a pas conservé les affectations d’équipements des forfaits. Vos sélections restent à l’écran. La tarification enregistrée ne correspond pas à ces sélections : contactez votre administrateur pour déployer les deux plug-ins mis à jour.'
           : 'The server did not retain package equipment assignments. Your selections remain on screen. Saved pricing does not match these selections: contact your administrator to deploy both updated plugins.')
