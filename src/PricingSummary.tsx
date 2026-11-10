@@ -36,23 +36,24 @@ type Props = {
   calculating: boolean
   canCalculate: boolean
   calculationError?: string
+  loadPricing?: (id: string, version: string, refresh?: boolean) => Promise<PricingRecord>
 }
 
 export function PricingSummary({ id, version, dirty, language, currencies, submitted = false,
-  calculate, calculating, canCalculate, calculationError }: Props) {
+  calculate, calculating, canCalculate, calculationError, loadPricing = getSavedPricing }: Props) {
   const [result, setResult] = useState<{ id: string; version: string; row?: PricingRecord; error?: string }>()
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     if (!version) return
     let active = true
-    getSavedPricing(id, version).then(
+    loadPricing(id, version, retry > 0).then(
       (row) => { if (active) setResult({ id, version, row }) },
       (reason: unknown) => {
         if (active) setResult({ id, version, error: reason instanceof Error ? reason.message : String(reason) })
       },
     )
     return () => { active = false }
-  }, [id, version, retry])
+  }, [id, version, retry, loadPricing])
   const fr = language === 'fr'
   const t = fr ? {
     title: 'Résumé des prix et du CMII', subtitle: 'Résultats enregistrés du calcul Dataverse. Aucun calcul dans le navigateur.',

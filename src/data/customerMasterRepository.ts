@@ -4,6 +4,7 @@ import {
   parseAccountMasterOptions, parseContactMasterOptions, parseCustomerDefaults, type AccountMasterOption, type ContactMasterOption,
 } from './customerMasterContract'
 import type { Market } from './estimateQuery'
+import { measureOperation } from './performance'
 
 export { parseAccountMasterOptions, parseContactMasterOptions }
 export type { AccountMasterOption, ContactMasterOption }
@@ -17,15 +18,16 @@ async function search(input: Record<string, string | number>) {
 }
 
 export async function searchAccountMasters(market: Market, text: string): Promise<AccountMasterOption[]> {
-  const value = await search({ mode: 'accountsearch', market, search: text })
-  return parseAccountMasterOptions(value)
+  return measureOperation('account-search', async () =>
+    parseAccountMasterOptions(await search({ mode: 'accountsearch', market, search: text })))
 }
 
 export async function searchContactMasters(accountId: string, text: string): Promise<ContactMasterOption[]> {
-  const value = await search({ mode: 'contactsearch', accountId, search: text })
-  return parseContactMasterOptions(value)
+  return measureOperation('contact-search', async () =>
+    parseContactMasterOptions(await search({ mode: 'contactsearch', accountId, search: text })))
 }
 
 export async function getCustomerDefaults(accountId: string, branchId: string, market: Market) {
-  return parseCustomerDefaults(await search({ mode: 'contactsearch', accountId, branchId, market, search: '' }))
+  return measureOperation('customer-defaults', async () =>
+    parseCustomerDefaults(await search({ mode: 'contactsearch', accountId, branchId, market, search: '' })))
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction, type RefObject } from 'react'
 import type { Branch, DraftReferences, Equipment, RepairPackage, ReferenceOption } from './data/repairEstimatorRepository'
 import type { AppSession } from './data/sessionRepository'
 import type { Market } from './data/estimateQuery'
@@ -8,7 +8,8 @@ import { PricingSummary } from './PricingSummary'
 import { BranchSelect } from './BranchSelect'
 import { CustomerMasterSelect } from './CustomerMasterSelect'
 import { packageEquipmentNumbers, validPackageEquipment } from './data/packageEquipment'
-import type { AccountMasterOption, ContactMasterOption } from './data/customerMasterRepository'
+import { getCustomerDefaults, type AccountMasterOption, type ContactMasterOption } from './data/customerMasterRepository'
+import type { CustomerDefaults } from './data/customerMasterContract'
 import { CustomCostLines } from './CustomCostLines'
 import { PackageSelect } from './PackageSelect'
 import { EquipmentSelect } from './EquipmentSelect'
@@ -24,6 +25,8 @@ import { customCostsError, konePricingConflict } from './data/requestValidation'
 import { PackageCostDetails } from './PackageCostDetails'
 import { calculateAdditionalCost, calculatePackageCost, type CostRate } from './data/packageCosts'
 import { FieldError } from './FieldError'
+import { getSavedPricing } from './data/pricingRepository'
+import type { PricingRecord } from './data/pricingContract'
 
 type Language = 'en' | 'fr'
 type Props = {
@@ -38,6 +41,7 @@ type Props = {
   onSaveOpportunity: () => void
   draftBusy: boolean
   draftError: string
+  draftReadRevision: number
   draftAttempt: number
   canStart: boolean
   openDraft: (id: string) => Promise<void>
@@ -118,7 +122,7 @@ type Props = {
 
 export default function EstimatorWorkspace({
   requestSection, t, draftVersion, draftDirty, dt,
-  draftNumber, newDraft, onSaveOpportunity, draftBusy, draftError, draftAttempt, canStart, openDraft,
+  draftNumber, newDraft, onSaveOpportunity, draftBusy, draftError, draftAttempt, draftReadRevision, canStart, openDraft,
   draftId, selectedAccount, selectedContact, onSelectAccount, onSelectContact,
   onCustomerName, onCustomerEmail, onCustomerPhone,
   canWork, draftComplete, saveDraft, submitted, exportDelivery, step,
@@ -143,25 +147,69 @@ export default function EstimatorWorkspace({
   const [rateAttempt, setRateAttempt] = useState(0)
   const [equipmentDetails, setEquipmentDetails] = useState<{ branchId: string; records?: Equipment[]; error?: string }>()
   const [equipmentDetailsAttempt, setEquipmentDetailsAttempt] = useState(0)
+  const equipmentCache = useRef<{ key: string; rows: Map<string, Promise<Equipment | undefined>> }>({ key: '', rows: new Map() })
+  const pricingCache = useRef<{ id: string; version: string; revision: number; request: Promise<PricingRecord> } | null>(null)
+  const customerDefaultsCache = useRef<{ key: string; request: Promise<CustomerDefaults> } | null>(null)
+  const loadCustomerDefaults = useCallback((accountId: string, branch: string, selectedMarket: Market, refresh = false) => {
+    const key = `${accountId}:${branch}:${selectedMarket}:${draftReadRevision}`
+    if (!refresh && customerDefaultsCache.current?.key === key) return customerDefaultsCache.current.request
+    const request = getCustomerDefaults(accountId, branch, selectedMarket)
+    customerDefaultsCache.current = { key, request }
+    void request.catch(() => {
+      if (customerDefaultsCache.current?.request === request) customerDefaultsCache.current = null
+    })
+    return request
+  }, [draftReadRevision])
   useEffect(() => {
+    if (!selectedAccount || !branchId) customerDefaultsCache.current = null
+  }, [selectedAccount, branchId])
+  const loadPricing = useCallback((id: string, version: string, refresh = false) => {
+    const cached = pricingCache.current
+    if (!refresh && cached?.id === id && cached.version === version && cached.revision === draftReadRevision) return cached.request
+    const request = getSavedPricing(id, version)
+    pricingCache.current = { id, version, revision: draftReadRevision, request }
+    void request.catch(() => {
+      if (pricingCache.current?.request === request) pricingCache.current = null
+    })
+    return request
+  }, [draftReadRevision])
+  useEffect(() => {
+    const key = `${branchId}:${draftReadRevision}:${equipmentDetailsAttempt}`
+    if (equipmentCache.current.key !== key) equipmentCache.current = { key, rows: new Map() }
     if (!branchId || !selectedEquipment.some(item => item.matched)) return
     let active = true
     async function loadDetails() {
       try {
         const numbers = selectedEquipment.filter(item => item.matched).map(item => item.number)
-        const records: Equipment[] = []
-        for (let offset = 0; offset < numbers.length; offset += EQUIPMENT_LOOKUP_BATCH_SIZE) {
-          records.push(...await findEquipmentByNumbers(branchId, numbers.slice(offset, offset + EQUIPMENT_LOOKUP_BATCH_SIZE)))
+        const cache = equipmentCache.current.rows
+        const selectedRequests = numbers.flatMap(number => {
+          const request = cache.get(number)
+          return request ? [request] : []
+        })
+        const missing = numbers.filter(number => !cache.has(number))
+        for (let offset = 0; offset < missing.length; offset += EQUIPMENT_LOOKUP_BATCH_SIZE) {
+          const batch = missing.slice(offset, offset + EQUIPMENT_LOOKUP_BATCH_SIZE)
+          const request = findEquipmentByNumbers(branchId, batch)
+          for (const number of batch) {
+            const detail = request.then(rows => rows.find(row => row.re_equipment === number))
+            cache.set(number, detail)
+            selectedRequests.push(detail)
+            void detail.catch(() => {
+              if (cache.get(number) === detail) cache.delete(number)
+            })
+          }
+          await request
           if (!active) return
         }
-        setEquipmentDetails({ branchId, records })
+        const records = await Promise.all(selectedRequests)
+        if (active) setEquipmentDetails({ branchId, records: records.filter((row): row is Equipment => row != null) })
       } catch (reason) {
         if (active) setEquipmentDetails({ branchId, error: reason instanceof Error ? reason.message : String(reason) })
       }
     }
     void loadDetails()
     return () => { active = false }
-  }, [branchId, selectedEquipment, equipmentDetailsAttempt])
+  }, [branchId, draftReadRevision, selectedEquipment, equipmentDetailsAttempt])
   const equipmentDetailsById = new Map([
     ...(equipmentDetails?.branchId === branchId ? equipmentDetails.records ?? [] : []),
     ...equipmentResults,
@@ -538,7 +586,7 @@ export default function EstimatorWorkspace({
               <CustomerMasterSelect key={`${market}:${branchId}:${selectedAccount?.id ?? 'no-account'}`}
                 market={market} branchId={branchId} account={selectedAccount} contact={selectedContact}
                 customerName={customerName} onCustomerName={onCustomerName}
-                errors={errors}
+                errors={errors} loadDefaults={loadCustomerDefaults}
                 building={buildingName} onBuilding={setBuildingName}
                 onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted} />
               <div className="customer-details-grid">
@@ -904,7 +952,7 @@ export default function EstimatorWorkspace({
             {step === 4 && localPreview}
             {step === 4 && <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
               language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted}
-              calculate={saveDraft} calculating={draftBusy} calculationError={draftError}
+              calculate={saveDraft} calculating={draftBusy} calculationError={draftError} loadPricing={loadPricing}
               canCalculate={canWork && draftComplete} />}
           </div>
         </div>
@@ -917,7 +965,7 @@ export default function EstimatorWorkspace({
             {localPreview}
             <PricingSummary id={draftId} version={draftVersion} dirty={draftDirty}
               language={language} currencies={draftReferences?.currencies ?? []} submitted={submitted}
-              calculate={saveDraft} calculating={draftBusy} calculationError={draftError}
+              calculate={saveDraft} calculating={draftBusy} calculationError={draftError} loadPricing={loadPricing}
               canCalculate={canWork && draftComplete} />
             {(hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}

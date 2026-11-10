@@ -676,6 +676,24 @@
   position: static;
 }
 
+.customer-contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.customer-contact-actions > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.customer-contact-actions > .button {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
 .field-error {
   color: #b42318;
   font-size: 0.875rem;

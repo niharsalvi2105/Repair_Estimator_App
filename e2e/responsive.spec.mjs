@@ -65,6 +65,7 @@ async function mockData(page, language, theme, state = 'records') {
       static async get(id, options) {
         window.__pricingReads ??= [];
         window.__pricingReads.push({id,options});
+        if (window.__pricingGate) await window.__pricingGate;
         if (window.__pricingDelay) await new Promise((resolve) => setTimeout(resolve, window.__pricingDelay));
         if (window.__pricingError) return {success:false,error:{message:window.__pricingError}};
         return {success:true,data:{
@@ -125,6 +126,7 @@ async function mockData(page, language, theme, state = 'records') {
         if (input.mode === 'accountsearch' || input.mode === 'contactsearch') {
           window.__masterSearchCalls ??= [];
           window.__masterSearchCalls.push(structuredClone(input));
+          if (input.mode === 'contactsearch' && !input.search && window.__defaultsGate) await window.__defaultsGate;
           if (window.__masterSearchError) throw new Error(window.__masterSearchError);
           if (window.__masterSearchDelay) await new Promise(resolve => setTimeout(resolve, window.__masterSearchDelay));
           const account = {id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',number:'00042',name:'Acme Corporation',market:126110000};
@@ -262,6 +264,11 @@ async function mockData(page, language, theme, state = 'records') {
       export async function findEquipmentByNumbers(branchId, numbers) {
         window.__equipmentLookups ??= [];
         window.__equipmentLookups.push({ branchId, numbers });
+        const gate = window.__equipmentLookupGates?.[numbers[0]];
+        if (gate) {
+          const error = await gate;
+          if (error) throw new Error(error);
+        }
         if (window.__equipmentLookupError) throw new Error(window.__equipmentLookupError);
         if (window.__equipmentLookupDelay) await new Promise(resolve => setTimeout(resolve, window.__equipmentLookupDelay));
         if (window.__equipmentResults) return window.__equipmentResults.filter((item) => numbers.includes(item.re_equipment));
@@ -790,8 +797,11 @@ for (const [format, text] of [
     }
     await expect(cards.locator('.unbound-tag')).toHaveCount(0)
     await expect(page.locator('#equipment-search')).toHaveValue('')
+    const matchingBatches = Math.ceil(numbers.length / 50)
+    await expect.poll(() => page.evaluate(() => window.__equipmentLookups.length)).toBe(matchingBatches * 2)
     const lookups = await page.evaluate(() => window.__equipmentLookups)
-    expect(lookups.flatMap((lookup) => lookup.numbers)).toEqual(numbers)
+    expect(lookups.slice(0, matchingBatches).flatMap((lookup) => lookup.numbers)).toEqual(numbers)
+    expect(lookups.slice(matchingBatches).flatMap((lookup) => lookup.numbers)).toEqual(numbers)
     expect(lookups.every((lookup) => lookup.branchId === 'test-branch' && lookup.numbers.length <= 50)).toBe(true)
   })
 }
@@ -1103,6 +1113,327 @@ async function pickEquipmentAndPackage(page) {
   await page.locator('#package-options button').first().click()
   await page.locator('#package-search').press('Escape')
 }
+
+for (const language of ['en', 'fr']) test(`Customer defaults reuse prevents repeated scans and records data-free timings (${language})`, async ({ page }) => {
+  await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
+  const countDefaults = () => page.evaluate(() =>
+    window.__masterSearchCalls.filter(call => call.mode === 'contactsearch' && !call.search).length)
+  expect(await countDefaults()).toBe(1)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  await next(page)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('#customer-name')).toHaveValue('Draft customer')
+  expect(await countDefaults()).toBe(1)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  await expect.poll(countDefaults).toBe(2)
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await expect.poll(countDefaults).toBe(3)
+  await expect.poll(() => page.evaluate(() =>
+    performance.getEntriesByName('repair-estimator:customer-defaults', 'measure').length)).toBe(3)
+  const timings = await page.evaluate(() => performance.getEntriesByType('measure')
+    .filter(entry => entry.name.startsWith('repair-estimator:'))
+    .map(entry => ({ name: entry.name, duration: entry.duration, detail: entry.detail })))
+  for (const operation of ['session-startup', 'account-search', 'customer-defaults', 'power-apps-request']) {
+    expect(timings.filter(entry => entry.name === `repair-estimator:${operation}`).length, operation).toBeGreaterThan(0)
+  }
+  expect(timings.every(entry => entry.duration >= 0 &&
+    JSON.stringify(entry.detail) === '{"outcome":"completed"}')).toBe(true)
+  expect(timings.filter(entry => entry.name === 'repair-estimator:customer-defaults')).toHaveLength(3)
+})
+
+test('Customer defaults share in-flight reads and retry a failed refresh', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__defaultsGate = new Promise(resolve => { window.__releaseDefaults = resolve })
+  })
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  const countDefaults = () => page.evaluate(() =>
+    window.__masterSearchCalls.filter(call => call.mode === 'contactsearch' && !call.search).length)
+  await expect.poll(countDefaults).toBe(2)
+  await next(page)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.customer-defaults-state')).toContainText('Fetching linked customer data')
+  expect(await countDefaults()).toBe(2)
+  await page.evaluate(() => {
+    window.__masterSearchError = 'Defaults access denied'
+    window.__releaseDefaults()
+  })
+  const error = page.locator('.customer-defaults-state .error-box')
+  await expect(error).toContainText('Defaults access denied')
+  await page.evaluate(() => { window.__masterSearchError = '' })
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  expect(await countDefaults()).toBe(3)
+  expect(await page.evaluate(() => performance.getEntriesByName('repair-estimator:customer-defaults', 'measure')
+    .map(entry => entry.detail.outcome))).toEqual(['completed', 'failed', 'completed'])
+})
+
+test('Changing Account discards previous customer defaults', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__accountMasterRecords = [{
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', number: '00099', name: 'Second Account', market: 126110000,
+    }]
+    window.__contactMasterRecords = [{
+      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Second contact',
+      email: 'second@example.invalid', phone: '', accountId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    }]
+  })
+  await page.getByRole('button', { name: 'Change account', exact: true }).click()
+  await page.locator('#account-master-search').fill('00099')
+  await page.locator('#account-master-options button').first().click()
+  await expect(page.locator('#customer-name')).toHaveValue('Second contact')
+  const defaults = await page.evaluate(() =>
+    window.__masterSearchCalls.filter(call => call.mode === 'contactsearch' && !call.search))
+  expect(defaults.map(call => call.accountId)).toEqual([
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  ])
+})
+
+test('Equipment adapter timings preserve scoped queries and explicit service errors', async ({ page }) => {
+  await mockData(page, 'en', 'light')
+  await page.route('**/src/generated/services/Re_equipmentsService.ts*', route => route.fulfill({
+    contentType: 'application/javascript',
+    body: `export class Re_equipmentsService {
+      static async getAll(options) {
+        (window.__equipmentTimingQueries ??= []).push(options);
+        if (window.__equipmentTimingError) return {success:false,error:{message:'Equipment access denied'}};
+        return {success:true,data:[{re_equipmentid:'unit',re_equipment:'TEST123'}]};
+      }
+    }`,
+  }))
+  await page.goto('/')
+  await page.unroute('**/src/data/repairEstimatorRepository.ts*')
+  const result = await page.evaluate(async () => {
+    const { searchEquipment, findEquipmentByNumbers } = await import('/src/data/repairEstimatorRepository.ts?timing-test')
+    performance.clearMeasures('repair-estimator:equipment-search')
+    performance.clearMeasures('repair-estimator:equipment-details')
+    performance.clearMeasures('repair-estimator:power-apps-request')
+    const branch = '11111111-1111-1111-1111-111111111111'
+    const search = await searchEquipment(branch, "TEST'123")
+    const details = await findEquipmentByNumbers(branch, ['TEST123'])
+    window.__equipmentTimingError = true
+    let error
+    try { await searchEquipment(branch, 'TEST') }
+    catch (reason) { error = reason.message }
+    return {
+      search, details, error, queries: window.__equipmentTimingQueries,
+      timings: performance.getEntriesByType('measure').filter(entry => entry.name.startsWith('repair-estimator:'))
+        .map(entry => ({ name: entry.name, duration: entry.duration, detail: entry.detail })),
+    }
+  })
+  expect(result.search).toEqual(result.details)
+  expect(result.error).toBe('Equipment access denied')
+  expect(result.queries[0].filter).toContain("startswith(re_equipment,'TEST''123')")
+  expect(result.queries[0].top).toBe(20)
+  expect(result.queries[1].filter).toContain("re_equipment eq 'TEST123'")
+  expect(result.queries.every(query => query.filter.includes(
+    'statecode eq 0 and _re_branch_value eq 11111111-1111-1111-1111-111111111111'))).toBe(true)
+  expect(result.timings.filter(entry => entry.name === 'repair-estimator:equipment-search')
+    .map(entry => entry.detail.outcome)).toEqual(['completed', 'failed'])
+  expect(result.timings.filter(entry => entry.name === 'repair-estimator:equipment-details')).toHaveLength(1)
+  expect(result.timings.filter(entry => entry.name === 'repair-estimator:power-apps-request')).toHaveLength(3)
+})
+
+for (const width of [320, 768, 1366]) {
+  for (const language of ['en', 'fr']) test(`Change Contact spacing follows text width at ${width}px ${language}`, async ({ page }) => {
+    await completeDraft(page, { width, height: 900 }, language)
+    for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+    const row = page.locator('.customer-contact-actions')
+    const checkSpacing = async () => {
+      const text = await row.locator('span').boundingBox()
+      const button = await row.getByRole('button').boundingBox()
+      const bounds = await row.boundingBox()
+      const sameLine = button.x >= text.x + text.width + 15
+      expect(sameLine || button.y >= text.y + text.height + 7).toBe(true)
+      expect(button.x + button.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1)
+      expect(button.height).toBeGreaterThanOrEqual(44)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      return sameLine
+    }
+    if (width === 1366) expect(await checkSpacing()).toBe(true)
+    else await checkSpacing()
+    await page.evaluate(() => {
+      window.__contactMasterRecords = [{
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Long contact',
+        email: 'longcontact'.repeat(7) + '@example.invalid', phone: '12345678901234567890123456789012345678901234567890',
+        accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      }]
+    })
+    await row.getByRole('button').click()
+    await page.locator('#customer-name').fill('Long')
+    await page.locator('#customer-name-options button').first().click()
+    await expect(row.locator('span')).toContainText('longcontact')
+    expect(await checkSpacing()).toBe(false)
+    await row.getByRole('button').click()
+    await expect(page.locator('#customer-name')).not.toHaveAttribute('readonly')
+  })
+}
+
+test('Equipment details fetch only added units and reuse removed units until reload', async ({ page }) => {
+  await completeDraft(page)
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups?.length)).toBe(1)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__equipmentResults = ['TEST123', 'TEST456'].map(number => ({
+      re_equipmentid: number === 'TEST123' ? 'test-equipment' : 'second-equipment',
+      re_equipment: number, re_equipmentname: `Catalog ${number}`, re_oem: 'OEM', re_equipmentage: 20,
+    }))
+  })
+  await page.locator('#equipment-search').fill('TEST456')
+  await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups?.length)).toBe(2)
+  expect(await page.evaluate(() => window.__equipmentLookups.map(call => call.numbers))).toEqual([['TEST123'], ['TEST456']])
+  await page.getByRole('button', { name: 'Remove TEST456', exact: true }).click()
+  await page.locator('#equipment-search').fill('')
+  await page.locator('#equipment-search').focus()
+  await page.locator('#equipment-search').fill('TEST456')
+  await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+  await next(page)
+  expect(await page.evaluate(() => window.__equipmentLookups.length)).toBe(2)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups?.length)).toBe(3)
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups?.length)).toBe(4)
+})
+
+test('Pricing reads are reused across steps and invalidated by save and explicit reload', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  await next(page)
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+  await page.locator('.draft-save-action').click()
+  await expect.poll(() => page.evaluate(() => window.__pricingReads.length)).toBe(2)
+  await page.locator('.draft-secondary-actions button').nth(1).click()
+  for (let i = 0; i < 3; i++) await next(page)
+  await expect.poll(() => page.evaluate(() => window.__pricingReads.length)).toBe(3)
+})
+
+test('Failed pricing reads can retry after navigating between Pricing and Review', async ({ page }) => {
+  await completeDraft(page)
+  await page.evaluate(() => { window.__pricingError = 'Pricing read denied' })
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.pricing-summary')).toContainText('Pricing read denied')
+  await page.evaluate(() => { window.__pricingError = '' })
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(2)
+})
+
+test('Pricing navigation shares an in-flight saved-pricing request', async ({ page }) => {
+  await completeDraft(page)
+  await page.evaluate(() => {
+    window.__pricingGate = new Promise(resolve => { window.__releasePricing = resolve })
+  })
+  await page.locator('.draft-save-action').click()
+  await expect.poll(() => page.evaluate(() => window.__pricingReads?.length)).toBe(1)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.pricing-summary')).toContainText('Loading saved pricing')
+  await next(page)
+  await expect(page.locator('.pricing-summary')).toContainText('Loading saved pricing')
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+  await page.evaluate(() => { window.__releasePricing() })
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(1)
+})
+
+test('Equipment details invalidate when Branch changes with no selected units', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__branches = ['test-branch', 'second-branch'].map((id, index) => ({
+      re_branchid: id, re_branchname: `Branch ${index}`, re_branchnumber: index ? '021' : '020',
+      re_market: 126110000, _re_country_value: 'test-country',
+      _re_currency_value: 'test-currency', _re_stateprovince_value: 'test-state',
+    }))
+  })
+  await completeDraft(page)
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups.length)).toBe(1)
+  for (let i = 0; i < 4; i++) await page.locator('.form-footer > button').click()
+  page.once('dialog', dialog => dialog.accept())
+  for (const number of ['021', '020']) {
+    await page.locator('#branch-select').fill(number)
+    await page.locator('#branch-select').press('ArrowDown')
+    await page.locator('#branch-select').press('Enter')
+  }
+  await page.locator('#opportunity-building').fill('Branch return test')
+  await next(page)
+  await page.locator('#equipment-search').fill('TEST123')
+  await page.locator('#equipment-options button').first().click()
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups.length)).toBe(2)
+  expect(await page.evaluate(() => window.__equipmentLookups.map(call => call.branchId)))
+    .toEqual(['test-branch', 'test-branch'])
+})
+
+test('An overlapping equipment detail failure remains visible until Retry', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__equipmentResults = ['TEST456', 'TEST789'].map(number => ({
+      re_equipmentid: number, re_equipment: number, re_equipmentname: `Unit ${number}`,
+    }))
+    window.__equipmentLookupGates = {}
+    window.__releaseEquipment = {}
+    for (const number of ['TEST456', 'TEST789']) {
+      window.__equipmentLookupGates[number] = new Promise(resolve => {
+        window.__releaseEquipment[number] = resolve
+      })
+    }
+  })
+  for (const number of ['TEST456', 'TEST789']) {
+    await page.locator('#equipment-search').fill(number)
+    await page.locator('#equipment-options button').filter({ hasText: number }).first().click()
+  }
+  await expect.poll(() => page.evaluate(() => window.__equipmentLookups.length)).toBe(3)
+  await page.evaluate(() => { window.__releaseEquipment.TEST456('First unit detail failed') })
+  await page.evaluate(() => { window.__releaseEquipment.TEST789() })
+  const error = page.locator('.selected-list .error-box')
+  await expect(error).toContainText('First unit detail failed')
+  await page.evaluate(() => { window.__equipmentLookupGates = {} })
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  expect(await page.evaluate(() => window.__equipmentLookups.at(-1).numbers))
+    .toEqual(['TEST123', 'TEST456', 'TEST789'])
+})
+
+test('Equipment detail retry clears failed reads and reloads selected units', async ({ page }) => {
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.evaluate(() => {
+    window.__equipmentLookupError = 'Detail access denied'
+    window.__equipmentResults = [{
+      re_equipmentid: 'second-equipment', re_equipment: 'TEST456', re_equipmentname: 'Second unit',
+    }]
+  })
+  await page.locator('#equipment-search').fill('TEST456')
+  await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+  const error = page.locator('.selected-list .error-box')
+  await expect(error).toContainText('Detail access denied')
+  await page.evaluate(() => { window.__equipmentLookupError = '' })
+  await error.getByRole('button', { name: 'Retry' }).click()
+  await expect(error).toHaveCount(0)
+  expect(await page.evaluate(() => window.__equipmentLookups.at(-1).numbers)).toEqual(['TEST123', 'TEST456'])
+})
+
+test('Pricing retry reloads failed requests instead of retaining an error', async ({ page }) => {
+  await completeDraft(page)
+  await page.evaluate(() => { window.__pricingError = 'Temporary read failure' })
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.pricing-summary')).toContainText('Temporary read failure')
+  await page.evaluate(() => { window.__pricingError = '' })
+  await page.locator('.pricing-summary').getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.locator('.pricing-kpi')).toHaveCount(4)
+  expect(await page.evaluate(() => window.__pricingReads.length)).toBe(2)
+})
 
 async function completeDraft(page, viewport = { width: 1366, height: 768 }, language = 'en', theme = 'light') {
   await page.setViewportSize(viewport)
@@ -2772,6 +3103,8 @@ test('Save and submit return to missing fields on earlier steps with inline mess
 for (const language of ['en', 'fr']) test(`Submit focuses the missing billing plan (${language})`, async ({ page }) => {
   await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
   await page.locator('.form-footer > button').click()
+  await expect(page.locator('label[for="request-re_billingplan"] .required')).toHaveText('*')
+  await expect(page.locator('#request-re_billingplan')).toHaveAttribute('aria-required', 'true')
   await page.locator('#request-re_billingplan').selectOption('')
   await next(page)
   await page.locator('.footer-actions .button').click()
@@ -3920,6 +4253,18 @@ test('draft adapter uses generated action service and validates its response', a
   }, record)
   expect(result.input).toEqual({ mode: 'load', id: record.id })
   expect(result.loaded).toEqual(record)
+  for (const mode of ['save', 'submit']) {
+    await page.evaluate(async (input) => {
+      const { draftOperation } = await import('/src/data/draftRepository.ts')
+      await draftOperation(input)
+    }, { ...record, mode })
+    const timing = await page.evaluate(operation =>
+      performance.getEntriesByName(`repair-estimator:draft-${operation}`, 'measure')
+        .map(entry => ({ duration: entry.duration, detail: entry.detail })), mode)
+    expect(timing).toHaveLength(1)
+    expect(timing[0].duration).toBeGreaterThanOrEqual(0)
+    expect(timing[0].detail).toEqual({ outcome: 'completed' })
+  }
   for (const response of [
     { success: true, data: {} },
     { success: true, data: { ResultJson: '{}' } },
@@ -3933,6 +4278,9 @@ test('draft adapter uses generated action service and validates its response', a
     }, response)
     expect(error).toMatch(/invalid response|incomplete data|Permission denied/)
   }
+  expect(await page.evaluate(() =>
+    performance.getEntriesByName('repair-estimator:draft-load', 'measure')
+      .map(entry => entry.detail.outcome))).toEqual(['completed', 'failed', 'failed', 'failed'])
 })
 
 test('saved draft explicitly reports unavailable pricing without claiming a failed save', async ({ page }) => {

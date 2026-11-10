@@ -36,6 +36,7 @@ import { CloneRequestWorkspace } from './CloneRequestWorkspace'
 import { CloneRequestDialog } from './CloneRequestDialog'
 import type { AccountMasterOption, ContactMasterOption } from './data/customerMasterRepository'
 import { requestReuseErrorMessage } from './data/dataverseOperation'
+import { measureOperation } from './data/performance'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -478,6 +479,7 @@ function App() {
   const [savedSnapshot, setSavedSnapshot] = useState('')
   const [draftBusy, setDraftBusy] = useState(false)
   const [draftError, setDraftError] = useState('')
+  const [draftReadRevision, setDraftReadRevision] = useState(0)
   const [draftAttempt, setDraftAttempt] = useState(0)
   const [draftNotice, setDraftNotice] = useState('')
   const [cloneSource, setCloneSource] = useState<{ id: string; name: string }>()
@@ -576,7 +578,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
-    void loadSession()
+    void measureOperation('session-startup', loadSession)
       .then((result) => { if (!cancelled) setSession(result) })
       .catch((error: unknown) => { if (!cancelled) setSessionError(message(error)) })
       .finally(() => { if (!cancelled) setSessionLoading(false) })
@@ -881,6 +883,7 @@ function App() {
       laborLines, materialLines, language))
 
   function applyDraft(record: DraftRecord) {
+    setDraftReadRevision(previous => previous + 1)
     equipmentPasteRequest.current++
     setEquipmentBulkBusy(false)
     setEquipmentPasteResult(undefined)
@@ -1314,7 +1317,7 @@ function App() {
               newDraft,
               onSaveOpportunity: () => navigate('clone'),
               draftBusy,
-              draftError, draftAttempt,
+              draftError, draftAttempt, draftReadRevision,
               canStart,
               openDraft,
               draftId,
