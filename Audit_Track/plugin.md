@@ -2,6 +2,12 @@
 
 ## 1. Scope and evidence
 
+### French clear-state persistence (PR #9 correction, local source)
+
+CSTM snapshot Save maintains optional Booleans `re_customnamefrcleared` and `re_customscopefrcleared` on `re_estimatepackage`: supplied empty French text sets its marker, nonempty text resets it, and null/omitted text preserves the prior marker/text. Load serializes marked null translations as `""`, not missing/null, so clients and cloning retain intentional clears. Standard/T&M text remains server-derived; absent historical markers preserve existing fallback. Existing export snapshots capture the Booleans; both Office Scripts suppress English fallback for marked fields. No pricing, dispatch, registrations/images, authorization or locking changes. Publish both columns from `custom-translation-clears-schema.json` before coordinated Drafts/frontend/Office Script deployment. No backfill or tenant writes performed.
+
+Local validation passed: nine focused backend cases (including French clear/Load/omitted-update/restore), 54 selected unit/contract/clone/workbook/documentation tests, ten mocked EN/FR browser cases, build/type-check and changed-source/test lint. No deployment or tenant certification. Historical null translations remain ambiguous and cannot safely be marked as intentionally cleared.
+
 ### CSTM editable description snapshots (2026-11-10, local source)
 
 Draft Save now applies supplied `nameEn`, `nameFr`, `scopeEn`, `scopeFr` only to a trusted CSTM package snapshot, after loading/copying the master/prior snapshot. Names are bounded to 500 characters and scopes to 10,000; null/omitted values preserve prior/master text and empty strings clear the column. Draft output normalizes absent English name/scope to empty strings for the frontend contract. Existing `re_estimatepackage` localized name/proposal-scope columns are reused; no master writes, new columns, dispatch/registration/images, permissions, numeric formulas, locks or export-lifecycle changes. Existing snapshot exports consume the edited text.

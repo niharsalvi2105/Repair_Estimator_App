@@ -83,7 +83,8 @@ type Props = {
   savedSalesperson: string
   session: AppSession | undefined
   buildingName: string
-  setBuildingName: Dispatch<SetStateAction<string>>
+  buildingInitialized: boolean
+  setBuildingName: (value: string) => void
   stateId: string
   updateRequestInput: (key: keyof RequestInputs, value: string) => void
   requestInputs: RequestInputs
@@ -130,7 +131,7 @@ export default function EstimatorWorkspace({
   setReferenceAttempt, branchLoading, branchError, loadBranches, market,
   marketBranches, branchId, changeBranch, language, referenceError,
   setReferenceError, references, equipmentTypeId, setEquipmentTypeId, jobTypeId,
-  setJobTypeId, savedSalesperson, session, buildingName, setBuildingName,
+  setJobTypeId, savedSalesperson, session, buildingName, buildingInitialized, setBuildingName,
   stateId, updateRequestInput, requestInputs, equipmentQuery,
   changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, equipmentBulkBusy, toggleEquipment,
   selectedEquipment, addUnlistedEquipment, addEquipmentList, uploadEquipmentExcel, equipmentPasteResult, setSelectedEquipment,
@@ -586,7 +587,7 @@ export default function EstimatorWorkspace({
                 market={market} branchId={branchId} account={selectedAccount} contact={selectedContact}
                 customerName={customerName} onCustomerName={onCustomerName}
                 errors={errors} loadDefaults={loadCustomerDefaults}
-                building={buildingName} onBuilding={setBuildingName}
+                building={buildingName} buildingInitialized={buildingInitialized} onBuilding={setBuildingName}
                 onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted}
                 emailField={
                 <div className="field-label">

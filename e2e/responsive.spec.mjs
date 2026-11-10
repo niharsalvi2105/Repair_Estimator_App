@@ -2859,6 +2859,9 @@ test('customer defaults do not guess ambiguous or truncated data and recover exp
 })
 
 for (const language of ['en', 'fr']) test(`Optional location saves calculates reloads and submits while email stays mandatory (${language})`, async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__accountLocationDescriptions = { 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': ['Sole linked location'] }
+  })
   await completeDraft(page, { width: language === 'fr' ? 390 : 1366, height: 900 }, language)
   for (let step = 0; step < 4; step++) await page.locator('.form-footer > button').click()
   const location = page.locator('#opportunity-building')
@@ -2868,6 +2871,10 @@ for (const language of ['en', 'fr']) test(`Optional location saves calculates re
   await expect(page.locator('#customer-email')).toHaveAttribute('required', '')
   await expect(page.locator('#customer-email')).toHaveAttribute('aria-required', 'true')
   await location.fill('')
+  await next(page)
+  await page.locator('.form-footer > button').click()
+  await expect(page.locator('.customer-defaults-state')).not.toContainText(/Fetching linked|Chargement des données/)
+  await expect(location).toHaveValue('')
   await page.locator('.draft-save-action').click()
   await expect(page.locator('.draft-saved')).toBeVisible()
   expect(await page.evaluate(() => window.__draftSaved.building)).toBe('')
@@ -2905,6 +2912,10 @@ for (const language of ['en', 'fr']) test(`Optional location dropdown permits em
   await expect(location).not.toHaveAttribute('required', '')
   await expect(location).not.toHaveAttribute('aria-required', 'true')
   await expect(page.locator('label[for="account-location-description"] .required')).toHaveCount(0)
+  await expect(location).toHaveValue('')
+  await location.selectOption({ index: 1 })
+  await expect(location).not.toHaveValue('')
+  await location.selectOption('')
   await expect(location).toHaveValue('')
   for (let attempt = 0; attempt < 2; attempt++) {
     await page.locator('.draft-save-action').click()
@@ -3973,6 +3984,20 @@ for (const { language, theme } of modes) {
     await expect(custom.locator('#custom-package-scope-custom')).toHaveValue('Custom scope line 1\nCustom scope line 2')
     await expect(page.locator('.custom-cost-lines fieldset').first().locator('input')).toHaveValue('3.25')
     await expect(page.locator('.custom-cost-lines fieldset').nth(1).locator('textarea')).toHaveValue('Custom motor')
+    if (language === 'fr') {
+      await custom.locator('#custom-package-name-custom').fill('')
+      await custom.locator('#custom-package-scope-custom').fill('')
+      await page.locator('.draft-save-action').click()
+      await expect(custom.locator('#custom-package-name-custom')).toHaveValue('')
+      await expect(custom.locator('#custom-package-scope-custom')).toHaveValue('')
+      await page.locator('.draft-toolbar .draft-secondary-actions button').nth(1).click()
+      await next(page)
+      await page.getByRole('button', { name: 'Modifier les coûts CSTM', exact: true }).click()
+      await expect(custom.locator('#custom-package-name-custom')).toHaveValue('')
+      await expect(custom.locator('#custom-package-scope-custom')).toHaveValue('')
+      await custom.locator('#custom-package-name-custom').fill('Estimate-only custom package')
+      await custom.locator('#custom-package-scope-custom').fill('Custom scope line 1\nCustom scope line 2')
+    }
     await page.evaluate(() => { window.__dropCustomDescriptions = true })
     await page.locator('.draft-save-action').click()
     await expect(page.locator('.draft-error')).toContainText(language === 'fr'

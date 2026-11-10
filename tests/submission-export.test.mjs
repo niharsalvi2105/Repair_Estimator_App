@@ -115,6 +115,19 @@ function named(book, name) {
   return book.getWorksheet('VBP Submission').getCell(address)
 }
 
+test('French estimate export retains explicit clears but falls back for missing translations', async () => {
+  for (const cleared of [false, true]) {
+    const book = buildTemplate('custom')
+    const data = payload({ custom: true })
+    data.header.cells.push(field('re_proposallanguage', 126110001, 'French'))
+    data.packages[0].cells.push(field('re_customnamefrcleared', cleared ? 1 : 0),
+      field('re_customscopefrcleared', cleared ? 1 : 0))
+    main(adapter(book), JSON.stringify(data))
+    assert.equal(named(book, 'PackageNames').value, cleared ? '' : 'Package 1')
+    assert.equal(named(book, 'PackageScopes').value, cleared ? ': ' : 'Package 1: Scope 1')
+  }
+})
+
 for (const custom of [false, true]) for (const mode of ['sample', 'expanded']) {
   test(`Excel export ${custom ? 'custom' : 'standard'} / ${mode} keeps typed snapshots and identifiers`, async () => {
     const book = buildTemplate(custom ? 'custom' : 'standard')

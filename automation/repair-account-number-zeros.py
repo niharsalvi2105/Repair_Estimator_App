@@ -1,12 +1,15 @@
 """Reconcile Account leading zeros from Equipment by exact Account.Id; dry-run by default."""
 import argparse
 import collections
+import ctypes
 from email import policy
 from email.parser import BytesParser
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import stat
 import urllib.error
 import urllib.request
 import uuid
@@ -15,6 +18,240 @@ MODULE = importlib.util.spec_from_file_location(
     "customer_bulk", Path(__file__).with_name("import-customer-masters-bulk.py"))
 bulk = importlib.util.module_from_spec(MODULE)
 MODULE.loader.exec_module(bulk)
+
+
+def _open_posix_private_backup(path):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        os.fchmod(descriptor, 0o600)
+        details = os.fstat(descriptor)
+        if (stat.S_IMODE(details.st_mode) != 0o600
+                or details.st_uid != os.geteuid()):
+            raise PermissionError("Private backup permissions could not be verified")
+        return os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
+    except BaseException:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        raise
+
+
+def _windows_current_user_sid(advapi32, kernel32):
+    from ctypes import wintypes
+
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetTokenInformation.restype = wintypes.BOOL
+    advapi32.ConvertSidToStringSidW.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(ctypes.POINTER(ctypes.c_wchar))]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+
+    class SID_AND_ATTRIBUTES(ctypes.Structure):
+        _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
+
+    class TOKEN_USER(ctypes.Structure):
+        _fields_ = [("User", SID_AND_ATTRIBUTES)]
+
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(
+            kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
+        raise ctypes.WinError()
+    try:
+        required = wintypes.DWORD()
+        sized = advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(required))
+        if sized or not required.value or ctypes.get_last_error() != 122:
+            raise ctypes.WinError()
+        token_data = ctypes.create_string_buffer(required.value)
+        if not advapi32.GetTokenInformation(
+                token, 1, token_data, required.value, ctypes.byref(required)):
+            raise ctypes.WinError()
+        user_sid = ctypes.cast(token_data, ctypes.POINTER(TOKEN_USER)).contents.User.Sid
+        sid_text_pointer = ctypes.POINTER(ctypes.c_wchar)()
+        if not advapi32.ConvertSidToStringSidW(user_sid, ctypes.byref(sid_text_pointer)):
+            raise ctypes.WinError()
+        try:
+            sid_text = ctypes.wstring_at(sid_text_pointer)
+        finally:
+            kernel32.LocalFree(ctypes.cast(sid_text_pointer, ctypes.c_void_p))
+        return token_data, user_sid, sid_text
+    finally:
+        kernel32.CloseHandle(token)
+
+
+def _verify_windows_private_backup(handle):
+    from ctypes import wintypes
+
+    class ACL_SIZE_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("AceCount", wintypes.DWORD),
+            ("AclBytesInUse", wintypes.DWORD),
+            ("AclBytesFree", wintypes.DWORD),
+        ]
+
+    class ACCESS_ALLOWED_ACE(ctypes.Structure):
+        _fields_ = [
+            ("AceType", wintypes.BYTE),
+            ("AceFlags", wintypes.BYTE),
+            ("AceSize", wintypes.WORD),
+            ("Mask", wintypes.DWORD),
+            ("SidStart", wintypes.DWORD),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD)]
+    advapi32.ConvertSidToStringSidW.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(ctypes.POINTER(ctypes.c_wchar))]
+    advapi32.GetKernelObjectSecurity.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetSecurityDescriptorOwner.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
+    advapi32.GetSecurityDescriptorDacl.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.BOOL)]
+    advapi32.GetSecurityDescriptorControl.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(wintypes.WORD), ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetAclInformation.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD]
+    advapi32.GetAce.argtypes = [
+        ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.EqualSid.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    advapi32.EqualSid.restype = wintypes.BOOL
+    advapi32.GetKernelObjectSecurity.restype = wintypes.BOOL
+
+    user_data, user_sid, _ = _windows_current_user_sid(advapi32, kernel32)
+    security_size = wintypes.DWORD()
+    security_information = 0x00000001 | 0x00000004
+    sized = advapi32.GetKernelObjectSecurity(
+        handle, security_information, None, 0, ctypes.byref(security_size))
+    if sized or not security_size.value or ctypes.get_last_error() != 122:
+        raise ctypes.WinError()
+    security_descriptor = ctypes.create_string_buffer(security_size.value)
+    if not advapi32.GetKernelObjectSecurity(
+            handle, security_information, security_descriptor, security_size.value,
+            ctypes.byref(security_size)):
+        raise ctypes.WinError()
+
+    owner_sid = ctypes.c_void_p()
+    owner_defaulted = wintypes.BOOL()
+    dacl_present = wintypes.BOOL()
+    dacl = ctypes.c_void_p()
+    dacl_defaulted = wintypes.BOOL()
+    control = wintypes.WORD()
+    revision = wintypes.DWORD()
+    if (not advapi32.GetSecurityDescriptorOwner(
+            security_descriptor, ctypes.byref(owner_sid), ctypes.byref(owner_defaulted))
+            or not advapi32.GetSecurityDescriptorDacl(
+                security_descriptor, ctypes.byref(dacl_present), ctypes.byref(dacl),
+                ctypes.byref(dacl_defaulted))
+            or not advapi32.GetSecurityDescriptorControl(
+                security_descriptor, ctypes.byref(control), ctypes.byref(revision))):
+        raise ctypes.WinError()
+    if (not owner_sid or owner_defaulted.value
+            or not advapi32.EqualSid(owner_sid, user_sid)
+            or not dacl_present.value or dacl_defaulted.value or not dacl
+            or not control.value & 0x1000):  # SE_DACL_PROTECTED
+        raise PermissionError("Private backup permissions could not be verified")
+
+    acl_information = ACL_SIZE_INFORMATION()
+    if not advapi32.GetAclInformation(
+            dacl, ctypes.byref(acl_information), ctypes.sizeof(acl_information), 2):
+        raise ctypes.WinError()
+    if acl_information.AceCount != 1:
+        raise PermissionError("Private backup permissions could not be verified")
+    ace_pointer = ctypes.c_void_p()
+    if not advapi32.GetAce(dacl, 0, ctypes.byref(ace_pointer)):
+        raise ctypes.WinError()
+    ace = ctypes.cast(ace_pointer, ctypes.POINTER(ACCESS_ALLOWED_ACE)).contents
+    ace_sid = ctypes.cast(
+        ctypes.byref(ace, ACCESS_ALLOWED_ACE.SidStart.offset), ctypes.c_void_p)
+    if (ace.AceType != 0 or ace.AceFlags != 0 or ace.Mask != 0x001F01FF
+            or not advapi32.EqualSid(ace_sid, user_sid)):
+        raise PermissionError("Private backup permissions could not be verified")
+    _ = user_data
+
+
+def _open_windows_private_backup(path):
+    from ctypes import wintypes
+    import msvcrt
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+
+    class SECURITY_ATTRIBUTES(ctypes.Structure):
+        _fields_ = [
+            ("nLength", wintypes.DWORD),
+            ("lpSecurityDescriptor", ctypes.c_void_p),
+            ("bInheritHandle", wintypes.BOOL),
+        ]
+
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(SECURITY_ATTRIBUTES), wintypes.DWORD, wintypes.DWORD,
+        wintypes.HANDLE]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.DWORD)]
+    advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+
+    _, _, user_sid_text = _windows_current_user_sid(advapi32, kernel32)
+    security_descriptor = ctypes.c_void_p()
+    if not advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            "O:" + user_sid_text + "D:P(A;;FA;;;" + user_sid_text + ")",
+            1, ctypes.byref(security_descriptor), None):
+        raise ctypes.WinError()
+    handle = None
+    try:
+        attributes = SECURITY_ATTRIBUTES(
+            ctypes.sizeof(SECURITY_ATTRIBUTES), security_descriptor, False)
+        created = kernel32.CreateFileW(
+            str(path), 0x40000000 | 0x00020000, 0, ctypes.byref(attributes),
+            1, 0x00000080, None)  # GENERIC_WRITE | READ_CONTROL, CREATE_NEW
+        if created == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError()
+        handle = created
+        _verify_windows_private_backup(handle)
+        descriptor = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
+        handle = None
+        try:
+            return os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
+        except BaseException:
+            os.close(descriptor)
+            raise
+    finally:
+        if handle is not None:
+            kernel32.CloseHandle(handle)
+        kernel32.LocalFree(security_descriptor)
+
+
+def open_private_backup(path):
+    if os.name == "nt":
+        return _open_windows_private_backup(path)
+    return _open_posix_private_backup(path)
 
 
 def source_numbers(path):
@@ -212,10 +449,12 @@ def main():
             if len(planned) != args.expected_updates:
                 raise RuntimeError("Fresh correction count differs from the approved count; no writes started")
             args.backup.parent.mkdir(parents=True, exist_ok=True)
-            with args.backup.open("x", encoding="utf-8") as backup:
+            with open_private_backup(args.backup) as backup:
                 json.dump({"source_sha256": bulk.fingerprint(args.source), "changes": [
                     {"source_id": source, "expected": expected, "before": record}
                     for source, expected, record in planned]}, backup)
+                backup.flush()
+                os.fsync(backup.fileno())
             for start in range(0, len(planned), args.batch_size):
                 batch = planned[start:start + args.batch_size]
                 apply_batch(api, batch)

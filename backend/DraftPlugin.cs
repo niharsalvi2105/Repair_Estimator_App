@@ -495,7 +495,8 @@ namespace RepairEstimator.Drafts
                 {
                     row.Id = previous.Id;
                     Copy(previous, row, "re_packagenumber", "re_packagenameen", "re_packagenamefr", "re_proposalscopeen",
-                        "re_proposalscopefr", "re_mechanichoursperunit", "re_materialcostperunit", "re_iscustompackage", "re_istimematerial");
+                        "re_proposalscopefr", "re_mechanichoursperunit", "re_materialcostperunit", "re_iscustompackage", "re_istimematerial",
+                        "re_customnamefrcleared", "re_customscopefrcleared");
                     Copy(previous, row, PackageMaterialPricing.Cost, PackageMaterialPricing.Enabled);
                 }
                 else
@@ -524,9 +525,17 @@ namespace RepairEstimator.Drafts
                 {
                     var details = input.packages[i];
                     if (details.nameEn != null) row["re_packagenameen"] = Optional(details.nameEn, 500);
-                    if (details.nameFr != null) row["re_packagenamefr"] = Optional(details.nameFr, 500);
+                    if (details.nameFr != null)
+                    {
+                        row["re_packagenamefr"] = Optional(details.nameFr, 500);
+                        row["re_customnamefrcleared"] = details.nameFr.Length == 0;
+                    }
                     if (details.scopeEn != null) row["re_proposalscopeen"] = Optional(details.scopeEn, 10000);
-                    if (details.scopeFr != null) row["re_proposalscopefr"] = Optional(details.scopeFr, 10000);
+                    if (details.scopeFr != null)
+                    {
+                        row["re_proposalscopefr"] = Optional(details.scopeFr, 10000);
+                        row["re_customscopefrcleared"] = details.scopeFr.Length == 0;
+                    }
                 }
                 if (packagePriced)
                 {
@@ -1168,8 +1177,10 @@ namespace RepairEstimator.Drafts
                 p.GetAttributeValue<OptionSetValue>("re_packagerole").Value - 126110000))
                 result.packages.Add(new PackageInput {
                     id = Id(p, "re_repairpackage"), number = p.GetAttributeValue<string>("re_packagenumber"),
-                    nameEn = p.GetAttributeValue<string>("re_packagenameen") ?? "", nameFr = p.GetAttributeValue<string>("re_packagenamefr"),
-                    scopeEn = p.GetAttributeValue<string>("re_proposalscopeen") ?? "", scopeFr = p.GetAttributeValue<string>("re_proposalscopefr"),
+                    nameEn = p.GetAttributeValue<string>("re_packagenameen") ?? "",
+                    nameFr = p.GetAttributeValue<bool>("re_customnamefrcleared") ? "" : p.GetAttributeValue<string>("re_packagenamefr"),
+                    scopeEn = p.GetAttributeValue<string>("re_proposalscopeen") ?? "",
+                    scopeFr = p.GetAttributeValue<bool>("re_customscopefrcleared") ? "" : p.GetAttributeValue<string>("re_proposalscopefr"),
                     hours = p.GetAttributeValue<decimal>("re_mechanichoursperunit"),
                     material = p.GetAttributeValue<Money>("re_materialcostperunit").Value,
                     materialBeforeMarkup = p.GetAttributeValue<Money>(PackageMaterialPricing.Cost)?.Value,

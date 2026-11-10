@@ -45,10 +45,28 @@ namespace RepairEstimator.Tests
             loaded.mode = "save";
             loaded.packages[0].nameEn = "";
             loaded.packages[0].scopeEn = "";
+            loaded.packages[0].nameFr = "";
+            loaded.packages[0].scopeFr = "";
             var cleared = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(loaded)));
             Assert.Equal("", cleared.packages[0].nameEn);
             Assert.Equal("", cleared.packages[0].scopeEn);
-            Assert.Equal("French scope", cleared.packages[0].scopeFr);
+            Assert.Equal("", cleared.packages[0].nameFr);
+            Assert.Equal("", cleared.packages[0].scopeFr);
+            var reloaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal("", reloaded.packages[0].nameFr);
+            Assert.Equal("", reloaded.packages[0].scopeFr);
+            reloaded.mode = "save";
+            reloaded.packages[0].nameFr = null;
+            reloaded.packages[0].scopeFr = null;
+            var omitted = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(reloaded)));
+            Assert.Equal("", omitted.packages[0].nameFr);
+            Assert.Equal("", omitted.packages[0].scopeFr);
+            omitted.mode = "save";
+            omitted.packages[0].nameFr = "Restored";
+            omitted.packages[0].scopeFr = "Restored scope";
+            var restored = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(omitted)));
+            Assert.Equal("Restored", restored.packages[0].nameFr);
+            Assert.Equal("Restored scope", restored.packages[0].scopeFr);
         }
 
         [Theory]

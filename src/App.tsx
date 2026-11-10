@@ -451,6 +451,7 @@ function App() {
   const customerEmail = selectedContact?.email.trim() ? selectedContact.email : manualCustomer.email
   const customerPhone = selectedContact?.phone.trim() ? selectedContact.phone : manualCustomer.phone
   const [buildingName, setBuildingName] = useState('')
+  const [buildingInitialized, setBuildingInitialized] = useState(false)
   const [session, setSession] = useState<AppSession>()
   const preferences = useUserPreferences(session)
   const language = preferences.language
@@ -782,6 +783,7 @@ function App() {
     setSelectedAccount(null); setSelectedContact(null)
     setManualCustomer({ name: '', email: '', phone: '' })
     setBuildingName('')
+    setBuildingInitialized(false)
     setEquipmentQuery('')
     setSelectedEquipment([])
     setSelectedPackages([])
@@ -919,6 +921,7 @@ function App() {
     setExportDelivery(record.exportDelivery ?? undefined)
     setEstimateTitle(record.title); setBranchId(record.branchId); setStateId(record.stateId)
     setBuildingName(record.building)
+    setBuildingInitialized(true)
     setSelectedAccount(record.accountId && record.accountNumber && record.accountName
       ? { id: record.accountId, number: record.accountNumber, name: record.accountName } : null)
     setSelectedContact(record.contactId
@@ -1333,7 +1336,7 @@ function App() {
               selectedAccount,
               selectedContact,
               onSelectAccount: (account: AccountMasterOption | null) => {
-                if (selectedAccount) setBuildingName('')
+                if (selectedAccount) { setBuildingName(''); setBuildingInitialized(false) }
                 setSelectedAccount(account)
                 setSelectedContact(null)
                 setManualCustomer({ name: '', email: '', phone: '' })
@@ -1373,7 +1376,8 @@ function App() {
               savedSalesperson,
               session,
               buildingName,
-              setBuildingName,
+              buildingInitialized,
+              setBuildingName: (value: string) => { setBuildingName(value); setBuildingInitialized(true) },
               stateId,
               updateRequestInput,
               requestInputs,

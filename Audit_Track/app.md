@@ -2,6 +2,14 @@
 
 ## 1. Scope and evidence
 
+### Intentional location and French clears (PR #9 correction, local source)
+
+Location initialization now belongs to the draft workspace rather than the step component. User edits and loaded/preset/clone values, including blank text, count as initialized; sole-source autofill only applies before initialization. Switching Branch or clearing/changing an existing Account resets initialization. Leaving/returning to Opportunity Details and Save/Reload must not reinsert a deliberately cleared location. Choosing the empty linked-location option explicitly clears both the selected pair and description.
+
+CSTM French empty strings are distinct from missing translations throughout editing, Review, clone and both workbook exports. Two additive Estimate Package Boolean markers preserve clear intent when Dataverse normalizes empty text to null; missing historical translations still fall back to English. Publish `backend/custom-translation-clears-schema.json` before the updated Drafts assembly, frontend and Office Scripts.
+
+Local evidence: production build/type-check and changed-source/test lint passed; 54 selected unit/contract/clone/workbook/documentation tests, nine backend cases and ten mocked EN/FR browser cases passed. Tests cover clearing/revisiting a sole linked location, saving/reloading that blank, clearing a selected dropdown option, French text clear/reload/restore, missing-translation fallback, cloning and both export templates. No deployment, tenant writes or production verification; existing previously cleared French nulls cannot be distinguished retrospectively and are not backfilled.
+
 ### Expandable CSTM labor/material grids (2026-11-10, local source)
 
 Labor and material editors now sit inside separate labelled table grids. Summary rows show labor package/role/ST-DT/hours/saved rate and material description/vendor/part/quantity/unit cost/pre-tax-freight total. Each row has a keyboard-operable expand/collapse button with accessible expanded state; Expand all / Collapse all controls affect the relevant section. Rows initially expand for entry, newly added rows expand, and existing editors, paging, catalog/manual/KONE safeguards and removal actions remain. Collapsing does not remove values or reset editor state; Review retains disabled inputs while still allowing row expansion. Invalid native controls request expansion. Desktop uses spaced columns; narrow screens scroll only the grid horizontally and expanded editors retain container-width responsive fields. Empty sections show a short prompt rather than unused spreadsheet rows.

@@ -282,8 +282,10 @@ function main(workbook: ExcelScript.Workbook, payloadJson: string): ExportResult
     write(anchor(workbook, `EquipmentName${index + 1}`), text(payload.equipment[index], 're_equipmentnamesnapshot'))
   }
   const french = /French|fran[çc]ais/i.test(text(payload.header, 're_proposallanguage'))
-  const packageName = (row: ExportRow): string => text(row, french ? 're_packagenamefr' : 're_packagenameen') || text(row, 're_packagenameen')
-  const packageScope = (row: ExportRow): string => text(row, french ? 're_proposalscopefr' : 're_proposalscopeen') || text(row, 're_proposalscopeen')
+  const packageName = (row: ExportRow): string => french && row.cells.some(c => c.key === 're_customnamefrcleared' && c.number === 1)
+    ? '' : text(row, french ? 're_packagenamefr' : 're_packagenameen') || text(row, 're_packagenameen')
+  const packageScope = (row: ExportRow): string => french && row.cells.some(c => c.key === 're_customscopefrcleared' && c.number === 1)
+    ? '' : text(row, french ? 're_proposalscopefr' : 're_proposalscopeen') || text(row, 're_proposalscopeen')
   for (let index = 0; index < Math.min(3, payload.packages.length); index++)
     write(anchor(workbook, `Package${index + 1}`), packageName(payload.packages[index]))
   const allNames = payload.packages.map(packageName).join('\n')

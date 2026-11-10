@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { filterPackages, localizeScope } from '../src/data/packageSearch.ts'
+import { filterPackages, localizePackage, localizeScope } from '../src/data/packageSearch.ts'
 
 const packages = [
   { re_packagenumber: 'PSR-100', re_packagenameen: 'Door operator', re_packagenamefr: 'Opérateur de porte', re_proposalscopeen: 'Replace the door motor', re_proposalscopefr: 'Remplacer le moteur' },
@@ -26,4 +26,13 @@ test('all terms must match', () => {
 test('scope falls back to English when French is missing', () => {
   assert.equal(localizeScope(packages[1], 'fr'), 'Upgrade drive and board')
   assert.equal(localizeScope(packages[0], 'fr'), 'Remplacer le moteur')
+})
+
+test('CSTM intentional French clears remain blank while missing and standard translations fall back', () => {
+  const custom = { ...packages[0], re_iscustompackage: true, re_packagenamefr: '', re_proposalscopefr: '' }
+  assert.equal(localizePackage(custom, 'fr'), '')
+  assert.equal(localizeScope(custom, 'fr'), '')
+  assert.equal(localizePackage({ ...custom, re_packagenamefr: undefined }, 'fr'), 'Door operator')
+  assert.equal(localizeScope({ ...custom, re_proposalscopefr: undefined }, 'fr'), 'Replace the door motor')
+  assert.equal(localizePackage({ ...custom, re_iscustompackage: false }, 'fr'), 'Door operator')
 })

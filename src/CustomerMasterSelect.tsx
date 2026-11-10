@@ -16,6 +16,7 @@ type Props = {
   disabled: boolean
   branchId: string
   building: string
+  buildingInitialized: boolean
   onBuilding: (value: string) => void
   customerName: string
   onCustomerName: (value: string) => void
@@ -26,7 +27,7 @@ type Props = {
 }
 
 export function CustomerMasterSelect({
-  market, account, contact, onAccount, onContact, language, disabled, branchId, building, onBuilding,
+  market, account, contact, onAccount, onContact, language, disabled, branchId, building, buildingInitialized, onBuilding,
   customerName, onCustomerName, emailField, phoneField, errors = {}, loadDefaults = getCustomerDefaults,
 }: Props) {
   const fr = language === 'fr'
@@ -56,7 +57,7 @@ export function CustomerMasterSelect({
     const selected = defaultContact(result)
     if (!contact && !customerName.trim() && selected) onContact(selected, true)
     const description = defaultLocationDescription(result)
-    if (!building.trim() && description) onBuilding(description)
+    if (!buildingInitialized && !building.trim() && description) onBuilding(description)
   })
 
   const accountId = account?.id
@@ -243,6 +244,7 @@ export function CustomerMasterSelect({
           value={selectedLocation ? JSON.stringify([selectedLocation.number, selectedLocation.name]) : ''}
           onChange={event => {
             if (event.target.value === 'custom') { setCustomLocation(true); return }
+            if (event.target.value === '') { setSelectedLocationKey(''); onBuilding(''); return }
             const option = defaults?.locationOptions.find(option => JSON.stringify([option.number, option.name]) === event.target.value)
             if (option) { setSelectedLocationKey(event.target.value); onBuilding(option.name) }
           }}>

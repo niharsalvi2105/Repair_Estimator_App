@@ -146,6 +146,15 @@ test('cloning standard packages keeps current master descriptions authoritative'
   const validated = await revalidateClone(record, { ...current, packages: async () => catalog })
   assert.equal(validated.packages[0].nameEn, 'Current package')
 })
+test('cloning preserves intentionally empty French CSTM translations', async () => {
+  const record = source()
+  record.packages[0].nameFr = ''
+  record.packages[0].scopeFr = ''
+  const copy = cloneRequest(record, { ...DEFAULT_CLONE_SECTIONS, packages: true, custom: true }, 'new')
+  const validated = await revalidateClone(copy, transport())
+  assert.equal(validated.packages[0].nameFr, '')
+  assert.equal(validated.packages[0].scopeFr, '')
+})
 test('stale or ambiguous master data rejects the clone instead of dropping or downgrading entries', async () => {
   const copy = cloneRequest(source(), { opportunity: true, equipment: true, packages: true, custom: true, notes: true }, 'new')
   for (const override of [

@@ -189,13 +189,14 @@ function main(workbook: ExcelScript.Workbook, payloadJson: string, currencyCode:
   const variance = submissionCell(h, 're_cmiivariance')?.number
   destinations.CmiiVariance = variance == null ? '' : variance * 100
   const french = /French|fran[çc]ais/i.test(submissionText(h, 're_proposallanguage'))
-  const names = p.packages.map(row => submissionText(row, french ? 're_packagenamefr' : 're_packagenameen') ||
-    submissionText(row, 're_packagenameen'))
+  const names = p.packages.map(row => french && submissionCell(row, 're_customnamefrcleared')?.number === 1 ? ''
+    : submissionText(row, french ? 're_packagenamefr' : 're_packagenameen') || submissionText(row, 're_packagenameen'))
   const preview = (value: string, limit: number): string =>
     value.length > limit || value.split('\n').length > 4 ? 'See Details for complete text (not truncated).' : value
   destinations.PackageNames = preview(names.join(' | '), 230)
   destinations.ScopePreview = preview(p.packages.map((row, i) => `${names[i]}: ${
-    submissionText(row, french ? 're_proposalscopefr' : 're_proposalscopeen') || submissionText(row, 're_proposalscopeen')}`).join('\n'), 350)
+    french && submissionCell(row, 're_customscopefrcleared')?.number === 1 ? ''
+      : submissionText(row, french ? 're_proposalscopefr' : 're_proposalscopeen') || submissionText(row, 're_proposalscopeen')}`).join('\n'), 350)
   destinations.NotesPreview = preview(submissionText(h, 're_notesforcttteam'), 300)
   const shortFields: Record<string, number> = {
     OpportunityName: 120, AccountName: 42, AccountNumber: 20, ContactName: 64,

@@ -2,6 +2,14 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Intentional clears and private repair backups (PR #9 correction, local source)
+
+Two optional Boolean columns are required on `re_estimatepackage`: `re_customnamefrcleared` and `re_customscopefrcleared`, default false, as defined in `backend/custom-translation-clears-schema.json`. These distinguish deliberately cleared CSTM French name/scope snapshots from historically missing translations after Dataverse normalizes empty text to null. Save updates markers only when French text is supplied; Load/clone return marked fields as empty strings. Both Office Scripts honor the markers without changing English text, prices or export delivery lifecycle. No shared package writes or historical marker backfill. Coordinated columns/Drafts/frontend/Office Script deployment required; not deployed or tenant-verified.
+
+Location initialization/clear state is UI-only, retained across step remounts; loaded blanks remain blank and the empty linked-location option clears the existing `re_buildingname` snapshot. It adds no location columns or API fields. The repair CLI now creates backups exclusively with verified owner-only access before writing sensitive contents: POSIX mode 0600 or a protected current-user Windows DACL, then flush/fsync before correction batches. Permission setup/verification errors stop before tenant writes; inherited permissive ACLs are not a fallback. Existing backups are not modified by this source change and must be checked separately.
+
+Local evidence: 15 focused repair tests completed successfully (one POSIX-only case skipped on Windows), including actual Windows ACL/exclusive-file checks and failure blocking correction calls; Python compilation passed. Build/type-check/lint, 54 selected unit/contract/clone/workbook/documentation tests, nine focused backend cases and ten mocked EN/FR browser cases also passed. All fixtures are synthetic; no tenant reads/corrections, existing-backup inspection, deployment or published behavior certification. Historical French nulls are not backfilled.
+
 ### CSTM description snapshots (2026-11-10, local source)
 
 CSTM editor name/scope inputs map to existing `re_estimatepackage.re_packagenameen` / `re_packagenamefr` (500 characters) and `re_proposalscopeen` / `re_proposalscopefr` (10,000 characters), using the current UI language. Draft Save accepts these optional snapshot overrides only when the trusted master/prior snapshot identifies the package as CSTM; standard/T&M text remains server-derived. Omitted values retain master/prior values, empty text clears the corresponding snapshot, and absent English name/scope serialize as empty strings. Review/clone/export use these existing snapshots; master package records, IDs, numeric pricing, schema, permissions and locking are unchanged. The frontend checks response text retention and keeps edits visible with an error on an incompatible server.

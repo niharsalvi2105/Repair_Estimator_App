@@ -1,7 +1,11 @@
 import importlib.util
+import json
+import os
 from pathlib import Path
+import stat
 from types import SimpleNamespace
 import unittest
+import uuid
 from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
@@ -54,6 +58,72 @@ class AccountRepairTests(unittest.TestCase):
                 plan, counts = repair.correction_plan({"A" * 18: "00042"}, records, 20)
                 self.assertEqual(plan, [])
                 self.assertEqual(counts[reason], 1)
+
+    def test_posix_backup_is_exclusive_and_owner_only(self):
+        if os.name != "posix":
+            self.skipTest("POSIX permission bits are not available")
+        path = Path(__file__).with_name("private-backup-" + uuid.uuid4().hex + ".json")
+        try:
+            with repair.open_private_backup(path) as backup:
+                backup.write('{"synthetic": true}\n')
+                backup.flush()
+                os.fsync(backup.fileno())
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                self.assertEqual(path.stat().st_uid, os.geteuid())
+                with self.assertRaises(OSError):
+                    repair.open_private_backup(path)
+            self.assertEqual(path.read_text(encoding="utf-8"), '{"synthetic": true}\n')
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_windows_backup_has_verified_user_only_dacl_and_is_exclusive(self):
+        if os.name != "nt":
+            self.skipTest("Windows ACL verification requires Windows")
+        import msvcrt
+
+        path = Path(__file__).with_name("private-backup-" + uuid.uuid4().hex + ".json")
+        try:
+            with repair.open_private_backup(path) as backup:
+                repair._verify_windows_private_backup(msvcrt.get_osfhandle(backup.fileno()))
+                backup.write('{"synthetic": true}\n')
+                backup.flush()
+                os.fsync(backup.fileno())
+                with self.assertRaises(OSError):
+                    repair.open_private_backup(path)
+            self.assertEqual(path.read_text(encoding="utf-8"), '{"synthetic": true}\n')
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_backup_permission_failure_prevents_batch_application(self):
+        test_dir = Path(__file__).resolve().parent
+        report_path = test_dir / ("backup-failure-report-" + uuid.uuid4().hex + ".json")
+        source_path = test_dir / "synthetic-source.xlsx"
+        backup_path = Path(__file__).resolve().parents[3] / (
+            "synthetic-private-backup-" + uuid.uuid4().hex + ".json")
+        api = SimpleNamespace(query=lambda *args: [account()])
+        argv = [
+            "repair-account-number-zeros.py", "--source", str(source_path),
+            "--report", str(report_path), "--apply", "--expected-updates", "1",
+            "--backup", str(backup_path),
+        ]
+        try:
+            with patch("sys.argv", argv), \
+                    patch.object(repair, "source_numbers", return_value=({"A" * 18: "00042"}, {})), \
+                    patch.object(repair.bulk, "BulkApi", return_value=api), \
+                    patch.object(repair.bulk.customer, "preflight",
+                                 return_value={"accountnumber": 20}), \
+                    patch.object(repair, "open_private_backup",
+                                 side_effect=PermissionError("permissions unavailable")), \
+                    patch.object(repair, "apply_batch") as apply_batch, \
+                    patch("builtins.print"):
+                with self.assertRaisesRegex(PermissionError, "permissions unavailable"):
+                    repair.main()
+            apply_batch.assert_not_called()
+            self.assertEqual(
+                json.loads(report_path.read_text(encoding="utf-8"))["status"],
+                "failed_stop_and_reconcile")
+        finally:
+            report_path.unlink(missing_ok=True)
 
     def test_duplicate_desired_numbers_and_overlength_values_are_blocked(self):
         plan, counts = repair.correction_plan({"A" * 18: "00042", "B" * 18: "00042"}, [account()], 20)
