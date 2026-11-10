@@ -117,12 +117,26 @@ namespace RepairEstimator.Plugins.Automation
 
         public static ExportPayload Capture(IOrganizationService service, Entity header, Guid submission, string mode)
         {
+            var equipmentNumbers = new Dictionary<Guid, string>();
             Func<string, List<ExportRow>> children = table =>
             {
                 var query = new QueryExpression(table) { ColumnSet = new ColumnSet(true), TopCount = MaxRows + 1 };
                 query.Criteria.AddCondition(Names.ChildParentLookup, ConditionOperator.Equal, header.Id);
                 return service.RetrieveMultiple(query).Entities.OrderBy(e => e.GetAttributeValue<int>("re_sequence"))
-                    .ThenBy(e => e.Id).Select(Row).ToList();
+                    .ThenBy(e => e.Id).Select(entity => {
+                        if (table == Names.EstimateEquipment.Entity)
+                            equipmentNumbers.Add(entity.Id, entity.GetAttributeValue<string>("re_equipmentnumber"));
+                        var row = Row(entity);
+                        var linked = entity.GetAttributeValue<EntityReference>("re_estimateequipment");
+                        if ((table == Names.EstimateLaborLine.Entity || table == Names.EstimateMaterialLine.Entity) && linked != null)
+                        {
+                            string number;
+                            if (!equipmentNumbers.TryGetValue(linked.Id, out number) || string.IsNullOrEmpty(number))
+                                throw new InvalidPluginExecutionException("RE-145|EXPORT_LINE_EQUIPMENT_INVALID");
+                            row.cells.Add(new ExportCell { key = "re_equipmentnumber", text = number });
+                        }
+                        return row;
+                    }).ToList();
             };
             var result = new ExportPayload {
                 submissionId = submission.ToString("D"), revision = header.RowVersion, mode = mode,

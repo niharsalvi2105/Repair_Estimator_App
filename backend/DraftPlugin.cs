@@ -56,6 +56,7 @@ namespace RepairEstimator.Drafts
     {
         [DataMember] public string id;
         [DataMember] public string packageId;
+        [DataMember(EmitDefaultValue = false)] public string equipmentNumber;
         [DataMember] public int role;
         [DataMember] public int time;
         [DataMember] public decimal hours;
@@ -67,6 +68,7 @@ namespace RepairEstimator.Drafts
     {
         [DataMember] public string id;
         [DataMember] public string packageId;
+        [DataMember(EmitDefaultValue = false)] public string equipmentNumber;
         [DataMember] public string description;
         [DataMember] public string vendor;
         [DataMember] public string part;
@@ -440,7 +442,7 @@ namespace RepairEstimator.Drafts
             for (int i = 0; i < input.equipment.Count; i++)
             {
                 var item = input.equipment[i];
-                var row = new Entity(Equipment);
+                var row = new Entity(Equipment, Guid.NewGuid());
                 row["re_name"] = Required(item.number, 20, "Equipment number");
                 row["re_equipmentnumber"] = item.number.Trim();
                 row["re_sequence"] = i + 1;
@@ -609,19 +611,19 @@ namespace RepairEstimator.Drafts
                     Fail("Each CSTM package requires at least one labor line and one material line.");
             }
             var lineRows = BuildLines(service, input, priorLabor, priorMaterial, header, branch, currency,
-                old?.GetAttributeValue<EntityReference>("ownerid") ?? new EntityReference("systemuser", user), customPackages);
+                old?.GetAttributeValue<EntityReference>("ownerid") ?? new EntityReference("systemuser", user), customPackages, equipmentRows);
             var prior = priorEquipment.Concat(priorPackages).Concat(priorLabor).Concat(priorMaterial).ToList();
             var desired = equipmentRows.Concat(packageRows).Concat(lineRows).ToList();
             var retained = new HashSet<Guid>(desired.Where(r => r.Id != Guid.Empty).Select(r => r.Id));
             var removed = prior.Where(r => !retained.Contains(r.Id))
                 .OrderBy(r => r.LogicalName == Equipment ? 2 : r.LogicalName == Package ? 1 : 0).ToList();
-            if (priorLabor.Concat(priorMaterial).Any(r => retained.Contains(r.Id) &&
+            if (lineRows.Any(r =>
                 r.GetAttributeValue<EntityReference>("re_estimateequipment") is EntityReference linked &&
                 removed.Any(e => e.LogicalName == Equipment && e.Id == linked.Id)))
                 Fail("Remove custom lines linked to removed equipment before saving.");
             if (desired.Count + removed.Count > MaxChildOperations)
                 Fail("Draft exceeds the technical processing budget. Split this request into smaller estimates.");
-            foreach (var row in removed.Where(r => r.LogicalName != Package))
+            foreach (var row in removed.Where(r => r.LogicalName != Package && r.LogicalName != Equipment))
             {
                 var delete = new DeleteRequest { Target = row.ToEntityReference() };
                 delete["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
@@ -635,7 +637,7 @@ namespace RepairEstimator.Drafts
                 write["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
                 service.Execute(write);
             }
-            foreach (var row in removed.Where(r => r.LogicalName == Package))
+            foreach (var row in removed.Where(r => r.LogicalName == Equipment || r.LogicalName == Package))
             {
                 var delete = new DeleteRequest { Target = row.ToEntityReference() };
                 delete["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
@@ -691,9 +693,38 @@ namespace RepairEstimator.Drafts
             return id;
         }
 
+        static string LineEquipmentNumber(Entity line, List<Entity> equipment)
+        {
+            var link = line.GetAttributeValue<EntityReference>("re_estimateequipment");
+            if (link == null) return null;
+            var selected = equipment.SingleOrDefault(e => e.Id == link.Id);
+            if (selected == null) Fail("Custom line points to equipment outside this estimate.");
+            return selected.GetAttributeValue<string>("re_equipmentnumber");
+        }
+
+        static void SetLineEquipment(Entity row, Entity previous, string number, string packageId, Draft input, List<Entity> equipment)
+        {
+            var oldLink = previous?.GetAttributeValue<EntityReference>("re_estimateequipment");
+            Entity linked = null;
+            if (number == null && oldLink != null)
+            {
+                linked = equipment.SingleOrDefault(e => e.Id == oldLink.Id);
+                if (linked == null) Fail("Remove or reassign custom lines linked to removed equipment before saving.");
+                number = linked.GetAttributeValue<string>("re_equipmentnumber");
+            }
+            if (!string.IsNullOrEmpty(number))
+            {
+                linked = equipment.SingleOrDefault(e => e.GetAttributeValue<string>("re_equipmentnumber") == number);
+                var package = input.packages.Single(p => p.id == packageId);
+                if (linked == null || (package.equipmentNumbers != null && !package.equipmentNumbers.Contains(number)))
+                    Fail("Custom line equipment must be selected for its CSTM package.");
+            }
+            row["re_estimateequipment"] = linked?.ToEntityReference();
+        }
+
         static List<Entity> BuildLines(IOrganizationService service, Draft input, List<Entity> priorLabor,
             List<Entity> priorMaterial, Entity header, Entity branch, EntityReference currency, EntityReference owner,
-            List<Entity> packages)
+            List<Entity> packages, List<Entity> equipment)
         {
             var rows = new List<Entity>();
             var seen = new HashSet<string>();
@@ -708,6 +739,7 @@ namespace RepairEstimator.Drafts
                 var previous = priorLabor.FirstOrDefault(r => r.Id.ToString() == line.id);
                 var row = new Entity(Labor, previous?.Id ?? Guid.NewGuid());
                 row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
+                SetLineEquipment(row, previous, line.equipmentNumber, line.packageId, input, equipment);
                 if (previous != null && previous.GetAttributeValue<OptionSetValue>("re_laborrole")?.Value == line.role &&
                     previous.GetAttributeValue<OptionSetValue>("re_timecategory")?.Value == line.time &&
                     previous.Contains("re_hourlycost") && previous.Contains("re_laborrate"))
@@ -758,6 +790,7 @@ namespace RepairEstimator.Drafts
                     Fail("Invalid material quantity or unit cost (two decimals required).");
                 var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
                 row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
+                SetLineEquipment(row, previous, line.equipmentNumber, line.packageId, input, equipment);
                 row["re_name"] = "Custom material";
                 row["re_estimatematerialline"] = "Custom material";
                 row["re_entereddescription"] = Required(line.description, 2000, "Material description");
@@ -1130,7 +1163,8 @@ namespace RepairEstimator.Drafts
                 if ((key == "re_usetax" || key == "re_freight") && value is decimal rate) value = rate * 100m;
                 result.fields.Add(new Field { key = key, value = value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture) });
             }
-            foreach (var e in Children(service, Equipment, id).OrderBy(e => e.GetAttributeValue<int>("re_sequence")))
+            var equipmentRows = Children(service, Equipment, id);
+            foreach (var e in equipmentRows.OrderBy(e => e.GetAttributeValue<int>("re_sequence")))
                 result.equipment.Add(new EquipmentInput {
                     id = Id(e, "re_equipment"), matched = e.Contains("re_equipment"),
                     number = e.GetAttributeValue<string>("re_equipmentnumber"), name = e.GetAttributeValue<string>("re_equipmentnamesnapshot"),
@@ -1157,11 +1191,13 @@ namespace RepairEstimator.Drafts
                 Fail("Saved material snapshot is incomplete. Ask an administrator to correct it before editing.");
             result.laborLines = laborRows.OrderBy(e => e.Id).Select(e => new LaborInput {
                 id = e.Id.ToString(), packageId = linkedPackage(e), role = e.GetAttributeValue<OptionSetValue>("re_laborrole")?.Value ?? 0,
+                equipmentNumber = LineEquipmentNumber(e, equipmentRows),
                 time = e.GetAttributeValue<OptionSetValue>("re_timecategory")?.Value ?? 0,
                 hours = e.GetAttributeValue<decimal>("re_hours"), rate = e.GetAttributeValue<Money>("re_hourlycost").Value
             }).ToList();
             result.materialLines = materialRows.OrderBy(e => e.Id).Select(e => new MaterialInput {
                 id = e.Id.ToString(), packageId = linkedPackage(e), description = e.GetAttributeValue<string>("re_entereddescription"),
+                equipmentNumber = LineEquipmentNumber(e, equipmentRows),
                 vendor = e.GetAttributeValue<string>("re_vendor"), part = e.GetAttributeValue<string>("re_partnumber"),
                 quantity = e.GetAttributeValue<decimal>("re_quantity"),
                 unitCost = e.GetAttributeValue<decimal?>("re_unitcostprecise") ?? e.GetAttributeValue<Money>("re_unitcost").Value,

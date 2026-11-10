@@ -13,7 +13,7 @@ import {
   type ReferenceOption,
 } from './data/repairEstimatorRepository'
 import './App.css'
-import { validPackageEquipment } from './data/packageEquipment'
+import { validPackageEquipment, packageEquipmentNumbers, validCustomCostEquipment } from './data/packageEquipment'
 import { EstimateList } from './EstimateList'
 import { LazyWorkspace } from './LazyWorkspace'
 import { DashboardMetrics } from './DashboardMetrics'
@@ -873,7 +873,10 @@ function App() {
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
     reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
   }
-  const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && stateId
+  const costEquipmentValid = validCustomCostEquipment([...laborLines, ...materialLines],
+    selectedPackages.filter(p => p.re_iscustompackage).map(p =>
+      ({ id: p.re_repairpackageid, equipmentNumbers: packageEquipmentNumbers(p, selectedEquipment) })))
+  const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && stateId && costEquipmentValid
     && selectedAccount?.id && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())
     && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
     && selectedPackages.every((item) => validPackageEquipment(item, selectedEquipment))
@@ -952,6 +955,36 @@ function App() {
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
 
+  function draftInput(labor: DraftLabor[], materials: DraftMaterial[], submit = false): DraftRecord {
+    return {
+      mode: submit ? 'submit' : 'save', id: draftId, version: draftVersion, title: estimateTitle,
+      branchId, stateId, equipmentTypeId, jobTypeId, building: buildingName,
+      customer: customerName, email: customerEmail, phone: customerPhone, market,
+      accountId: selectedAccount?.id ?? '', accountNumber: selectedAccount?.number ?? '',
+      accountName: selectedAccount?.name ?? '', contactId: selectedContact?.id ?? '',
+      fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
+      equipment: selectedEquipment.map(item => ({ ...item, id: item.matched ? item.id : '' })),
+      packages: selectedPackages.map(item => ({ id: item.re_repairpackageid,
+        number: item.re_packagenumber, nameEn: item.re_packagenameen, scopeEn: item.re_proposalscopeen ?? '',
+        nameFr: item.re_packagenamefr, scopeFr: item.re_proposalscopefr,
+        hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial,
+        equipmentNumbers: item.equipmentNumbers ?? null, allEquipment: item.equipmentNumbers == null })),
+      laborLines: labor, materialLines: materials,
+    }
+  }
+  function validateCostImport(labor: DraftLabor[], materials: DraftMaterial[]) {
+    const previous: {
+      laborLines?: DraftLabor[]; materialLines?: DraftMaterial[]
+      selectedEquipment?: SelectedEquipment[]; selectedPackages?: RepairPackage[]
+    } = savedSnapshot ? JSON.parse(savedSnapshot) : {}
+    const removed = (previous.laborLines ?? []).filter(row => !labor.some(line => line.id === row.id)).length +
+      (previous.materialLines ?? []).filter(row => !materials.some(line => line.id === row.id)).length +
+      (previous.selectedEquipment ?? []).filter(row => !selectedEquipment.some(unit => unit.number === row.number && unit.id === row.id)).length +
+      (previous.selectedPackages ?? []).filter(row => !selectedPackages.some(p => p.re_repairpackageid === row.re_repairpackageid)).length
+    if (selectedEquipment.length + selectedPackages.length + labor.length + materials.length + removed > MAX_DRAFT_CHILD_OPERATIONS)
+      throw new Error(language === 'fr' ? 'Budget technique dépassé. Réduisez le fichier.' : 'Technical processing budget exceeded. Reduce the file.')
+    serializeDraft(draftInput(labor, materials))
+  }
   async function saveDraft(submit = false) {
     if (draftInFlight.current || submitted || exportDelivery || equipmentBulkBusy) return
     setDraftAttempt(previous => previous + 1)
@@ -961,6 +994,11 @@ function App() {
     const customError = customCostsError(selectedPackages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid),
       laborLines, materialLines, language)
     if (customError) { setDraftError(customError); setStep(3); return }
+    if (!costEquipmentValid) {
+      setDraftError(language === 'fr' ? 'Réaffectez ou effacez les équipements non affectés aux forfaits des lignes CSTM.'
+        : 'Reassign or clear CSTM line equipment that is no longer assigned to its package.')
+      setStep(3); return
+    }
     if (!draftComplete) { setDraftError(dt.required); return }
     const rateError = statedRateError(requestInputs.re_statedlaborrate, language)
     if (rateError) { setDraftError(rateError); setStep(1); return }
@@ -981,21 +1019,7 @@ function App() {
       : 'Submit this estimate? All changes will be saved and the estimate will be locked against editing.')) return
     draftInFlight.current = true; setDraftBusy(true)
     try {
-      const input: DraftRecord = {
-        mode: submit ? 'submit' : 'save', id: draftId, version: draftVersion, title: estimateTitle,
-        branchId, stateId, equipmentTypeId, jobTypeId, building: buildingName,
-        customer: customerName, email: customerEmail, phone: customerPhone, market,
-        accountId: selectedAccount?.id ?? '', accountNumber: selectedAccount?.number ?? '',
-        accountName: selectedAccount?.name ?? '', contactId: selectedContact?.id ?? '',
-        fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
-        equipment: selectedEquipment.map((item) => ({ ...item, id: item.matched ? item.id : '' })),
-        packages: selectedPackages.map((item) => ({ id: item.re_repairpackageid,
-          number: item.re_packagenumber, nameEn: item.re_packagenameen, scopeEn: item.re_proposalscopeen ?? '',
-          nameFr: item.re_packagenamefr, scopeFr: item.re_proposalscopefr,
-          hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial,
-          equipmentNumbers: item.equipmentNumbers ?? null, allEquipment: item.equipmentNumbers == null })),
-        laborLines, materialLines,
-      }
+      const input = draftInput(laborLines, materialLines, submit)
       serializeDraft(input)
       const record = await draftOperation(input)
       const missingDetails = input.equipment.filter((item) => !item.matched).some((item) => {
@@ -1016,10 +1040,24 @@ function App() {
         return !saved || (['nameEn', 'nameFr', 'scopeEn', 'scopeFr'] as const).some(key =>
           (item[key] ?? '') !== (saved[key] ?? ''))
       })
-      if (missingDetails || missingAssignments || missingCustomDescriptions) {
+      const costLinkSignature = (line: DraftLabor | DraftMaterial) => JSON.stringify([
+        line.packageId, line.equipmentNumber || '',
+        ...('hours' in line ? [line.role, line.time, line.hours] : [line.part, line.quantity]),
+      ])
+      const missingCostEquipment = [
+        [input.laborLines, record.laborLines], [input.materialLines, record.materialLines],
+      ].some(([sent, received]) => {
+        if (!sent?.some(line => line.equipmentNumber)) return false
+        return JSON.stringify(sent.map(costLinkSignature).sort()) !==
+          JSON.stringify((received ?? []).map(costLinkSignature).sort())
+      })
+      if (missingDetails || missingAssignments || missingCustomDescriptions || missingCostEquipment) {
         setDraftVersion(record.version); setDraftNumber(record.number || '')
         setSubmitted(record.status === 126110002)
         setExportDelivery(record.exportDelivery ?? undefined)
+        if (missingCostEquipment) throw new Error(language === 'fr'
+          ? 'Le serveur n’a pas conservé les équipements des coûts personnalisés. Vos lignes restent à l’écran. Déployez le schéma et le plug-in de brouillon mis à jour.'
+          : 'The server did not retain custom-cost equipment assignments. Your rows remain on screen. Deploy the updated schema and draft plugin.')
         if (missingCustomDescriptions) throw new Error(language === 'fr'
           ? 'Le serveur n’a pas conservé le nom ou la portée du forfait personnalisé. Vos textes restent à l’écran. Contactez votre administrateur pour déployer le plug-in de brouillon mis à jour.'
           : 'The server did not retain the custom package name or scope. Your text remains on screen. Contact your administrator to deploy the updated draft plugin.')
@@ -1395,7 +1433,7 @@ function App() {
               equipmentPasteResult,
               setSelectedEquipment,
               selectedPackages,
-              laborLines, materialLines, setLaborLines, setMaterialLines,
+              laborLines, materialLines, setLaborLines, setMaterialLines, validateCostImport,
               packageLoading,
               packageError: packageError || packageLoadError,
               packageResults,

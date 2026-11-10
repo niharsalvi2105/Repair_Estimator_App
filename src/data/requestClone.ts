@@ -83,9 +83,11 @@ export function cloneRequest(source: DraftRecord | OpportunityValues, sections: 
     equipment: sections.equipment ? (full?.equipment ?? []).map(row => ({ ...row })) : [],
     packages: sections.packages ? (full?.packages ?? []).map(row => ({ ...row,
       equipmentNumbers: sections.equipment ? row.equipmentNumbers?.slice() : undefined })) : [],
-    laborLines: sections.custom ? (full?.laborLines ?? []).map(row => ({ ...row, id: crypto.randomUUID(), rate: undefined })) : [],
+    laborLines: sections.custom ? (full?.laborLines ?? []).map(row => ({ ...row,
+      equipmentNumber: sections.equipment ? row.equipmentNumber : undefined, id: crypto.randomUUID(), rate: undefined })) : [],
     materialLines: sections.custom ? (full?.materialLines ?? []).map(row => ({
-      ...row, id: crypto.randomUUID(), refreshPart: !!row.catalogPartId,
+      ...row, equipmentNumber: sections.equipment ? row.equipmentNumber : undefined,
+      id: crypto.randomUUID(), refreshPart: !!row.catalogPartId,
     })) : [],
   }
 }

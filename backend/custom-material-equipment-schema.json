@@ -1,0 +1,27 @@
+{
+  "status": "design-only-not-deployed",
+  "description": "Publish the optional material-to-estimate-equipment lookup before deploying equipment-specific custom-cost imports. Labor already has the corresponding lookup.",
+  "tables": {
+    "re_estimatematerialline": {
+      "re_estimateequipment": {
+        "type": "Lookup",
+        "target": "re_estimateequipment",
+        "required": false,
+        "description": "Equipment snapshot selected for this line's CSTM package. Never a shared Equipment master lookup."
+      }
+    }
+  },
+  "relationship": {
+    "schemaName": "re_estimateequipment_custommaterials",
+    "delete": "Restrict",
+    "assign": "NoCascade",
+    "share": "NoCascade",
+    "unshare": "NoCascade",
+    "reparent": "NoCascade"
+  },
+  "deployment": [
+    "Verify the existing labor lookup; publish material lookup and relationship without backfilling existing unassigned lines.",
+    "Deploy Drafts and frontend together; refresh Office Scripts for equipment-number export resolution.",
+    "Verify mixed package equipment subsets, import replacement, Save/Load, clone and exports with estimator permissions."
+  ]
+}

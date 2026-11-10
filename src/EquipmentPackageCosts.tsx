@@ -15,12 +15,13 @@ export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, t
   const fr = language === 'fr'
   const result = useMemo(() => {
     try {
-      return { cost: calculateEquipmentPackageCost(repairPackage, equipment.length, rates, time, tax, freight, labor, materials), error: '' }
+      return { costs: new Map(equipment.map(unit => [unit.number,
+        calculateEquipmentPackageCost(repairPackage, equipment.length, rates, time, tax, freight, labor, materials, unit.number)])), error: '' }
     } catch (reason) {
-      return { cost: undefined, error: reason instanceof Error ? reason.message : String(reason) }
+      return { costs: undefined, error: reason instanceof Error ? reason.message : String(reason) }
     }
-  }, [repairPackage, equipment.length, rates, time, tax, freight, labor, materials])
-  const { cost, error } = result
+  }, [repairPackage, equipment, rates, time, tax, freight, labor, materials])
+  const { costs, error } = result
   const currentEquipmentPage = Math.min(equipmentPage, Math.max(0, Math.ceil(equipment.length / PAGE_SIZE) - 1))
   const number = (amount: number) => amount.toLocaleString(fr ? 'fr-CA' : 'en-US',
     { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -48,8 +49,8 @@ export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, t
       </div>
     </div>
     <p className="field-help">{fr
-      ? 'Les heures et coûts CSTM saisis sont répartis également entre les équipements affectés au forfait pour cet affichage. Le total du forfait ne change pas. Les ajouts au devis restent séparés.'
-      : 'Entered CSTM hours and costs are shared equally across the equipment assigned to this package for display. The package total is unchanged. Estimate-level additions remain separate.'}</p>
+      ? 'Les lignes CSTM affectées à un équipement sont attribuées à cet équipement. Les lignes sans affectation sont réparties également sur le forfait. Les ajouts au devis restent séparés.'
+      : 'Equipment-linked CSTM rows are allocated to that equipment. Unassigned rows are shared equally across the package. Estimate-level additions remain separate.'}</p>
     {!currency && <p className="error-box" role="alert">{fr
       ? 'Devise indisponible. Rechargez les références de la succursale pour consulter les montants.'
       : 'Currency unavailable. Reload branch references before reviewing amounts.'}</p>}
@@ -60,8 +61,9 @@ export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, t
       </span>
     </div>}
     <div className="equipment-package-grid">
-      {equipment.slice(currentEquipmentPage * PAGE_SIZE, (currentEquipmentPage + 1) * PAGE_SIZE).map((unit) =>
-        <article className="equipment-package-card" key={unit.id}>
+      {equipment.slice(currentEquipmentPage * PAGE_SIZE, (currentEquipmentPage + 1) * PAGE_SIZE).map((unit) => {
+        const cost = costs?.get(unit.number)
+        return <article className="equipment-package-card" key={unit.id}>
           <h4>{unit.number}</h4>
           {unit.name && <p>{unit.name}</p>}
           {!unit.matched && <span className="unbound-tag">{fr ? 'Non répertorié' : 'Unlisted'}</span>}
@@ -95,7 +97,7 @@ export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, t
               </dd>
             </div>
           </dl>
-        </article>)}
+        </article>})}
     </div>
     {paging(equipment.length, currentEquipmentPage, setEquipmentPage, fr ? 'Équipements' : 'Equipment')}
   </section>

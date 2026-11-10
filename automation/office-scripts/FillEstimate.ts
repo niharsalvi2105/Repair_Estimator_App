@@ -190,7 +190,7 @@ function fillCustom(workbook: ExcelScript.Workbook, sheet: ExcelScript.Worksheet
   for (let index = 0; index < payload.materials.length; index++) {
     const row = payload.materials[index]
     const start = materialStart + index
-    write(sheet.getRangeByIndexes(start, 0, 1, 1), 'Estimate scope')
+    write(sheet.getRangeByIndexes(start, 0, 1, 1), text(row, 're_equipmentnumber') || 'Estimate scope')
     write(sheet.getRangeByIndexes(start, 1, 1, 1), text(row, 're_entereddescription'))
     write(sheet.getRangeByIndexes(start, 4, 1, 1), text(row, 're_vendor'))
     write(sheet.getRangeByIndexes(start, 6, 1, 1), text(row, 're_partnumber'))
@@ -205,7 +205,7 @@ function fillCustom(workbook: ExcelScript.Workbook, sheet: ExcelScript.Worksheet
     const time = number(row, 're_timecategory') - 126110000
     const amount = number(row, 're_hours')
     const start = laborStart + index
-    write(sheet.getRangeByIndexes(start, 11, 1, 1), 'Estimate scope')
+    write(sheet.getRangeByIndexes(start, 11, 1, 1), text(row, 're_equipmentnumber') || 'Estimate scope')
     write(sheet.getRangeByIndexes(start, 12 + role * 2 + time, 1, 1), amount)
     write(sheet.getRangeByIndexes(start, 18, 1, 1), number(row, 're_totalcost'))
     hours += amount

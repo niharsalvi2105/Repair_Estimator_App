@@ -17,6 +17,73 @@ namespace RepairEstimator.Tests
 {
     public class PluginIntegrationTests
     {
+        [Fact]
+        public void Custom_cost_equipment_links_roundtrip_clear_and_export_without_master_lookup()
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.equipment[0].number = "0000123";
+            request.equipment[0].matched = false;
+            request.equipment[0].id = "";
+            AddCustomDescriptionLines(request);
+            request.laborLines[0].equipmentNumber = request.materialLines[0].equipmentNumber = "0000123";
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal("0000123", saved.laborLines.Single().equipmentNumber);
+            Assert.Equal("0000123", saved.materialLines.Single().equipmentNumber);
+            var snapshotRow = db.Rows.Values.Single(e => e.LogicalName == "re_estimateequipment");
+            foreach (var row in db.Rows.Values.Where(e => e.LogicalName == "re_estimatelaborline" || e.LogicalName == "re_estimatematerialline"))
+                Assert.Equal(snapshotRow.Id, row.GetAttributeValue<EntityReference>("re_estimateequipment").Id);
+            var exported = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
+            Assert.Equal("0000123", exported.labor.Single().cells.Single(c => c.key == "re_equipmentnumber").text);
+            Assert.Equal("0000123", exported.materials.Single().cells.Single(c => c.key == "re_equipmentnumber").text);
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            loaded.mode = "save";
+            loaded.laborLines[0].equipmentNumber = loaded.materialLines[0].equipmentNumber = null;
+            var preserved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(loaded)));
+            Assert.Equal("0000123", preserved.materialLines[0].equipmentNumber);
+            Assert.Equal("0000123", preserved.laborLines[0].equipmentNumber);
+            preserved.mode = "save";
+            preserved.laborLines[0].equipmentNumber = preserved.materialLines[0].equipmentNumber = "";
+            var cleared = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(preserved)));
+            Assert.Null(cleared.materialLines[0].equipmentNumber);
+            Assert.Null(cleared.laborLines[0].equipmentNumber);
+            var broken = db.Rows.Values.Single(e => e.LogicalName == "re_estimatematerialline");
+            broken["re_estimateequipment"] = new EntityReference("re_estimateequipment", Guid.NewGuid());
+            Assert.Contains("equipment outside", Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}")).Message);
+            Assert.Contains("EXPORT_LINE_EQUIPMENT_INVALID", Assert.Throws<InvalidPluginExecutionException>(() =>
+                ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample")).Message);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Custom_cost_equipment_must_be_in_its_package(bool labor)
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            AddCustomDescriptionLines(request);
+            if (labor) request.laborLines[0].equipmentNumber = "NOT-SELECTED";
+            else request.materialLines[0].equipmentNumber = "NOT-SELECTED";
+            Assert.Contains("equipment must be selected", Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Save(ExportSnapshot.Serialize(request))).Message);
+            request.equipment.Add(new EquipmentInput { id = "", number = "SECOND", matched = false });
+            request.packages[0].equipmentNumbers = new List<string> { request.equipment[0].number };
+            request.packages[0].allEquipment = false;
+            if (labor) request.laborLines[0].equipmentNumber = "SECOND";
+            else request.materialLines[0].equipmentNumber = "SECOND";
+            // Fake Pipeline does not roll back failed requests: start with a fresh ID/version.
+            request.version = db.Rows[db.EstimateId].RowVersion;
+            Assert.Contains("equipment must be selected", Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Save(ExportSnapshot.Serialize(request))).Message);
+        }
+
         [Theory]
         [InlineData(true)]
         [InlineData(false)]

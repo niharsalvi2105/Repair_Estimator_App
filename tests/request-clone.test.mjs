@@ -32,6 +32,20 @@ function transport() {
       re_mechanichours: 3, re_materialmisctaxcost: 300, re_iscustompackage: true }],
   }
 }
+test('cost equipment links use exact numbers in full clones and clear when equipment is excluded', async () => {
+    const original = source()
+    original.laborLines[0].equipmentNumber = 'E1'
+    original.materialLines[0].equipmentNumber = 'E1'
+    const selections = { ...DEFAULT_CLONE_SECTIONS, packages: true, custom: true, equipment: true }
+    const copy = cloneRequest(original, selections, 'new')
+    const checked = await revalidateClone(copy, transport())
+    assert.equal(checked.laborLines[0].equipmentNumber, 'E1')
+    assert.equal(checked.materialLines[0].equipmentNumber, 'E1')
+    assert.notEqual(copy.laborLines[0].id, original.laborLines[0].id)
+    const without = cloneRequest(original, { ...selections, equipment: false }, 'new')
+    assert.equal(without.laborLines[0].equipmentNumber, undefined)
+    assert.equal(without.materialLines[0].equipmentNumber, undefined)
+})
 test('equipment assignments survive full clone and current-master revalidation', async () => {
   const original = source()
   original.packages[0].equipmentNumbers = ['E1']

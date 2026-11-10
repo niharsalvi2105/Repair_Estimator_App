@@ -12,3 +12,14 @@ export function validPackageEquipment(selection: PackageEquipmentSelection, equi
     new Set(numbers).size === numbers.length &&
     numbers.every((number) => typeof number === 'string' && equipment.some((unit) => unit.number === number)))
 }
+
+export function validCustomCostEquipment(
+  lines: { packageId?: string | null; equipmentNumber?: string | null }[],
+  packages: { id: string; equipmentNumbers: string[] }[],
+): boolean {
+  return lines.every(line => {
+    const number = line.equipmentNumber
+    return !number || (number.length <= 20 && !/\s/.test(number) &&
+      packages.some(p => p.id === line.packageId && p.equipmentNumbers.includes(number)))
+  })
+}

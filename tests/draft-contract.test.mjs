@@ -12,6 +12,25 @@ const fixture = () => ({
   packages: [{ id: 'package-id', number: 'P1', nameEn: 'Package', scopeEn: 'Scope', hours: 2.5, material: 125 }],
 })
 
+test('cost equipment numbers must be selected for the referenced package, preserving leading zeros', () => {
+  const original = fixture()
+  original.packages[0].isCustom = true
+  original.equipment[0].number = '0000123'
+  original.equipment.push({ ...original.equipment[0], number: 'OTHER' })
+  original.packages[0].equipmentNumbers = ['0000123']
+  original.laborLines = [{ id: 'l', packageId: 'package-id', equipmentNumber: '0000123',
+    role: 126110000, time: 126110000, hours: 1, rate: 20 }]
+  original.materialLines = [{ id: 'm', packageId: 'package-id', equipmentNumber: '0000123',
+    description: 'Part', part: 'P1', vendor: 'Vendor', quantity: 1, unitCost: 10 }]
+  assert.equal(parseDraft(original).laborLines[0].equipmentNumber, '0000123')
+  for (const equipmentNumber of ['123', 'OTHER', 123, 'MISSING']) {
+    for (const kind of ['laborLines', 'materialLines']) {
+      assert.throws(() => parseDraft({ ...original,
+        [kind]: [{ ...original[kind][0], equipmentNumber }] }), /snapshot/)
+    }
+  }
+})
+
 test('package equipment snapshots roundtrip and reject invalid subsets', () => {
   const original = fixture()
   for (const equipmentNumbers of [undefined, null, ['UNLISTED']])

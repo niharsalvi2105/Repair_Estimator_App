@@ -1,9 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { packageEquipmentNumbers, validPackageEquipment } from '../src/data/packageEquipment.ts'
+import { packageEquipmentNumbers, validPackageEquipment, validCustomCostEquipment } from '../src/data/packageEquipment.ts'
 import { calculatePackageCost } from '../src/data/packageCosts.ts'
 
 const equipment = Array.from({ length: 5 }, (_, i) => ({ number: `E${i + 1}` }))
+test('custom cost equipment cannot follow a removed unit or a different package subset', () => {
+  const packages = [{ id: 'a', equipmentNumbers: ['0001'] }, { id: 'b', equipmentNumbers: ['E2'] }]
+  assert.equal(validCustomCostEquipment([{ packageId: 'a', equipmentNumber: '0001' }], packages), true)
+  for (const equipmentNumber of ['1', 'E2', ' 0001', 'MISSING'])
+    assert.equal(validCustomCostEquipment([{ packageId: 'a', equipmentNumber }], packages), false)
+  for (const equipmentNumber of [null, undefined, ''])
+    assert.equal(validCustomCostEquipment([{ packageId: 'a', equipmentNumber }], packages), true)
+  assert.equal(validCustomCostEquipment([{ packageId: 'b', equipmentNumber: '0001' }], packages), false)
+})
+
 test('Pit 4 / MR 3 / Door 5 use actual subsets and exact costs', () => {
   const rates = [{ role: 126110000, time: 126110000, rate: 100 }]
   const packageBase = { re_mechanichours: 1, re_materialmisctaxcost: 100 }
