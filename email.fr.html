@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Devis de r&eacute;paration - demande de r&eacute;vision</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f2f5f8;color:#182b3a;font-family:Arial,Helvetica,sans-serif;">
+  <!-- Static email template. Replace named placeholders with HTML-escaped values before sending.
+       Repeat equipment/package/labor/material blocks for every saved row; never truncate lists.
+       All placeholders are text, not trusted HTML; convert escaped multiline values to <br>.
+       Compiled by automation/build-estimate-email-flow.mjs; recipients are flow configuration.
+       This email does not record an approval decision. -->
+  <div style="display:none;font-size:1px;line-height:1px;color:#f2f5f8;max-height:0;max-width:0;overflow:hidden;mso-hide:all;">Le devis {{EstimateNumber}} est pr&ecirc;t pour la r&eacute;vision par l'&eacute;quipe centrale des soumissions.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f2f5f8;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <!--[if mso]><table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background-color:#ffffff;border:1px solid #dce4ec;">
+          <tr>
+            <td bgcolor="#0065df" style="padding:24px;color:#ffffff;">
+              <p style="margin:0 0 16px;font-size:26px;font-weight:bold;letter-spacing:3px;">KONE</p>
+              <p style="margin:0 0 6px;font-size:12px;line-height:18px;letter-spacing:1px;">REPAIR ESTIMATOR &middot; R&Eacute;VISION INTERNE</p>
+              <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:bold;">Demande de r&eacute;vision du devis</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              <p style="margin:0 0 12px;font-size:16px;line-height:24px;">Bonjour &agrave; l'&eacute;quipe centrale des soumissions,</p>
+              <p style="margin:0 0 24px;font-size:14px;line-height:22px;color:#435567;">Veuillez examiner le devis complet ci-dessous : client, travaux, co&ucirc;ts d&eacute;taill&eacute;s et prix enregistr&eacute;s. Tous les montants sont en {{CurrencyCode}}, sauf indication contraire.</p>
+              <h2 style="margin:0 0 12px;font-size:16px;line-height:24px;">R&eacute;sum&eacute; du devis</h2>
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;table-layout:fixed;font-size:14px;line-height:22px;">
+                <tr>
+                  <th scope="row" width="38%" align="left" valign="top" style="padding:10px 12px;background-color:#f4f7fb;border-bottom:1px solid #dce4ec;font-weight:normal;color:#435567;">Num&eacute;ro du devis</th>
+                  <td valign="top" style="padding:10px 12px;border-bottom:1px solid #dce4ec;word-wrap:break-word;overflow-wrap:anywhere;font-weight:bold;">{{EstimateNumber}}</td>
+                </tr>
+                <tr>
+                  <th scope="row" align="left" valign="top" style="padding:10px 12px;background-color:#f4f7fb;border-bottom:1px solid #dce4ec;font-weight:normal;color:#435567;">Client</th>
+                  <td valign="top" style="padding:10px 12px;border-bottom:1px solid #dce4ec;word-wrap:break-word;overflow-wrap:anywhere;">{{CustomerName}}</td>
+                </tr>
+                <tr>
+                  <th scope="row" align="left" valign="top" style="padding:10px 12px;background-color:#f4f7fb;border-bottom:1px solid #dce4ec;font-weight:normal;color:#435567;">Site / emplacement</th>
+                  <td valign="top" style="padding:10px 12px;border-bottom:1px solid #dce4ec;word-wrap:break-word;overflow-wrap:anywhere;">{{SiteDescription}}</td>
+                </tr>
+              </table>
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Client et renseignements de la demande</h2>
+              <div style="padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <strong>Nom de l'occasion :</strong> {{OpportunityName}}<br>
+                <strong>Num&eacute;ro de compte :</strong> {{AccountNumber}}<br>
+                <strong>Nom du contact :</strong> {{ContactName}}<br>
+                <strong>Courriel du contact :</strong> {{ContactEmail}}<br>
+                <strong>T&eacute;l&eacute;phone du contact :</strong> {{ContactPhone}}<br>
+                <strong>March&eacute; / succursale :</strong> {{Market}} / {{Branch}}<br>
+                <strong>&Eacute;tat / province :</strong> {{StateProvince}}<br>
+                <strong>Type d'&eacute;quipement :</strong> {{EquipmentType}}<br>
+                <strong>Type de travaux :</strong> {{JobType}}<br>
+                <strong>Statut du devis :</strong> {{EstimateStatus}}<br>
+                <strong>Langue de la proposition :</strong> {{ProposalLanguage}}<br>
+                <strong>Repr&eacute;sentant :</strong> {{Salesperson}}<br>
+                <strong>Superviseur :</strong> {{Supervisor}}<br>
+                <strong>Centre de travail demand&eacute; :</strong> {{WorkCentreRequest}}<br>
+                <strong>Nombre de techniciens :</strong> {{NumberOfTechnicians}}<br>
+                <strong>D&eacute;j&agrave; approuv&eacute; ? (saisie de la demande) :</strong> {{HasBeenApproved}}<br>
+                <strong>Compte national :</strong> {{NationalAccount}}<br>
+                <strong>Urgence / &eacute;quipement &agrave; l'arr&ecirc;t :</strong> {{Emergency}}<br>
+                <strong>R&eacute;paration pr&eacute;vue au budget :</strong> {{CustomerBudgeted}}<br>
+                <strong>Type de papier :</strong> {{PaperType}}<br>
+                <strong>Consultant impliqu&eacute; :</strong> {{ConsultantInvolved}}<br>
+                <strong>Offres concurrentes :</strong> {{CompetingBids}}
+              </div>
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">&Eacute;quipement</h2>
+              <!-- BEGIN repeat equipment -->
+              <div style="margin-bottom:10px;padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <strong>Num&eacute;ro d'&eacute;quipement :</strong> {{EquipmentNumber}}<br>
+                <strong>Nom :</strong> {{EquipmentName}}<br>
+                <strong>Emplacement :</strong> {{EquipmentLocation}}<br>
+                <strong>Client :</strong> {{EquipmentCustomer}}<br>
+                <strong>Fabricant / &acirc;ge :</strong> {{EquipmentOem}} / {{EquipmentAge}}<br>
+                <strong>Correspondance aux donn&eacute;es de r&eacute;f&eacute;rence :</strong> {{EquipmentMatched}}
+              </div>
+              <!-- END repeat equipment -->
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Forfaits et port&eacute;e des travaux</h2>
+              <!-- BEGIN repeat package -->
+              <div style="margin-bottom:10px;padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <strong>{{PackageNumber}} &mdash; {{PackageName}}</strong><br>
+                <strong>Type de forfait :</strong> {{PackageType}}<br>
+                <strong>&Eacute;quipements affect&eacute;s :</strong> {{PackageEquipment}}<br>
+                <strong>Nombre d'&eacute;quipements :</strong> {{PackageEquipmentQuantity}}<br>
+                <strong>Port&eacute;e des travaux :</strong><br>{{PackageScope}}<br>
+                <strong>Heures de main-d'&oelig;uvre :</strong> {{PackageLaborHours}}<br>
+                <strong>Taux de co&ucirc;t m&eacute;canicien :</strong> {{PackageMechanicRate}}<br>
+                <strong>Co&ucirc;t de main-d'&oelig;uvre :</strong> {{PackageLaborCost}}<br>
+                <strong>Mat&eacute;riaux avant taxe / fret :</strong> {{PackageMaterialCost}}<br>
+                <strong>Montant KONE avant majoration / final :</strong> {{PackageKoneBeforeMarkup}} / {{PackageKoneFinalAmount}}<br>
+                <strong>Taxe / fret applicables :</strong> {{PackageTaxPercent}} / {{PackageFreightPercent}}<br>
+                <strong>Co&ucirc;t estim&eacute; du forfait (aper&ccedil;u) :</strong> {{PackageEstimatedCost}}
+              </div>
+              <!-- END repeat package -->
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">D&eacute;tail de la main-d'&oelig;uvre</h2>
+              <!-- BEGIN repeat labor -->
+              <div style="margin-bottom:10px;padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <strong>Forfait / &eacute;quipement :</strong> {{LaborPackage}} / {{LaborEquipmentNumber}}<br>
+                <strong>R&ocirc;le / cat&eacute;gorie de temps :</strong> {{LaborRole}} / {{LaborTimeCategory}}<br>
+                <strong>Heures :</strong> {{LaborHours}}<br>
+                <strong>Taux de co&ucirc;t enregistr&eacute; :</strong> {{LaborRate}}<br>
+                <strong>Co&ucirc;t de la ligne :</strong> {{LaborLineCost}}
+              </div>
+              <!-- END repeat labor -->
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">D&eacute;tail des mat&eacute;riaux</h2>
+              <!-- BEGIN repeat material -->
+              <div style="margin-bottom:10px;padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <strong>Forfait / &eacute;quipement :</strong> {{MaterialPackage}} / {{MaterialEquipmentNumber}}<br>
+                <strong>Description :</strong> {{MaterialDescription}}<br>
+                <strong>Fournisseur :</strong> {{MaterialVendor}}<br>
+                <strong>Fabricant de la pi&egrave;ce :</strong> {{MaterialPartType}}<br>
+                <strong>Num&eacute;ro de pi&egrave;ce :</strong> {{MaterialPartNumber}}<br>
+                <strong>Source de tarification :</strong> {{MaterialPricingSource}}<br>
+                <strong>Quantit&eacute; / unit&eacute; :</strong> {{MaterialQuantity}} / {{MaterialUom}}<br>
+                <strong>Co&ucirc;t unitaire :</strong> {{MaterialUnitCost}}<br>
+                <strong>Prix unitaire VK13 (catalogue) :</strong> {{MaterialVk13UnitPrice}}<br>
+                <strong>Prix de vente unitaire effectif :</strong> {{MaterialSellingPrice}}<br>
+                <strong>Majoration KONE :</strong> {{MaterialMarkupPercent}}<br>
+                <strong>Co&ucirc;t de la ligne (avant taxe / fret) :</strong> {{MaterialLineCost}}
+              </div>
+              <!-- END repeat material -->
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Donn&eacute;es de co&ucirc;t et de tarification</h2>
+              <div style="padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <strong>Cat&eacute;gorie de temps :</strong> {{TimeCategory}}<br>
+                <strong>Heures suppl&eacute;mentaires :</strong> {{AdditionalLaborHours}}<br>
+                <strong>Mat&eacute;riaux suppl&eacute;mentaires :</strong> {{AdditionalMaterial}}<br>
+                <strong>Frais divers suppl&eacute;mentaires :</strong> {{AdditionalMiscellaneous}}<br>
+                <strong>Taxe d'utilisation / fret :</strong> {{UseTaxPercent}} / {{FreightPercent}}<br>
+                <strong>Sous-traitance (saisie uniquement) :</strong> {{SubcontractorCost}}<br>
+                <strong>Taux de facturation stipul&eacute; :</strong> {{StatedLaborRate}}<br>
+                <strong>Prix global des pi&egrave;ces KONE (personnalis&eacute; seulement) :</strong> {{KoneSparesSalesPrice}}<br>
+                <strong>Port&eacute;e suppl&eacute;mentaire :</strong><br>{{AdditionalScope}}
+              </div>
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Prix enregistr&eacute;s et d&eacute;tail des co&ucirc;ts</h2>
+              <div style="padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <strong>&Eacute;tat du calcul :</strong> {{PricingState}}<br>
+                <strong>Co&ucirc;t estim&eacute; des forfaits :</strong> {{PackageCostTotal}}<br>
+                <strong>Main-d'&oelig;uvre personnalis&eacute;e :</strong> {{CustomLaborCost}}<br>
+                <strong>Mat&eacute;riaux personnalis&eacute;s :</strong> {{CustomMaterialCost}}<br>
+                <strong>Co&ucirc;t suppl&eacute;mentaire total :</strong> {{TotalAdditionalCost}}<br>
+                <strong>Montant de taxe d'utilisation :</strong> {{UseTaxAmount}}<br>
+                <strong>Montant de fret :</strong> {{FreightAmount}}<br>
+                <strong>Co&ucirc;t r&eacute;el total :</strong> {{TotalTrueCost}}<br>
+                <strong>Prix de vente sugg&eacute;r&eacute; :</strong> {{SuggestedSellingPrice}}<br>
+                <strong>Prix sugg&eacute;r&eacute; avec pi&egrave;ces KONE :</strong> {{SuggestedPriceWithKoneMaterial}}<br>
+                <strong>CMII cible de base :</strong> {{BaseTargetCmii}}<br>
+                <strong>CMII recommand&eacute; :</strong> {{RecommendedCmii}}<br>
+                <strong>CMII r&eacute;el :</strong> {{ActualCmii}}<br>
+                <strong>&Eacute;cart de CMII :</strong> {{CmiiVariance}}<br>
+                <strong>Prime AM :</strong> {{AmIncentive}}<br>
+                <strong>Prime BD :</strong> {{BdIncentive}}<br>
+                <strong>Version / date du calcul :</strong> {{CalculationVersion}} / {{CalculatedOn}}
+              </div>
+              <p style="margin:8px 0 0;font-size:12px;line-height:18px;color:#526477;">R&eacute;sultats enregistr&eacute;s du serveur, sans recalcul dans le courriel. La taxe et le fret sont d&eacute;j&agrave; inclus dans leurs composantes de co&ucirc;t : ne pas les ajouter de nouveau. Les aper&ccedil;us des forfaits et la saisie de sous-traitance ne sont pas des totaux enregistr&eacute;s suppl&eacute;mentaires.</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+                <tr>
+                  <td bgcolor="#eaf3ff" style="padding:18px;border-left:4px solid #0065df;">
+                    <p style="margin:0 0 6px;font-size:13px;line-height:20px;color:#435567;">Prix de vente total</p>
+                    <p style="margin:0;font-size:26px;line-height:34px;font-weight:bold;color:#004ba8;word-wrap:break-word;overflow-wrap:anywhere;">{{TotalSellingPrice}} <span style="font-size:14px;">{{CurrencyCode}}</span></p>
+                  </td>
+                </tr>
+              </table>
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Facturation, partenaires et notes</h2>
+              <div style="padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <strong>Plan de facturation :</strong> {{BillingPlan}}<br>
+                <strong>Acompte :</strong> {{DownPayment}}<br>
+                <strong>Paiement final :</strong> {{FinalPayment}}<br>
+                <strong>Num&eacute;ro de compte prospect :</strong> {{ProspectAccountNumber}}<br>
+                <strong>Donneur d'ordre :</strong> {{SoldTo}}<br>
+                <strong>Destinataire de facture :</strong> {{BillTo}}<br>
+                <strong>Payeur :</strong> {{Payer}}<br>
+                <strong>Commentaires sur la marge :</strong><br>{{MarginComments}}<br>
+                <strong>Notes pour l'&eacute;quipe CTT :</strong><br>{{NotesForCttTeam}}
+              </div>
+              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Estimateur / représentant commercial</h2>
+              <p style="margin:0;font-size:14px;line-height:22px;word-wrap:break-word;overflow-wrap:anywhere;"><strong>{{EstimatorName}}</strong><br>{{EstimatorEmail}}<br>{{EstimatorBranch}}</p>
+              <p style="margin:24px 0 0;padding-top:18px;border-top:1px solid #dce4ec;font-size:14px;line-height:22px;color:#435567;">Veuillez indiquer le num&eacute;ro du devis dans vos commentaires. Ce r&eacute;sum&eacute; n'enregistre aucune d&eacute;cision d'approbation.</p>
+            </td>
+          </tr>
+          <tr>
+            <td bgcolor="#f4f7fb" style="padding:16px 24px;border-top:1px solid #dce4ec;font-size:12px;line-height:18px;color:#526477;">Repair Estimator &middot; R&eacute;vision interne des soumissions<br>Usage interne uniquement. Ceci n'est pas un devis destin&eacute; au client.</td>
+          </tr>
+        </table>
+        <!--[if mso]></td></tr></table><![endif]-->
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
