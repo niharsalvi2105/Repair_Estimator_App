@@ -1,6 +1,11 @@
 import type { DraftMaterial } from './draftContract'
 
 export function materialEntryError(line: DraftMaterial, language: 'en' | 'fr'): string | undefined {
+  if (line.sellingPrice != null && (!line.catalogPartId || !(line.unitPrice != null && line.unitPrice > 0) ||
+    !Number.isFinite(line.sellingPrice) || line.sellingPrice <= 0 || line.sellingPrice > 1000000000 ||
+    Number(line.sellingPrice.toFixed(10)) !== line.sellingPrice))
+    return language === 'fr' ? 'Le prix de vente exige une pièce du catalogue avec un prix VK13 et un montant positif au maximum de 1000000000.'
+      : 'Selling price requires a catalog part with a VK13 price and a positive amount no greater than 1000000000.'
   if (!line.part?.trim())
     return language === 'fr' ? 'Le numéro de pièce est obligatoire.' : 'Part number is required.'
   if (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 100000)

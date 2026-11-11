@@ -7,7 +7,7 @@ import { RequestFields, type RequestInputs } from './RequestFields'
 import { PricingSummary } from './PricingSummary'
 import { BranchSelect } from './BranchSelect'
 import { CustomerMasterSelect } from './CustomerMasterSelect'
-import { packageEquipmentNumbers, validPackageEquipment } from './data/packageEquipment'
+import { packageEquipmentNumbers, validPackageEquipment, validCustomCostEquipment } from './data/packageEquipment'
 import { getCustomerDefaults, type AccountMasterOption, type ContactMasterOption } from './data/customerMasterRepository'
 import type { CustomerDefaults } from './data/customerMasterContract'
 import { CustomCostLines } from './CustomCostLines'
@@ -30,6 +30,7 @@ import type { PricingRecord } from './data/pricingContract'
 
 type Language = 'en' | 'fr'
 type Props = {
+  validateCostImport: (labor: DraftLabor[], materials: DraftMaterial[]) => void
   requestSection: RefObject<HTMLElement | null>
   t: AppCopy
   draftVersion: string | null
@@ -83,7 +84,8 @@ type Props = {
   savedSalesperson: string
   session: AppSession | undefined
   buildingName: string
-  setBuildingName: Dispatch<SetStateAction<string>>
+  buildingInitialized: boolean
+  setBuildingName: (value: string) => void
   stateId: string
   updateRequestInput: (key: keyof RequestInputs, value: string) => void
   requestInputs: RequestInputs
@@ -130,14 +132,14 @@ export default function EstimatorWorkspace({
   setReferenceAttempt, branchLoading, branchError, loadBranches, market,
   marketBranches, branchId, changeBranch, language, referenceError,
   setReferenceError, references, equipmentTypeId, setEquipmentTypeId, jobTypeId,
-  setJobTypeId, savedSalesperson, session, buildingName, setBuildingName,
+  setJobTypeId, savedSalesperson, session, buildingName, buildingInitialized, setBuildingName,
   stateId, updateRequestInput, requestInputs, equipmentQuery,
   changeEquipmentQuery, equipmentLoading, equipmentError, equipmentResults, equipmentBulkBusy, toggleEquipment,
   selectedEquipment, addUnlistedEquipment, addEquipmentList, uploadEquipmentExcel, equipmentPasteResult, setSelectedEquipment,
   selectedPackages, packageLoading, packageError, packageResults, togglePackage, retryPackages,
   selectedPackageIds, setSelectedPackages, marketName, customerName,
   customerEmail, customerPhone, setStep,
-  onDashboard, laborLines, materialLines, setLaborLines, setMaterialLines,
+  onDashboard, laborLines, materialLines, setLaborLines, setMaterialLines, validateCostImport,
 }: Props) {
   const [packagePage, setPackagePage] = useState(0)
   const [activeCustom, setActiveCustom] = useState<string>()
@@ -226,7 +228,12 @@ export default function EstimatorWorkspace({
   }, [branchId, needsRates, rateAttempt])
   const rates = rateResult?.branchId === branchId ? rateResult.rates ?? [] : []
   const customPackages = selectedPackages.filter((p) => p.re_iscustompackage)
-  const customValidation = customCostsError(customPackages.map((p) => p.re_repairpackageid), laborLines, materialLines, language)
+  const costEquipmentValid = validCustomCostEquipment([...laborLines, ...materialLines],
+    customPackages.map(p => ({ id: p.re_repairpackageid, equipmentNumbers: packageEquipmentNumbers(p, selectedEquipment) })))
+  const customValidation = !costEquipmentValid
+    ? language === 'fr' ? 'Réaffectez ou effacez les équipements des lignes CSTM qui ne sont plus affectés au forfait.'
+      : 'Reassign or clear CSTM line equipment that is no longer assigned to its package.'
+    : customCostsError(customPackages.map((p) => p.re_repairpackageid), laborLines, materialLines, language)
   const koneConflict = konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
   const marketCurrencyId = marketBranches.length > 0 &&
     marketBranches.every(branch => branch._re_currency_value === marketBranches[0]._re_currency_value)
@@ -254,7 +261,6 @@ export default function EstimatorWorkspace({
     { id: 'customer-name', step: 1, valid: !!customerName.trim() },
     { id: 'customer-email', step: 1, valid: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim()),
       message: customerEmail.trim() ? language === 'fr' ? 'Saisissez un courriel valide.' : 'Enter a valid email address.' : mandatory },
-    { id: 'opportunity-building', step: 1, valid: !!buildingName.trim(), navigation: true },
     { id: 'equipment-type', step: 1, valid: !!equipmentTypeId, navigation: true },
     { id: 'draft-province', step: 1, valid: !!stateId },
     { id: 'draft-currency', step: 1, valid: !!selectedBranch?._re_currency_value && !!draftReferences },
@@ -587,9 +593,9 @@ export default function EstimatorWorkspace({
                 market={market} branchId={branchId} account={selectedAccount} contact={selectedContact}
                 customerName={customerName} onCustomerName={onCustomerName}
                 errors={errors} loadDefaults={loadCustomerDefaults}
-                building={buildingName} onBuilding={setBuildingName}
-                onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted} />
-              <div className="customer-details-grid">
+                building={buildingName} buildingInitialized={buildingInitialized} onBuilding={setBuildingName}
+                onAccount={onSelectAccount} onContact={onSelectContact} language={language} disabled={!canWork || draftBusy || submitted}
+                emailField={
                 <div className="field-label">
                   <label htmlFor="customer-email">{t.customerEmail}<span className="required" aria-hidden="true">*</span></label>
                   <FieldError id="customer-email" message={errors['customer-email']} />
@@ -598,15 +604,15 @@ export default function EstimatorWorkspace({
                     required aria-required="true" readOnly={!!selectedContact?.email.trim()}
                     disabled={!canWork || draftBusy || submitted || !selectedAccount}
                     value={customerEmail} onChange={event => onCustomerEmail(event.target.value)} />
-                </div>
+                </div>}
+                phoneField={
                 <div className="field-label">
                   <label htmlFor="customer-phone">{t.customerPhone}</label>
                   <input id="customer-phone" type="tel" className="text-input" maxLength={50}
                     readOnly={!!selectedContact?.phone.trim()}
                     disabled={!canWork || draftBusy || submitted || !selectedAccount}
                     value={customerPhone} onChange={event => onCustomerPhone(event.target.value)} />
-                </div>
-              </div>
+                </div>} />
               <div className="request-options">
                 {referenceError ? (
                   <div className="error-box" role="alert">
@@ -640,7 +646,6 @@ export default function EstimatorWorkspace({
                   <label htmlFor="salesperson">{t.salesperson}</label>
                   <input id="salesperson" className="text-input" value={draftVersion ? savedSalesperson : session?.displayName ?? ''} readOnly />
                 </div>
-              </div>
               <div className="field-label">
                 <label htmlFor="draft-province">{dt.province}<span className="required">*</span></label>
                 <FieldError id="draft-province" message={errors['draft-province']} />
@@ -656,6 +661,7 @@ export default function EstimatorWorkspace({
                   role={branchId && !stateId ? 'alert' : undefined}>
                   {!branchId || stateId ? t.provinceFromBranch : t.missingProvince}
                 </p>
+              </div>
               </div>
               {(!selectedAccount?.id || !customerName.trim() || !customerEmail.trim()) &&
                 <p id="customer-navigation-help" className="field-help" role="status">
@@ -940,10 +946,22 @@ export default function EstimatorWorkspace({
             </div>}
             {step === 3 && ((activeCustom && hasCustom) || (!hasCustom && (laborLines.length > 0 || materialLines.length > 0))) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
+                rates={rates}
+                childCount={selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length}
+                validateImport={validateCostImport}
                 requestInputs={requestInputs} updateRequestInput={updateRequestInput}
-                setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd} readOnly={draftBusy}
+                setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd}
+                readOnly={draftBusy || submitted || !canWork || !!exportDelivery}
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
-                  materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))}
+                  customName: language === 'fr' ? p.re_packagenamefr ?? p.re_packagenameen : p.re_packagenameen,
+                  scope: (language === 'fr' ? p.re_proposalscopefr ?? p.re_proposalscopeen : p.re_proposalscopeen) ?? '',
+                  materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost,
+                  equipmentNumbers: packageEquipmentNumbers(p, selectedEquipment) }))}
+                onPackageDetails={(id, field, value) => setSelectedPackages(current => current.map(p =>
+                  p.re_repairpackageid !== id ? p : { ...p,
+                    [field === 'name'
+                      ? language === 'fr' ? 're_packagenamefr' : 're_packagenameen'
+                      : language === 'fr' ? 're_proposalscopefr' : 're_proposalscopeen']: value }))}
                 activePackageId={activeCustom} currency={currency} />}
             {step === 3 && customValidation && <p role="alert" className="error-box">{customValidation}</p>}
             {step === 3 && customError && <p role="alert" className="error-box">{customError}</p>}
@@ -969,10 +987,14 @@ export default function EstimatorWorkspace({
               canCalculate={canWork && draftComplete} />
             {(hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
+                rates={rates}
                 requestInputs={requestInputs} updateRequestInput={updateRequestInput}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={false} readOnly
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
-                  materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost }))} currency={currency} />}
+                  customName: language === 'fr' ? p.re_packagenamefr ?? p.re_packagenameen : p.re_packagenameen,
+                  scope: (language === 'fr' ? p.re_proposalscopefr ?? p.re_proposalscopeen : p.re_proposalscopeen) ?? '',
+                  materialBeforeMarkup: p.re_materialbeforemarkup, material: p.re_materialmisctaxcost,
+                  equipmentNumbers: packageEquipmentNumbers(p, selectedEquipment) }))} currency={currency} />}
             <section className="form-card">
               <div className="section-heading">
                 <span className="section-icon">05</span>

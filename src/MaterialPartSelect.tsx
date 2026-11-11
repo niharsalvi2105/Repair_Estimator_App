@@ -3,9 +3,10 @@ import type { DraftMaterial } from './data/draftContract'
 import type { Market } from './data/estimateQuery'
 import { getPartCatalog, type CatalogPart, type CatalogResult } from './data/partCatalogRepository'
 
-export function MaterialPartSelect({ line, update, market, language, capability, readOnly }: {
+export function MaterialPartSelect({ line, update, market, language, capability, readOnly, field }: {
   line: DraftMaterial; update: (change: Partial<DraftMaterial>) => void; market: Market
   language: 'en' | 'fr'; capability?: CatalogResult; readOnly: boolean
+  field?: 'type' | 'part' | 'details'
 }) {
   const fr = language === 'fr'
   const [query, setQuery] = useState<string>()
@@ -38,7 +39,7 @@ export function MaterialPartSelect({ line, update, market, language, capability,
   function choose(part: CatalogPart) {
     update({ catalogPartId: part.id, description: part.description, part: part.number,
       vendor: part.partType === 'kone' ? 'KONE' : '', unitCost: part.unitCost,
-      unitPrice: part.unitPrice, uom: part.uom, refreshPart: true,
+      unitPrice: part.unitPrice, sellingPrice: undefined, uom: part.uom, refreshPart: true,
       markupPercent: part.partType === 'kone' ? line.markupPercent ?? capability?.defaultMarkupPercent : undefined })
     setQuery(undefined)
     setOpen(false)
@@ -47,23 +48,24 @@ export function MaterialPartSelect({ line, update, market, language, capability,
   const money = (value: number) => `${value.toLocaleString(fr ? 'fr-CA' : 'en-US',
     { minimumFractionDigits: 2, maximumFractionDigits: 10 })}${capability?.currency ? ` ${capability.currency}` : ''}`
   return <>
-    <label className="field-label">{fr ? 'Type de pièce' : 'Part type'}
+    {(!field || field === 'type') && <label className="field-label">
+      <span className={field ? 'custom-cell-label' : undefined}>{fr ? 'Type de pièce' : 'Part type'}</span>
       <select className="text-input" value={line.partType ?? ''} disabled={readOnly}
         onChange={(event) => {
           setQuery(undefined)
           setOpen(false)
           const partType = event.target.value === 'kone' ? 'kone' : event.target.value === 'non-kone' ? 'non-kone' : undefined
           update({ partType, catalogPartId: undefined, part: '', description: '', vendor: '',
-            unitCost: 0, unitPrice: undefined, uom: undefined, refreshPart: false,
+            unitCost: 0, unitPrice: undefined, sellingPrice: undefined, uom: undefined, refreshPart: false,
             markupPercent: partType === 'kone' ? capability?.defaultMarkupPercent : undefined })
         }}>
         {!line.partType && <option value="">{fr ? 'Saisie manuelle existante' : 'Existing manual entry'}</option>}
         <option value="kone">KONE</option><option value="non-kone">Non-KONE</option>
       </select>
-    </label>
-    {line.partType && <>
+    </label>}
+    {(!field || field === 'part') && line.partType && <>
       <div className="field-label">
-        <label htmlFor={`${listId}-input`}>{fr ? 'Numéro de pièce' : 'Part number'}</label>
+        <label className={field ? 'custom-cell-label' : undefined} htmlFor={`${listId}-input`}>{fr ? 'Numéro de pièce' : 'Part number'}</label>
         <div className="branch-combobox" onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
         }}>
@@ -77,7 +79,7 @@ export function MaterialPartSelect({ line, update, market, language, capability,
               onChange={(event) => {
                 const value = event.target.value
                 setQuery(value); setActiveIndex(0); setOpen(true)
-                update({ part: value, catalogPartId: undefined, unitPrice: undefined, uom: undefined, refreshPart: false,
+                update({ part: value, catalogPartId: undefined, unitPrice: undefined, sellingPrice: undefined, uom: undefined, refreshPart: false,
                   ...(line.catalogPartId || line.partType === 'kone' ? { unitCost: 0, description: '', vendor: '' } : {}) })
               }}
               onKeyDown={(event) => {
@@ -127,7 +129,7 @@ export function MaterialPartSelect({ line, update, market, language, capability,
         </div>
       </div>
       {!readOnly && line.partType === 'non-kone' && line.catalogPartId && <button type="button" className="button tertiary"
-        onClick={() => { setQuery(undefined); setOpen(false); update({ catalogPartId: undefined, unitPrice: undefined, uom: undefined,
+        onClick={() => { setQuery(undefined); setOpen(false); update({ catalogPartId: undefined, unitPrice: undefined, sellingPrice: undefined, uom: undefined,
           unitCost: 0, part: '', description: '', refreshPart: false }) }}>
         {fr ? 'Passer à la saisie manuelle' : 'Switch to manual entry'}
       </button>}
@@ -137,18 +139,18 @@ export function MaterialPartSelect({ line, update, market, language, capability,
       {line.partType === 'kone' && !line.catalogPartId && <p className="error-box" role="alert">
         {fr ? 'Choisissez une pièce KONE du catalogue avant d’enregistrer.' : 'Select a KONE catalog part before saving.'}</p>}
     </>}
-    {line.partType === 'kone' && <label className="field-label">{fr ? 'Majoration KONE (%)' : 'KONE markup (%)'}
+    {(!field || field === 'details') && line.partType === 'kone' && <label className="field-label">{fr ? 'Majoration KONE (%)' : 'KONE markup (%)'}
       <input className="text-input" type="number" min="0" max="100" step="0.01"
         value={line.markupPercent ?? ''} disabled={readOnly || !capability?.available}
         onChange={(event) => update({ markupPercent: event.target.value === '' ? undefined : Number(event.target.value) })} />
       <span className="field-help">{fr ? 'Appliquée au prix VK13, pas au coût interne.' : 'Applied to VK13 selling price, not internal cost.'}</span>
     </label>}
-    {line.catalogPartId && <p className="field-help">
+    {(!field || field === 'details') && line.catalogPartId && <p className="field-help">
       {fr ? 'Pièce du catalogue' : 'Catalog part'}: {line.part} · {line.uom}
       {line.unitPrice != null && <> · VK13: {money(line.unitPrice)}</>}
       {' · '}{fr ? 'Valeurs vérifiées par le serveur lors de l’enregistrement.' : 'Values verified by the server on save.'}
     </p>}
-    {!readOnly && !capability?.available && line.partType === 'non-kone' && <button type="button" className="button tertiary"
+    {(!field || field === 'part') && !readOnly && !capability?.available && line.partType === 'non-kone' && <button type="button" className="button tertiary"
       onClick={() => { setQuery(undefined); setOpen(false); update({ pricingSource: 'manual', refreshPart: false }) }}>
       {fr ? 'Utiliser la saisie manuelle sans catalogue' : 'Use manual entry without catalog'}
     </button>}

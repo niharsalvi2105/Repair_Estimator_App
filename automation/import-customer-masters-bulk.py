@@ -40,6 +40,8 @@ def stream_rows(path, sheet_name):
     """Keep shared strings in memory and release XML elements as rows are consumed."""
     ns = customer.NS
     with zipfile.ZipFile(path) as workbook:
+        formats = customer.workbook_number_formats(workbook)
+        account_columns = set()
         strings = []
         if "xl/sharedStrings.xml" in workbook.namelist():
             with workbook.open("xl/sharedStrings.xml") as source:
@@ -70,6 +72,7 @@ def stream_rows(path, sheet_name):
                     continue
                 cells = {}
                 for cell in element.findall(ns + "c"):
+                    column = customer.column_index(cell.get("r", ""))
                     typ = cell.get("t", "n")
                     cached = cell.find(ns + "v")
                     value = cached.text if cached is not None else None
@@ -84,7 +87,12 @@ def stream_rows(path, sheet_name):
                         typ, value = "text", "".join(t.text or "" for t in cell.iter(ns + "t"))
                     elif typ == "str":
                         typ = "text"
-                    cells[customer.column_index(cell.get("r", ""))] = (typ, value)
+                    if column in account_columns:
+                        typ, value = customer.account_number_cell(cell, typ, value, formats)
+                    cells[column] = (typ, value)
+                if element.get("r") == "1":
+                    account_columns = {index for index, (_, value) in cells.items()
+                                       if value in ("AccountNumber", "Account.AccountNumber")}
                 yield int(element.get("r", "0")), cells
                 parent.remove(element)
 

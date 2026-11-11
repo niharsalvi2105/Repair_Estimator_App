@@ -84,10 +84,26 @@ export function calculatePackageCost(p: CostPackage,
 }
 
 export function calculateEquipmentPackageCost(p: CostPackage, quantity: number, rates: CostRate[], time: number,
-  tax: number, freight: number, labor: DraftLabor[], materials: DraftMaterial[]) {
+  tax: number, freight: number, labor: DraftLabor[], materials: DraftMaterial[], equipmentNumber?: string) {
   const unit = calculatePackageUnitCost(p, rates, time, tax, freight, materials)
   if (!p.re_iscustompackage) return unit
   const total = calculatePackageCost(p, quantity, rates, time, tax, freight, labor, materials)
+  if (equipmentNumber != null) {
+    const share = (line: { equipmentNumber?: string | null }) =>
+      !line.equipmentNumber ? 1 / quantity : line.equipmentNumber === equipmentNumber ? 1 : 0
+    const lines = labor.filter(line => line.packageId === p.re_repairpackageid)
+    const parts = materials.filter(line => line.packageId === p.re_repairpackageid)
+    const hours = unit.hours + lines.reduce((sum, line) => sum + line.hours * share(line), 0)
+    const laborCost = unit.labor + lines.reduce((sum, line) =>
+      sum + line.hours * (line.rate ?? rateFor(rates, line.role, line.time)) * share(line), 0)
+    const material = parts.reduce((sum, line) => sum + line.quantity * line.unitCost * share(line), 0)
+    const taxAmount = unit.taxAmount + material * tax / 100
+    const freightAmount = unit.freightAmount + material * freight / 100
+    return { ...unit, hours, labor: laborCost, material: unit.material + material,
+      rate: hours > 0 ? laborCost / hours : unit.rate,
+      tax: material > 0 ? tax : unit.tax, freight: material > 0 ? freight : unit.freight,
+      taxAmount, freightAmount, total: laborCost + unit.material + material + taxAmount + freightAmount }
+  }
   const customMaterial = materials.filter(m => m.packageId === p.re_repairpackageid)
     .reduce((sum, m) => sum + m.quantity * m.unitCost, 0)
   return {

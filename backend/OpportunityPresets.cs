@@ -78,7 +78,7 @@ namespace RepairEstimator.Drafts
             return new OpportunityValues {
                 branchId = branch.Id.ToString(), stateId = province.Id.ToString(),
                 equipmentTypeId = value.equipmentTypeId, jobTypeId = value.jobTypeId ?? "",
-                market = value.market, building = Required(value.building, 300),
+                market = value.market, building = Optional(value.building, 300),
                 accountId = selection.Item1.Id.ToString("D"),
                 accountNumber = Optional(selection.Item6, 50),
                 accountName = Required(selection.Item7, 300),

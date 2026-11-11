@@ -17,6 +17,279 @@ namespace RepairEstimator.Tests
 {
     public class PluginIntegrationTests
     {
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Catalog_selling_override_reaches_saved_pricing_and_frozen_exports(bool kone)
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            AddCustomDescriptionLines(request);
+            db.Save(ExportSnapshot.Serialize(request));
+            var line = db.Rows.Values.Single(e => e.LogicalName == "re_estimatematerialline");
+            line.Attributes.Remove("re_materialpricingmode");
+            line["re_parttype"] = new OptionSetValue(kone ? 126110000 : 126110001);
+            line["re_sparepart"] = new EntityReference("re_sparepart", Guid.NewGuid());
+            line["re_unitpriceprecise"] = 20m;
+            line["re_sellingprice"] = 30m;
+            if (kone) line["re_markuppct"] = 10m;
+            var column = kone ? Names.Estimate.SuggestedPriceKoneMaterial : Names.Estimate.SuggestedPrice;
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            var firstPrice = db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value;
+            var firstCost = db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value;
+            line["re_sellingprice"] = 40m;
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            Assert.Equal(firstCost, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.Equal(firstPrice + (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
+                db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal(20m, loaded.materialLines[0].unitPrice);
+            Assert.Equal(40m, loaded.materialLines[0].sellingPrice);
+            var frozen = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
+            Assert.Equal(20m, frozen.materials[0].cells.Single(c => c.key == "re_unitpriceprecise").number);
+            Assert.Equal(40m, frozen.materials[0].cells.Single(c => c.key == "re_sellingprice").number);
+            line["re_sellingprice"] = null;
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            Assert.Equal(firstPrice - (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
+                db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
+        }
+
+        [Fact]
+        public void Custom_cost_equipment_links_roundtrip_clear_and_export_without_master_lookup()
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.equipment[0].number = "0000123";
+            request.equipment[0].matched = false;
+            request.equipment[0].id = "";
+            AddCustomDescriptionLines(request);
+            request.laborLines[0].equipmentNumber = request.materialLines[0].equipmentNumber = "0000123";
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal("0000123", saved.laborLines.Single().equipmentNumber);
+            Assert.Equal("0000123", saved.materialLines.Single().equipmentNumber);
+            var snapshotRow = db.Rows.Values.Single(e => e.LogicalName == "re_estimateequipment");
+            foreach (var row in db.Rows.Values.Where(e => e.LogicalName == "re_estimatelaborline" || e.LogicalName == "re_estimatematerialline"))
+                Assert.Equal(snapshotRow.Id, row.GetAttributeValue<EntityReference>("re_estimateequipment").Id);
+            var exported = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
+            Assert.Equal("0000123", exported.labor.Single().cells.Single(c => c.key == "re_equipmentnumber").text);
+            Assert.Equal("0000123", exported.materials.Single().cells.Single(c => c.key == "re_equipmentnumber").text);
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            loaded.mode = "save";
+            loaded.laborLines[0].equipmentNumber = loaded.materialLines[0].equipmentNumber = null;
+            var preserved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(loaded)));
+            Assert.Equal("0000123", preserved.materialLines[0].equipmentNumber);
+            Assert.Equal("0000123", preserved.laborLines[0].equipmentNumber);
+            preserved.mode = "save";
+            preserved.laborLines[0].equipmentNumber = preserved.materialLines[0].equipmentNumber = "";
+            var cleared = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(preserved)));
+            Assert.Null(cleared.materialLines[0].equipmentNumber);
+            Assert.Null(cleared.laborLines[0].equipmentNumber);
+            var broken = db.Rows.Values.Single(e => e.LogicalName == "re_estimatematerialline");
+            broken["re_estimateequipment"] = new EntityReference("re_estimateequipment", Guid.NewGuid());
+            Assert.Contains("equipment outside", Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}")).Message);
+            Assert.Contains("EXPORT_LINE_EQUIPMENT_INVALID", Assert.Throws<InvalidPluginExecutionException>(() =>
+                ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample")).Message);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Custom_cost_equipment_must_be_in_its_package(bool labor)
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            AddCustomDescriptionLines(request);
+            if (labor) request.laborLines[0].equipmentNumber = "NOT-SELECTED";
+            else request.materialLines[0].equipmentNumber = "NOT-SELECTED";
+            Assert.Contains("equipment must be selected", Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Save(ExportSnapshot.Serialize(request))).Message);
+            request.equipment.Add(new EquipmentInput { id = "", number = "SECOND", matched = false });
+            request.packages[0].equipmentNumbers = new List<string> { request.equipment[0].number };
+            request.packages[0].allEquipment = false;
+            if (labor) request.laborLines[0].equipmentNumber = "SECOND";
+            else request.materialLines[0].equipmentNumber = "SECOND";
+            // Fake Pipeline does not roll back failed requests: start with a fresh ID/version.
+            request.version = db.Rows[db.EstimateId].RowVersion;
+            Assert.Contains("equipment must be selected", Assert.Throws<InvalidPluginExecutionException>(() =>
+                db.Save(ExportSnapshot.Serialize(request))).Message);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Custom_package_descriptions_save_reload_and_clear_without_changing_master(bool custom)
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = custom;
+            var masterName = db.Rows[db.PackageId].GetAttributeValue<string>("re_packagenameen");
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.packages[0].nameEn = "Estimate custom name";
+            request.packages[0].nameFr = "Estimate French name";
+            request.packages[0].scopeEn = "First line\nSecond line";
+            request.packages[0].scopeFr = "French scope";
+            if (custom) AddCustomDescriptionLines(request);
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal(custom ? request.packages[0].nameEn : masterName, saved.packages[0].nameEn);
+            Assert.Equal(masterName, db.Rows[db.PackageId].GetAttributeValue<string>("re_packagenameen"));
+            if (!custom) return;
+            Assert.Equal(request.packages[0].nameFr, saved.packages[0].nameFr);
+            Assert.Equal(request.packages[0].scopeEn, saved.packages[0].scopeEn);
+            Assert.Equal(request.packages[0].scopeFr, saved.packages[0].scopeFr);
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal(saved.packages[0].scopeEn, loaded.packages[0].scopeEn);
+            loaded.mode = "save";
+            loaded.packages[0].nameEn = "";
+            loaded.packages[0].scopeEn = "";
+            loaded.packages[0].nameFr = "";
+            loaded.packages[0].scopeFr = "";
+            var cleared = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(loaded)));
+            Assert.Equal("", cleared.packages[0].nameEn);
+            Assert.Equal("", cleared.packages[0].scopeEn);
+            Assert.Equal("", cleared.packages[0].nameFr);
+            Assert.Equal("", cleared.packages[0].scopeFr);
+            var reloaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal("", reloaded.packages[0].nameFr);
+            Assert.Equal("", reloaded.packages[0].scopeFr);
+            reloaded.mode = "save";
+            reloaded.packages[0].nameFr = null;
+            reloaded.packages[0].scopeFr = null;
+            var omitted = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(reloaded)));
+            Assert.Equal("", omitted.packages[0].nameFr);
+            Assert.Equal("", omitted.packages[0].scopeFr);
+            omitted.mode = "save";
+            omitted.packages[0].nameFr = "Restored";
+            omitted.packages[0].scopeFr = "Restored scope";
+            var restored = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(omitted)));
+            Assert.Equal("Restored", restored.packages[0].nameFr);
+            Assert.Equal("Restored scope", restored.packages[0].scopeFr);
+        }
+
+        [Theory]
+        [InlineData(500, 10000, true)]
+        [InlineData(501, 10000, false)]
+        [InlineData(500, 10001, false)]
+        public void Custom_package_description_limits_are_enforced(int nameLength, int scopeLength, bool valid)
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.packages[0].nameEn = new string('n', nameLength);
+            request.packages[0].scopeEn = new string('s', scopeLength);
+            AddCustomDescriptionLines(request);
+            if (valid)
+            {
+                var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+                Assert.Equal(request.packages[0].nameEn, saved.packages[0].nameEn);
+                Assert.Equal(request.packages[0].scopeEn, saved.packages[0].scopeEn);
+            }
+            else
+            {
+                var error = Assert.Throws<InvalidPluginExecutionException>(() => db.Save(ExportSnapshot.Serialize(request)));
+                Assert.Contains((nameLength > 500 ? 500 : 10000) + " characters", error.Message);
+            }
+        }
+
+        static void AddCustomDescriptionLines(Draft request)
+        {
+            request.laborLines = new List<LaborInput> {
+                new LaborInput { id = "custom-labor", packageId = request.packages[0].id,
+                    role = 126110000, time = 126110000, hours = 1 }
+            };
+            request.materialLines = new List<MaterialInput> {
+                new MaterialInput { id = "custom-material", packageId = request.packages[0].id,
+                    description = "Manual part", vendor = "Independent", part = "P1",
+                    quantity = 1, unitCost = 25, pricingSource = "manual", partType = "non-kone" }
+            };
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void Optional_location_save_reload_clear_and_submit_preserve_required_email(string location)
+        {
+            var db = new Pipeline();
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            saved.mode = "save";
+            saved.building = location;
+            var cleared = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(saved)));
+            Assert.Equal("", cleared.building);
+            Assert.Null(db.Rows[db.EstimateId].GetAttributeValue<string>("re_buildingname"));
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal("", loaded.building);
+            Assert.Equal(saved.email, loaded.email);
+            db.Add(Names.IncentiveRate.Entity, ("re_minimumcmii", 0m), ("re_ampayout", 0m), ("re_bdpayout", 0m));
+            loaded.mode = "submit";
+            loaded.fields.RemoveAll(field => field.key == "re_sellprice" || field.key == "re_billingplan");
+            loaded.fields.Add(new Field { key = "re_sellprice", value = "1000" });
+            loaded.fields.Add(new Field { key = "re_billingplan", value = "126110000" });
+            var submitted = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(loaded)));
+            Assert.Equal(Labels.SubmittedStatus, submitted.status);
+            Assert.Equal("", submitted.building);
+            Assert.Equal(saved.email, submitted.email);
+        }
+
+        [Fact]
+        public void Optional_location_still_enforces_300_character_limit()
+        {
+            var db = new Pipeline();
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.building = new string('x', 300);
+            var saved = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            Assert.Equal(request.building, saved.building);
+            saved.mode = "save";
+            saved.building = new string('x', 301);
+            var error = Assert.Throws<InvalidPluginExecutionException>(() => db.Save(ExportSnapshot.Serialize(saved)));
+            Assert.Contains("300 characters", error.Message);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void Opportunity_presets_allow_blank_location_but_require_email(string location)
+        {
+            var db = new Pipeline();
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            var values = new OpportunityValues {
+                branchId = request.branchId, stateId = request.stateId, equipmentTypeId = request.equipmentTypeId,
+                jobTypeId = "", building = location, customer = request.customer, email = request.email,
+                phone = "", market = request.market, accountId = request.accountId, contactId = request.contactId,
+                fields = request.fields.Where(field => field.key == "re_proposallanguage").ToList()
+            };
+            var validate = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.OpportunityPresets")
+                .GetMethod("Validate", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            var result = (OpportunityValues)validate.Invoke(null, new object[] { db.Caller, values });
+            Assert.Equal("", result.building);
+            Assert.False(string.IsNullOrWhiteSpace(result.email));
+            values.contactId = null;
+            values.email = "";
+            var error = Assert.Throws<System.Reflection.TargetInvocationException>(() =>
+                validate.Invoke(null, new object[] { db.Caller, values }));
+            Assert.Contains("Customer email is required", error.InnerException.Message);
+        }
+
         [Fact]
         public void Customer_search_includes_partial_linked_contacts_without_email()
         {
@@ -119,6 +392,7 @@ namespace RepairEstimator.Tests
         [Theory]
         [InlineData("", "manual@example.invalid", "Customer name is required")]
         [InlineData("Manual", "", "Customer email is required")]
+        [InlineData("Manual", "   ", "Customer email is required")]
         [InlineData("Manual", "invalid-email", "valid email address")]
         public void Customer_manual_details_reject_invalid_required_values(string name, string email, string error)
         {

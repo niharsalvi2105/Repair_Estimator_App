@@ -18,6 +18,19 @@ def cells():
 
 
 class MkoPartTests(unittest.TestCase):
+    def test_part_type_uses_case_insensitive_km_prefix_without_changing_identifiers(self):
+        for part, expected in [("KM001", 126110000), ("km001", 126110000),
+                               ("Km001", 126110000), ("KM", 126110000),
+                               ("0000123", 126110001), ("AKM001", 126110001),
+                               ("K001", 126110001), (" KM001", 126110001)]:
+            with self.subTest(part=part):
+                source = cells()
+                source[3] = ("text", part)
+                result = mko.map_part(source, 2, "approved.xlsx", "digest", "2026-11-06T00:00:00Z")
+                self.assertEqual(result["re_parttype"], expected)
+                self.assertEqual(result["re_partnumber"], part)
+                self.assertEqual(result["re_sourcekey"], "Material:ZR00:MKOM:01:" + part)
+
     def test_rounding_preserves_all_18_positional_originals(self):
         source = cells()
         result = mko.map_part(source, 2, "approved.xlsx", "a" * 64, "2026-11-06T00:00:00Z")

@@ -87,7 +87,8 @@ def map_part(cells, row, filename, digest, refreshed):
         raise ValueError("raw_metadata_length")
     return {
         "re_sourcekey": "Material:ZR00:MKOM:01:" + part, "re_partnumber": part, "re_name": part,
-        "re_descriptionen": description, "re_parttype": 126110000,
+        "re_descriptionen": description,
+        "re_parttype": 126110000 if part.upper().startswith("KM") else 126110001,
         "re_usdcost": float(cost), "re_usdprice": float(price), "re_pricingunit": float(unit),
         "re_sourcecurrency": "USD", "re_uom": source_text(cells, 10, 20),
         "re_salesorganization": "MKOM", "re_distributionchannel": "01",

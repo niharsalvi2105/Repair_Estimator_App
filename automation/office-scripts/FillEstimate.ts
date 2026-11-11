@@ -190,7 +190,7 @@ function fillCustom(workbook: ExcelScript.Workbook, sheet: ExcelScript.Worksheet
   for (let index = 0; index < payload.materials.length; index++) {
     const row = payload.materials[index]
     const start = materialStart + index
-    write(sheet.getRangeByIndexes(start, 0, 1, 1), 'Estimate scope')
+    write(sheet.getRangeByIndexes(start, 0, 1, 1), text(row, 're_equipmentnumber') || 'Estimate scope')
     write(sheet.getRangeByIndexes(start, 1, 1, 1), text(row, 're_entereddescription'))
     write(sheet.getRangeByIndexes(start, 4, 1, 1), text(row, 're_vendor'))
     write(sheet.getRangeByIndexes(start, 6, 1, 1), text(row, 're_partnumber'))
@@ -205,7 +205,7 @@ function fillCustom(workbook: ExcelScript.Workbook, sheet: ExcelScript.Worksheet
     const time = number(row, 're_timecategory') - 126110000
     const amount = number(row, 're_hours')
     const start = laborStart + index
-    write(sheet.getRangeByIndexes(start, 11, 1, 1), 'Estimate scope')
+    write(sheet.getRangeByIndexes(start, 11, 1, 1), text(row, 're_equipmentnumber') || 'Estimate scope')
     write(sheet.getRangeByIndexes(start, 12 + role * 2 + time, 1, 1), amount)
     write(sheet.getRangeByIndexes(start, 18, 1, 1), number(row, 're_totalcost'))
     hours += amount
@@ -282,8 +282,10 @@ function main(workbook: ExcelScript.Workbook, payloadJson: string): ExportResult
     write(anchor(workbook, `EquipmentName${index + 1}`), text(payload.equipment[index], 're_equipmentnamesnapshot'))
   }
   const french = /French|fran[çc]ais/i.test(text(payload.header, 're_proposallanguage'))
-  const packageName = (row: ExportRow): string => text(row, french ? 're_packagenamefr' : 're_packagenameen') || text(row, 're_packagenameen')
-  const packageScope = (row: ExportRow): string => text(row, french ? 're_proposalscopefr' : 're_proposalscopeen') || text(row, 're_proposalscopeen')
+  const packageName = (row: ExportRow): string => french && row.cells.some(c => c.key === 're_customnamefrcleared' && c.number === 1)
+    ? '' : text(row, french ? 're_packagenamefr' : 're_packagenameen') || text(row, 're_packagenameen')
+  const packageScope = (row: ExportRow): string => french && row.cells.some(c => c.key === 're_customscopefrcleared' && c.number === 1)
+    ? '' : text(row, french ? 're_proposalscopefr' : 're_proposalscopeen') || text(row, 're_proposalscopeen')
   for (let index = 0; index < Math.min(3, payload.packages.length); index++)
     write(anchor(workbook, `Package${index + 1}`), packageName(payload.packages[index]))
   const allNames = payload.packages.map(packageName).join('\n')

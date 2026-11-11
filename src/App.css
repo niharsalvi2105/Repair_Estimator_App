@@ -659,10 +659,9 @@
   box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
 }
 
-.customer-master-select,
-.customer-details-grid {
+.customer-master-select {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -709,10 +708,10 @@
 }
 
 .customer-master-select .input-grid {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.customer-master-field:first-child,
+.customer-account-fields,
 .customer-defaults-state {
   grid-column: 1 / -1;
 }
@@ -3303,7 +3302,8 @@
 }
 
 @media (max-width: 640px) {
-  .customer-master-select { grid-template-columns: minmax(0, 1fr); }
+  .customer-master-select,
+  .customer-master-select .input-grid { grid-template-columns: minmax(0, 1fr); }
   .settings-card, .master-filters, .master-fields, .master-details { grid-template-columns: minmax(0, 1fr); }
   .master-editor, .master-records, .settings-card { padding: 16px; }
   .master-filters.catalog-filters { grid-template-columns: minmax(0, 1fr); }
@@ -3328,13 +3328,60 @@
   .brand-copy strong { font-size: 12px; }
   .brand-copy small { font-size: 9px; letter-spacing: 0; }
 }
-.custom-cost-line {
+.custom-grid-scroll {
+  position: relative;
+  max-width: 100%;
   min-width: 0;
-  margin: 16px 0;
-  padding: 16px;
+  overflow-x: auto;
+  margin-bottom: 16px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
 }
+
+.custom-cost-grid {
+  width: 100%;
+  min-width: 1020px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+
+.custom-material-grid { min-width: 1780px; table-layout: fixed; }
+.custom-material-grid th:nth-child(1) { width: 190px; }
+.custom-material-grid th:nth-child(2) { width: 250px; }
+.custom-material-grid th:nth-child(3) { width: 180px; }
+.custom-material-grid th:nth-child(4) { width: 160px; }
+.custom-material-grid th:nth-child(5) { width: 240px; }
+.custom-material-grid th:nth-child(6) { width: 105px; }
+.custom-material-grid th:nth-child(7) { width: 200px; }
+.custom-material-grid th:nth-child(8), .custom-material-grid th:nth-child(9) { width: 200px; }
+.custom-cost-grid caption { padding: 14px 16px; text-align: left; font-weight: 700; }
+.custom-cost-grid th, .custom-cost-grid td { padding: 12px; border: 1px solid var(--border); vertical-align: top; }
+.custom-cost-grid thead th { background: var(--surface); color: inherit; font-size: 12px; vertical-align: middle; }
+.custom-labor-grid thead th { text-align: center; }
+.custom-labor-grid td:first-child { min-width: 190px; }
+.custom-labor-grid input { min-width: 90px; text-align: right; }
+.custom-cost-grid .text-input { width: 100%; min-height: 44px; box-sizing: border-box; }
+.custom-cost-grid textarea { min-height: 84px; resize: vertical; }
+.custom-cost-grid tfoot { background: var(--surface); font-weight: 700; }
+.custom-cost-grid .field-label { margin: 0; gap: 6px; }
+.custom-cell-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.custom-cell-pricing { margin-top: 12px; font-size: 12px; }
+.custom-cost-grid td > .text-input + .text-input { margin-top: 8px; }
+.custom-cost-grid td > .button { margin-top: 8px; }
+.custom-cost-grid .branch-popup { position: static; width: 100%; min-width: 0; margin-top: 8px; }
+.custom-cost-grid .field-help { font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+.custom-grid-number { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.custom-grid-empty { padding: 0 16px 16px; color: var(--muted); }
+.custom-cost-lines > h3 { margin-top: 28px; }
 
 .custom-line-actions {
   display: flex;

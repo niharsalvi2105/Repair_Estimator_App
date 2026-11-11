@@ -38,7 +38,7 @@ export function parseOpportunityValues(value: unknown): OpportunityValues {
     const text = record[key as keyof typeof lengths]
     if (typeof text !== 'string' || text.length > max) throw new Error('Invalid Opportunity preset field.')
   }
-  if (!record.branchId || !record.stateId || !record.equipmentTypeId || !record.building?.trim() ||
+  if (!record.branchId || !record.stateId || !record.equipmentTypeId ||
     !record.customer?.trim() || !record.email?.trim()) throw new Error('Complete the Opportunity details before saving a preset.')
   if (
     (record.accountId != null && typeof record.accountId !== 'string') ||
@@ -83,9 +83,11 @@ export function cloneRequest(source: DraftRecord | OpportunityValues, sections: 
     equipment: sections.equipment ? (full?.equipment ?? []).map(row => ({ ...row })) : [],
     packages: sections.packages ? (full?.packages ?? []).map(row => ({ ...row,
       equipmentNumbers: sections.equipment ? row.equipmentNumbers?.slice() : undefined })) : [],
-    laborLines: sections.custom ? (full?.laborLines ?? []).map(row => ({ ...row, id: crypto.randomUUID(), rate: undefined })) : [],
+    laborLines: sections.custom ? (full?.laborLines ?? []).map(row => ({ ...row,
+      equipmentNumber: sections.equipment ? row.equipmentNumber : undefined, id: crypto.randomUUID(), rate: undefined })) : [],
     materialLines: sections.custom ? (full?.materialLines ?? []).map(row => ({
-      ...row, id: crypto.randomUUID(), refreshPart: !!row.catalogPartId,
+      ...row, equipmentNumber: sections.equipment ? row.equipmentNumber : undefined,
+      id: crypto.randomUUID(), refreshPart: !!row.catalogPartId,
     })) : [],
   }
 }

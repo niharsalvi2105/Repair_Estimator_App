@@ -1,17 +1,19 @@
 import type { RepairPackage } from './repairEstimatorRepository'
 
 type Language = 'en' | 'fr'
-type PackageName = Pick<RepairPackage, 're_packagenameen' | 're_packagenamefr'>
-type PackageScope = Pick<RepairPackage, 're_proposalscopeen' | 're_proposalscopefr'>
+type PackageName = Pick<RepairPackage, 're_packagenameen' | 're_packagenamefr'> & { re_iscustompackage?: boolean }
+type PackageScope = Pick<RepairPackage, 're_proposalscopeen' | 're_proposalscopefr'> & { re_iscustompackage?: boolean }
 type Searchable = PackageName & PackageScope & Pick<RepairPackage, 're_packagenumber'>
 
 export function localizePackage(repairPackage: PackageName, language: Language): string {
-  if (language === 'fr' && repairPackage.re_packagenamefr) return repairPackage.re_packagenamefr
+  if (language === 'fr' && (repairPackage.re_packagenamefr || repairPackage.re_iscustompackage &&
+    repairPackage.re_packagenamefr === '')) return repairPackage.re_packagenamefr
   return repairPackage.re_packagenameen
 }
 
 export function localizeScope(repairPackage: PackageScope, language: Language): string {
-  const scope = language === 'fr' && repairPackage.re_proposalscopefr
+  const scope = language === 'fr' && (repairPackage.re_proposalscopefr || repairPackage.re_iscustompackage &&
+    repairPackage.re_proposalscopefr === '')
     ? repairPackage.re_proposalscopefr
     : repairPackage.re_proposalscopeen
   return scope?.trim() ?? ''

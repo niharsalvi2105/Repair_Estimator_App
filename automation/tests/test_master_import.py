@@ -181,6 +181,79 @@ class MasterImportTests(unittest.TestCase):
             self.assertEqual(rows[0][1][0], ("text", "Id"))
             self.assertEqual(rows[1][1][0][0], "uncached_formula")
 
+    def test_account_numbers_preserve_excel_zero_formats_in_both_readers(self):
+        bulk_spec = importlib.util.spec_from_file_location(
+            "bulk_format_test", Path(__file__).parents[1] / "import-customer-masters-bulk.py")
+        bulk = importlib.util.module_from_spec(bulk_spec)
+        bulk_spec.loader.exec_module(bulk)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.xlsx"
+            with zipfile.ZipFile(path, "w") as workbook:
+                workbook.writestr("xl/workbook.xml",
+                    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                    '<sheets><sheet name="Data" r:id="r1"/></sheets></workbook>')
+                workbook.writestr("xl/_rels/workbook.xml.rels",
+                    '<Relationships><Relationship Id="r1" Target="worksheets/sheet1.xml"/></Relationships>')
+                workbook.writestr("xl/styles.xml",
+                    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                    '<numFmts count="2"><numFmt numFmtId="164" formatCode="000000"/>'
+                    '<numFmt numFmtId="165" formatCode="0.00E+00"/></numFmts>'
+                    '<cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="164"/>'
+                    '<xf numFmtId="165"/></cellXfs></styleSheet>')
+                workbook.writestr("xl/worksheets/sheet1.xml",
+                    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                    '<sheetData><row r="1">'
+                    '<c r="A1" t="inlineStr"><is><t>AccountNumber</t></is></c>'
+                    '<c r="B1" t="inlineStr"><is><t>Account.AccountNumber</t></is></c>'
+                    '<c r="C1" t="inlineStr"><is><t>Id</t></is></c></row>'
+                    '<row r="2"><c r="A2" s="1"><v>123</v></c>'
+                    '<c r="B2" s="1"><v>42.0</v></c><c r="C2" s="1"><v>123</v></c></row>'
+                    '<row r="3"><c r="A3" t="inlineStr" s="1"><is><t>00000042</t></is></c>'
+                    '<c r="B3"><v>42</v></c></row>'
+                    '<row r="4"><c r="A4" s="2"><v>123</v></c></row>'
+                    '<row r="5"><c r="A5" s="1"><v>1.5</v></c></row>'
+                    '<row r="6"><c r="A6" s="1"><f>40+2</f><v>42</v></c></row>'
+                    '<row r="7"><c r="A7" s="1"><f>40+2</f></c></row>'
+                    '<row r="8"><c r="A8" s="1"><v>1234567890123456</v></c></row>'
+                    '</sheetData></worksheet>')
+            for reader in (module.source_rows, bulk.stream_rows):
+                with self.subTest(reader=reader.__name__):
+                    rows = dict(reader(path, "Data"))
+                    self.assertEqual(module.text(rows[2][0]), "000123")
+                    self.assertEqual(module.text(rows[2][1]), "000042")
+                    account = account_row()
+                    account["AccountNumber"] = rows[2][0]
+                    self.assertEqual(module.build_payload(self.spec, account, self.lengths)["accountnumber"],
+                                     "000123")
+                    self.assertEqual(rows[2][2], ("n", "123"))
+                    self.assertEqual(module.text(rows[3][0]), "00000042")
+                    self.assertEqual(module.text(rows[3][1]), "42")
+                    for row in (4, 5, 6, 7, 8):
+                        with self.assertRaises(module.Rejected):
+                            module.text(rows[row][0])
+
+    def test_numeric_account_number_formats_do_not_invent_or_round_digits(self):
+        from xml.etree import ElementTree as ET
+        cell = ET.fromstring('<c s="0"/>')
+        for value, code, expected in [
+                ("42", "General", "42"), ("00042", "General", "00042"),
+                ("42", "@", "42"), ("0", "000000", "000000"),
+                ("1234567", "000000", "1234567"), ("4.2E+1", "000000", "000042")]:
+            with self.subTest(value=value, code=code):
+                result = module.account_number_cell(cell, "n", value, [code])
+                self.assertEqual(module.text(result), expected)
+        for value, code in [("1234567890123456", "General"), ("-1", "000000"),
+                            ("NaN", "000000"), ("Infinity", "000000"),
+                            ("42", None), ("42", "#,##0"), ("42", "0.00")]:
+            with self.subTest(value=value, code=code):
+                with self.assertRaises(module.Rejected):
+                    module.text(module.account_number_cell(cell, "n", value, [code]))
+        with self.assertRaises(module.Rejected):
+            module.text(module.account_number_cell(cell, "n", "42", []))
+        self.assertEqual(module.account_number_cell(cell, "text", "0000000000000042", ["000000"]),
+                         ("text", "0000000000000042"))
+
 
 if __name__ == "__main__":
     unittest.main()

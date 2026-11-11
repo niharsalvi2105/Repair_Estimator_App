@@ -3,6 +3,24 @@ import assert from 'node:assert/strict'
 import { calculateAdditionalCost, calculateEquipmentPackageCost, calculatePackageCost, calculatePackageUnitCost, packageCost } from '../src/data/packageCosts.ts'
 import { customCostsError } from '../src/data/requestValidation.ts'
 
+test('equipment-specific imported costs allocate to exact units and unassigned costs remain shared', () => {
+  const p = { re_repairpackageid: 'c', re_iscustompackage: true, re_mechanichours: 1, re_materialmisctaxcost: 5 }
+  const rates = [{ role: 126110000, time: 126110000, rate: 100 }]
+  const labor = [{ id: 'l', packageId: 'c', equipmentNumber: '0001', role: 126110000, time: 126110000, hours: 2 },
+    { id: 's', packageId: 'c', role: 126110000, time: 126110000, hours: 1 }]
+  const material = [{ id: 'm', packageId: 'c', equipmentNumber: '0002', part: 'P1', description: 'Part', quantity: 2, unitCost: 10 },
+    { id: 'shared', packageId: 'c', part: 'P2', description: 'Part', quantity: 1, unitCost: 6 }]
+  const a = calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, labor, material, '0001')
+  const b = calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, labor, material, '0002')
+  assert.equal(a.hours, 3.5)
+  assert.equal(b.hours, 1.5)
+  assert.equal(a.material, 8)
+  assert.equal(b.material, 28)
+  const total = calculatePackageCost(p, 2, rates, 126110000, 5, 10, labor, material)
+  assert.equal(a.total + b.total, total.total)
+  assert.equal(a.labor + b.labor, total.labor)
+})
+
 test('package costs scale hours and material by equipment and apply additive material tax and freight', () => {
   assert.deepEqual(packageCost(2, 50, 3, 100, 5, 10),
     { hours: 6, labor: 600, material: 150, total: 772.5 })

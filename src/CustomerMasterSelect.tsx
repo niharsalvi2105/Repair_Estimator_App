@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useEffect, useEffectEvent, useState, type ReactNode } from 'react'
 import {
   searchAccountMasters, searchContactMasters, getCustomerDefaults, type AccountMasterOption, type ContactMasterOption,
 } from './data/customerMasterRepository'
@@ -16,16 +16,19 @@ type Props = {
   disabled: boolean
   branchId: string
   building: string
+  buildingInitialized: boolean
   onBuilding: (value: string) => void
   customerName: string
   onCustomerName: (value: string) => void
+  emailField: ReactNode
+  phoneField: ReactNode
   errors?: Record<string, string | undefined>
   loadDefaults?: (accountId: string, branchId: string, market: Market, refresh?: boolean) => Promise<CustomerDefaults>
 }
 
 export function CustomerMasterSelect({
-  market, account, contact, onAccount, onContact, language, disabled, branchId, building, onBuilding,
-  customerName, onCustomerName, errors = {}, loadDefaults = getCustomerDefaults,
+  market, account, contact, onAccount, onContact, language, disabled, branchId, building, buildingInitialized, onBuilding,
+  customerName, onCustomerName, emailField, phoneField, errors = {}, loadDefaults = getCustomerDefaults,
 }: Props) {
   const fr = language === 'fr'
   const [accountQuery, setAccountQuery] = useState('')
@@ -46,16 +49,15 @@ export function CustomerMasterSelect({
   const matchingLocations = defaults?.locationOptions.filter(option => option.name === building) ?? []
   const selectedLocation = matchingLocations.find(option => JSON.stringify([option.number, option.name]) === selectedLocationKey)
     ?? (matchingLocations.length === 1 ? matchingLocations[0] : undefined)
-  const locationDropdown = !!defaults?.locationOptions.length && !customLocation &&
-    (defaults.locationOptions.length > 1 || defaults.locationDescriptionsTruncated || defaults.locationDescriptionsTooLong ||
-      defaults.locationNamesUnavailable) && (!building.trim() || !!selectedLocation)
+  const locationDropdown = (defaults?.locationOptions.length ?? 0) > 1 && !customLocation &&
+    (!building.trim() || !!selectedLocation)
   const contactOptions = contactQuery.trim().length >= 2 ? contactResults : defaults?.contacts ?? []
   const applyDefaults = useEffectEvent((result: CustomerDefaults) => {
     if (disabled) return
     const selected = defaultContact(result)
     if (!contact && !customerName.trim() && selected) onContact(selected, true)
     const description = defaultLocationDescription(result)
-    if (!building.trim() && description) onBuilding(description)
+    if (!buildingInitialized && !building.trim() && description) onBuilding(description)
   })
 
   const accountId = account?.id
@@ -106,7 +108,7 @@ export function CustomerMasterSelect({
   }, [account, contactQuery, manualContact])
 
   return <div className="customer-master-select">
-    <div className="customer-master-field">
+    <div className="customer-master-field customer-account-fields">
       <div className="input-grid">
       <label className="field-label" htmlFor="account-master-search">
         <span>{fr ? 'Numéro de compte' : 'Account number'}<span className="required" aria-hidden="true">*</span></span>
@@ -227,31 +229,39 @@ export function CustomerMasterSelect({
         </ul>
       </div>}
     </div>
+    {emailField}
+    {phoneField}
     <div className="customer-master-field">
       <label className="field-label" htmlFor={locationDropdown ? 'account-location-description' : 'opportunity-building'}>
-        <span>{fr ? 'Description de l’emplacement fonctionnel' : 'Functional Location Description'}<span className="required">*</span></span>
+        <span>{fr ? 'Description de l’emplacement fonctionnel' : 'Functional Location Description'}</span>
         <FieldError id="opportunity-building" message={errors['opportunity-building']} />
-        {!locationDropdown && <input id="opportunity-building" className="text-input" required aria-required="true" maxLength={300}
+        {!locationDropdown && <input id="opportunity-building" className="text-input" maxLength={300}
           aria-invalid={!!errors['opportunity-building']} aria-describedby={errors['opportunity-building'] ? 'opportunity-building-error' : undefined}
           disabled={disabled} value={building}
           onChange={event => { setCustomLocation(true); setSelectedLocationKey(''); onBuilding(event.target.value) }} />}
-        {locationDropdown && <select id="account-location-description" className="text-input" disabled={disabled} required aria-required="true"
+        {locationDropdown && <select id="account-location-description" className="text-input" disabled={disabled}
           aria-invalid={!!errors['opportunity-building']} aria-describedby={errors['opportunity-building'] ? 'opportunity-building-error' : undefined}
           value={selectedLocation ? JSON.stringify([selectedLocation.number, selectedLocation.name]) : ''}
           onChange={event => {
             if (event.target.value === 'custom') { setCustomLocation(true); return }
-            const option = defaults.locationOptions.find(option => JSON.stringify([option.number, option.name]) === event.target.value)
+            if (event.target.value === '') { setSelectedLocationKey(''); onBuilding(''); return }
+            const option = defaults?.locationOptions.find(option => JSON.stringify([option.number, option.name]) === event.target.value)
             if (option) { setSelectedLocationKey(event.target.value); onBuilding(option.name) }
           }}>
           <option value="">{fr ? 'Choisir un emplacement' : 'Choose a location'}</option>
-          {defaults.locationOptions.map(option =>
+          {defaults?.locationOptions.map(option =>
             <option key={JSON.stringify([option.number, option.name])} value={JSON.stringify([option.number, option.name])}>{option.number} — {option.name}</option>)}
           <option value="custom">{fr ? 'Saisir une description personnalisée' : 'Enter a custom description'}</option>
         </select>}
       </label>
       {!locationDropdown && !!defaults?.locationOptions.length && <button className="button secondary" type="button" disabled={disabled}
-        onClick={() => { setCustomLocation(false); setSelectedLocationKey(''); onBuilding(defaultLocationDescription(defaults) ?? '') }}>
-        {fr ? 'Choisir un emplacement lié' : 'Choose a linked location'}
+        onClick={() => {
+          setCustomLocation(false); setSelectedLocationKey('')
+          onBuilding(defaults.locationOptions.length === 1 ? defaults.locationOptions[0].name : '')
+        }}>
+        {defaults.locationOptions.length === 1
+          ? fr ? 'Utiliser l’emplacement lié' : 'Use linked location'
+          : fr ? 'Choisir un emplacement lié' : 'Choose a linked location'}
       </button>}
       {!!defaults?.locations.length && <p id="account-functional-locations" className="field-help">
         {fr ? 'Emplacements SAP : ' : 'SAP locations: '}{selectedLocation?.number ?? defaults.locations.join(', ')}

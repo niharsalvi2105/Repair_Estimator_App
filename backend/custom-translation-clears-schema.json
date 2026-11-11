@@ -1,0 +1,23 @@
+{
+  "status": "dev-deployed-production-not-verified",
+  "description": "Both optional snapshot columns are published and read back in the selected Dev environment with the updated Drafts assembly and frontend. Office Script publication remains pending; export automation remains disabled. Never infer clear markers for historical null translations.",
+  "tables": {
+    "re_estimatepackage": {
+      "re_customnamefrcleared": {
+        "type": "Boolean",
+        "default": false,
+        "description": "True only when an estimate-specific CSTM French name was explicitly cleared. Missing/false permits the existing English fallback."
+      },
+      "re_customscopefrcleared": {
+        "type": "Boolean",
+        "default": false,
+        "description": "True only when an estimate-specific CSTM French proposal scope was explicitly cleared. Missing/false permits the existing English fallback."
+      }
+    }
+  },
+  "deployment": [
+    "Publish the two Boolean columns on Estimate Package; no master-package changes or historical backfill.",
+    "Deploy Drafts, frontend and both workbook Office Scripts together.",
+    "Verify clear, Save, Load, clone and French exports as an estimator before release."
+  ]
+}

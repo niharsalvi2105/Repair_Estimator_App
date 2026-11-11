@@ -262,6 +262,7 @@ namespace RepairEstimator.Plugins.Data
                 var packageReference = mode == 126110001;
                 if (mode.HasValue && (partType.HasValue || row.GetAttributeValue<EntityReference>("re_sparepart") != null ||
                     Query.Dec(row, "re_markuppct").HasValue || Query.Dec(row, "re_unitpriceprecise").HasValue ||
+                    Query.Dec(row, "re_sellingprice").HasValue ||
                     Query.Dec(row, "re_unitcostprecise").HasValue))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 if (packageReference)
@@ -274,6 +275,12 @@ namespace RepairEstimator.Plugins.Data
                 }
                 if (partType.HasValue && partType != 126110000 && partType != 126110001)
                     throw new PricingException("RE-114", "MATERIAL_CLASSIFICATION_INVALID");
+                var overridePrice = Query.Dec(row, "re_sellingprice");
+                var catalogPrice = Query.Dec(row, "re_unitpriceprecise");
+                var pricedCatalog = row.GetAttributeValue<EntityReference>("re_sparepart") != null && catalogPrice > 0;
+                if (overridePrice.HasValue && (!pricedCatalog || overridePrice <= 0 ||
+                    overridePrice > 1000000000m || decimal.Round(overridePrice.Value, 10) != overridePrice))
+                    throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 loaded.Input.MaterialLines.Add(new MaterialLineInput {
                     IsPackageReference = packageReference,
                     Quantity = Query.Dec(row, Names.EstimateMaterialLine.Quantity).Value,
@@ -283,7 +290,8 @@ namespace RepairEstimator.Plugins.Data
                     Vendor = row.GetAttributeValue<string>(Names.EstimateMaterialLine.Vendor),
                     PartNumber = row.GetAttributeValue<string>(Names.EstimateMaterialLine.PartNumber),
                     IsKone = mode.HasValue ? (bool?)packageReference : partType.HasValue ? (bool?)(partType == 126110000) : null,
-                    UnitSellingPrice = Query.Dec(row, "re_unitpriceprecise"),
+                    UnitSellingPrice = overridePrice ?? catalogPrice,
+                    UsesCatalogSellingPrice = pricedCatalog,
                     MarkupPercent = Query.Dec(row, "re_markuppct")
                 });
             }

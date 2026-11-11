@@ -1,0 +1,27 @@
+{
+  "status": "dev-deployed-production-not-verified",
+  "description": "The optional material-to-estimate-equipment lookup and Restrict relationship are published and read back in the selected Dev environment with updated Drafts/pricing assemblies and frontend. Labor already has the corresponding lookup. Office Script publication and non-admin acceptance remain pending.",
+  "tables": {
+    "re_estimatematerialline": {
+      "re_estimateequipment": {
+        "type": "Lookup",
+        "target": "re_estimateequipment",
+        "required": false,
+        "description": "Equipment snapshot selected for this line's CSTM package. Never a shared Equipment master lookup."
+      }
+    }
+  },
+  "relationship": {
+    "schemaName": "re_estimateequipment_custommaterials",
+    "delete": "Restrict",
+    "assign": "NoCascade",
+    "share": "NoCascade",
+    "unshare": "NoCascade",
+    "reparent": "NoCascade"
+  },
+  "deployment": [
+    "Verify the existing labor lookup; publish material lookup and relationship without backfilling existing unassigned lines.",
+    "Deploy Drafts and frontend together; refresh Office Scripts for equipment-number export resolution.",
+    "Verify mixed package equipment subsets, import replacement, Save/Load, clone and exports with estimator permissions."
+  ]
+}

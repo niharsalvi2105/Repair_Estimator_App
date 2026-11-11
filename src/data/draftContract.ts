@@ -15,11 +15,11 @@ export type DraftPackage = {
   equipmentNumbers?: string[] | null
   allEquipment?: boolean
 }
-export type DraftLabor = { id: string; packageId?: string | null; role: number; time: number; hours: number; rate?: number }
+export type DraftLabor = { id: string; packageId?: string | null; equipmentNumber?: string | null; role: number; time: number; hours: number; rate?: number }
 export type DraftMaterial = {
-  id: string; packageId?: string | null; description: string; vendor: string; part: string; quantity: number; unitCost: number
+  id: string; packageId?: string | null; equipmentNumber?: string | null; description: string; vendor: string; part: string; quantity: number; unitCost: number
   partType?: 'kone' | 'non-kone' | null; catalogPartId?: string | null; markupPercent?: number | null
-  unitPrice?: number | null; uom?: string | null; refreshPart?: boolean
+  unitPrice?: number | null; sellingPrice?: number | null; uom?: string | null; refreshPart?: boolean
   pricingSource?: 'package' | 'manual' | null
 }
 export const MAX_DRAFT_BYTES = 200000
@@ -118,12 +118,12 @@ export function parseDraft(value: unknown): DraftRecord {
       !validPackageEquipment(item, record.equipment)) throw new Error('Invalid draft package snapshot.')
   }
   if (record.laborLines != null && (!Array.isArray(record.laborLines) || record.laborLines.some((line) =>
-    !line || typeof line.id !== 'string' || !nullableString(line.packageId) || ![126110000, 126110001, 126110002].includes(line.role) ||
+    !line || typeof line.id !== 'string' || !nullableString(line.packageId) || !validLineEquipment(line) || ![126110000, 126110001, 126110002].includes(line.role) ||
     ![126110000, 126110001].includes(line.time) || !Number.isFinite(line.hours) || line.hours < 0 ||
     line.hours > 100000 || !Number.isFinite(line.rate) || (line.rate ?? -1) < 0)))
     throw new Error('Invalid draft labor snapshot.')
   if (record.materialLines != null && (!Array.isArray(record.materialLines) || record.materialLines.some((line) =>
-    !line || typeof line.id !== 'string' || !nullableString(line.packageId) || typeof line.description !== 'string' ||
+    !line || typeof line.id !== 'string' || !nullableString(line.packageId) || !validLineEquipment(line) || typeof line.description !== 'string' ||
     !nullableString(line.vendor) || !nullableString(line.part) ||
     !Number.isFinite(line.quantity) || line.quantity < 0 || !Number.isFinite(line.unitCost) || line.unitCost < 0 ||
     (line.partType != null && !['kone', 'non-kone'].includes(line.partType)) ||
@@ -140,10 +140,20 @@ export function parseDraft(value: unknown): DraftRecord {
     (line.markupPercent != null && (line.partType !== 'kone' || !Number.isFinite(line.markupPercent) ||
       line.markupPercent < 0 || line.markupPercent > 100 || Math.round(line.markupPercent * 100) / 100 !== line.markupPercent)) ||
     (line.unitPrice != null && (!Number.isFinite(line.unitPrice) || line.unitPrice < 0)) ||
+    (line.sellingPrice != null && (!line.catalogPartId || !(line.unitPrice != null && line.unitPrice > 0) ||
+      !Number.isFinite(line.sellingPrice) || line.sellingPrice <= 0 || line.sellingPrice > 1000000000 ||
+      Number(line.sellingPrice.toFixed(10)) !== line.sellingPrice)) ||
     (line.partType === 'kone' && line.pricingSource !== 'package' &&
       (!line.catalogPartId || line.markupPercent == null || !(line.unitPrice != null && line.unitPrice > 0))))))
     throw new Error('Invalid draft material snapshot.')
 
+  function validLineEquipment(line: { equipmentNumber?: string | null; packageId?: string | null }): boolean {
+    if (line.equipmentNumber == null || line.equipmentNumber === '') return true
+    const linked = record.packages?.find(p => p.id === line.packageId)
+    return typeof line.equipmentNumber === 'string' && line.equipmentNumber.length <= 20 &&
+      !!record.equipment?.some(e => e.number === line.equipmentNumber) && !!linked &&
+      (linked.equipmentNumbers == null || linked.equipmentNumbers.includes(line.equipmentNumber))
+  }
   function nullableString(value: unknown): boolean {
     return value == null || typeof value === 'string'
   }

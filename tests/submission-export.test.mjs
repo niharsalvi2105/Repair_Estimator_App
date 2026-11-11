@@ -115,6 +115,19 @@ function named(book, name) {
   return book.getWorksheet('VBP Submission').getCell(address)
 }
 
+test('French estimate export retains explicit clears but falls back for missing translations', async () => {
+  for (const cleared of [false, true]) {
+    const book = buildTemplate('custom')
+    const data = payload({ custom: true })
+    data.header.cells.push(field('re_proposallanguage', 126110001, 'French'))
+    data.packages[0].cells.push(field('re_customnamefrcleared', cleared ? 1 : 0),
+      field('re_customscopefrcleared', cleared ? 1 : 0))
+    main(adapter(book), JSON.stringify(data))
+    assert.equal(named(book, 'PackageNames').value, cleared ? '' : 'Package 1')
+    assert.equal(named(book, 'PackageScopes').value, cleared ? ': ' : 'Package 1: Scope 1')
+  }
+})
+
 for (const custom of [false, true]) for (const mode of ['sample', 'expanded']) {
   test(`Excel export ${custom ? 'custom' : 'standard'} / ${mode} keeps typed snapshots and identifiers`, async () => {
     const book = buildTemplate(custom ? 'custom' : 'standard')
@@ -194,9 +207,11 @@ test('Custom material and six labor combinations populate the original sections 
   const book = buildTemplate('custom')
   const data = payload({ custom: true })
   data.materials = Array.from({ length: 17 }, (_, i) => ({ ...data.materials[0], id: id(200 + i),
-    cells: data.materials[0].cells.map(cell => cell.key === 're_partnumber' ? field('re_partnumber', `000${i}`) : { ...cell }),
+    cells: [...data.materials[0].cells.map(cell => cell.key === 're_partnumber' ? field('re_partnumber', `000${i}`) : { ...cell }),
+      field('re_equipmentnumber', '00000001')],
   }))
   data.labor = Array.from({ length: 17 }, (_, i) => row(500 + i,
+    field('re_equipmentnumber', '00000002'),
     field('re_laborrole', 126110000 + Math.floor((i % 6) / 2), 'Role'),
     field('re_timecategory', 126110000 + i % 2, 'Time'), field('re_hours', i + 1), field('re_totalcost', (i + 1) * 100)))
   const originalSubmissionRow = named(book, 'SubmissionId').row
@@ -207,7 +222,8 @@ test('Custom material and six labor combinations populate the original sections 
   assert.equal(sheet.getCell('G60').value, '00016')
   assert.equal(sheet.getCell('I60').value, 49.66248)
   assert.equal(sheet.getCell('J60').value, 49.66)
-  assert.equal(sheet.getCell('L61').value, 'Estimate scope')
+  assert.equal(sheet.getCell('A60').value, '00000001')
+  assert.equal(sheet.getCell('L61').value, '00000002')
   assert.equal(sheet.getCell('S61').value, 1700)
   for (let i = 0; i < 6; i++) assert.equal(sheet.getCell(45 + i, 13 + i).value, i + 1)
   const restored = new Excel.Workbook()

@@ -173,6 +173,7 @@ namespace RepairEstimator.Plugins.Pricing
         public string PartNumber { get; set; }
         public bool? IsKone { get; set; }
         public decimal? UnitSellingPrice { get; set; }
+        public bool UsesCatalogSellingPrice { get; set; }
         public decimal? MarkupPercent { get; set; }
     }
 

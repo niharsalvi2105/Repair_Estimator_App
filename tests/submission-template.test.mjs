@@ -110,6 +110,29 @@ test('fills saved totals without formulas, preserves leading zeros, zero incenti
   assert.throws(() => fillSubmission(book, sampleSubmission()), /ALREADY_FILLED/)
 })
 
+test('submission export leaves an absent optional location blank and preserves contact email', async () => {
+  const book = await buildSubmissionTemplate()
+  const data = sampleSubmission()
+  data.header.cells = data.header.cells.filter(cell => cell.key !== 're_buildingname')
+  fillSubmission(book, data)
+  assert.equal(named(book, 'LocationDescription').value, '')
+  assert.equal(named(book, 'ContactEmail').value, 'contact@example.invalid')
+})
+
+test('French submission export distinguishes intentionally cleared text from missing translations', async () => {
+  for (const cleared of [false, true]) {
+    const book = await buildSubmissionTemplate()
+    const data = sampleSubmission()
+    data.header.cells.find(c => c.key === 're_proposallanguage').text = 'French'
+    data.packages[0].cells.push(cell('re_customnamefrcleared', cleared ? 1 : 0),
+      cell('re_customscopefrcleared', cleared ? 1 : 0))
+    fillSubmission(book, data)
+    assert.equal(named(book, 'PackageNames').value, cleared ? '' : 'Demonstration repair package')
+    assert.equal(named(book, 'ScopePreview').value, cleared ? ': ' :
+      'Demonstration repair package: Inspect the equipment, perform the approved repair, test operation and document completion.')
+  }
+})
+
 test('rejects invalid pricing, missing labels and malformed rows before modifying the template', async () => {
   for (const mutate of [
     p => { p.header.cells.find(c => c.key === 're_totaltruecost').number = null },

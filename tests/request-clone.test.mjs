@@ -13,11 +13,21 @@ function source() {
       { key: 're_statedlaborrate', value: '200' }, { key: 're_additionalscope', value: 'Scope' },
       { key: 're_konesparessalespricevk13', value: '99' }, { key: 're_billingplan', value: '126110001' }],
     equipment: [{ id: 'equipment', number: 'E1', name: 'Old', matched: true }],
-    packages: [{ id: 'package', number: 'CSTM', nameEn: 'Old', hours: 2, material: 200, isCustom: true }],
+    packages: [{ id: 'package', number: 'CSTM', nameEn: 'Old', nameFr: 'Nom personnalisé',
+      scopeEn: 'Custom scope', scopeFr: 'Portée personnalisée', hours: 2, material: 200, isCustom: true }],
     laborLines: [{ id: 'labor', packageId: 'package', role: 126110000, time: 126110000, hours: 2, rate: 500 }],
     materialLines: [{ id: 'material', packageId: 'package', catalogPartId: 'part', unitCost: 20, quantity: 1 }],
   }
 }
+test('cloning preserves explicit selling override but refreshes catalog defaults', () => {
+  const record = source()
+  record.materialLines[0].unitPrice = 20
+  record.materialLines[0].sellingPrice = 25
+  const result = cloneRequest(record, { ...DEFAULT_CLONE_SECTIONS, packages: true, custom: true }, 'new')
+  assert.equal(result.materialLines[0].sellingPrice, 25)
+  assert.equal(result.materialLines[0].refreshPart, true)
+  assert.equal(record.materialLines[0].sellingPrice, 25)
+})
 function transport() {
   return {
     branches: async () => [{ re_branchid: 'branch', re_market: 126110000, _re_country_value: 'country', _re_currency_value: 'currency' }],
@@ -31,6 +41,20 @@ function transport() {
       re_mechanichours: 3, re_materialmisctaxcost: 300, re_iscustompackage: true }],
   }
 }
+test('cost equipment links use exact numbers in full clones and clear when equipment is excluded', async () => {
+    const original = source()
+    original.laborLines[0].equipmentNumber = 'E1'
+    original.materialLines[0].equipmentNumber = 'E1'
+    const selections = { ...DEFAULT_CLONE_SECTIONS, packages: true, custom: true, equipment: true }
+    const copy = cloneRequest(original, selections, 'new')
+    const checked = await revalidateClone(copy, transport())
+    assert.equal(checked.laborLines[0].equipmentNumber, 'E1')
+    assert.equal(checked.materialLines[0].equipmentNumber, 'E1')
+    assert.notEqual(copy.laborLines[0].id, original.laborLines[0].id)
+    const without = cloneRequest(original, { ...selections, equipment: false }, 'new')
+    assert.equal(without.laborLines[0].equipmentNumber, undefined)
+    assert.equal(without.materialLines[0].equipmentNumber, undefined)
+})
 test('equipment assignments survive full clone and current-master revalidation', async () => {
   const original = source()
   original.packages[0].equipmentNumbers = ['E1']
@@ -111,7 +135,16 @@ test('preset parser rejects missing required values, unapproved, duplicate and o
     { ...values, fields: [...values.fields, values.fields[0]] }])
     assert.throws(() => parseOpportunityValues(invalid))
 })
-test('cloning refreshes matched equipment and packages from current master while retaining unlisted details', async () => {
+test('presets and clones allow blank locations but still require email and bound location length', () => {
+  const values = { ...opportunityValues(source()), building: '' }
+  assert.equal(parseOpportunityValues(values).building, '')
+  assert.equal(cloneRequest(values, DEFAULT_CLONE_SECTIONS, 'new').building, '')
+  assert.equal(parseOpportunityValues({ ...values, building: 'x'.repeat(300) }).building.length, 300)
+  assert.throws(() => parseOpportunityValues({ ...values, building: 'x'.repeat(301) }), /preset field/)
+  for (const email of ['', '   '])
+    assert.throws(() => parseOpportunityValues({ ...values, email }), /Complete the Opportunity details/)
+})
+test('cloning refreshes matched equipment and package costs while retaining custom descriptions and unlisted details', async () => {
   const copy = cloneRequest(source(), { opportunity: true, equipment: true, packages: true, custom: true, notes: true }, 'new')
   copy.equipment.push({ id: 'local', number: 'U1', name: 'Unlisted', location: 'Lobby', oem: 'OEM', age: 0, matched: false })
   const validated = await revalidateClone(copy, transport())
@@ -119,8 +152,31 @@ test('cloning refreshes matched equipment and packages from current master while
   assert.equal(validated.equipment[1].name, 'Unlisted')
   assert.equal(validated.equipment[1].age, 0)
   assert.equal(validated.equipment[1].customer, 'Customer')
-  assert.equal(validated.packages[0].nameEn, 'Current package')
+  assert.equal(validated.packages[0].nameEn, 'Old')
+  assert.equal(validated.packages[0].nameFr, 'Nom personnalisé')
+  assert.equal(validated.packages[0].scopeEn, 'Custom scope')
+  assert.equal(validated.packages[0].scopeFr, 'Portée personnalisée')
   assert.equal(validated.packages[0].material, 300)
+})
+test('cloning standard packages keeps current master descriptions authoritative', async () => {
+  const record = cloneRequest(source(), { ...DEFAULT_CLONE_SECTIONS, packages: true }, 'new')
+  record.packages[0].isCustom = false
+  record.laborLines = []
+  record.materialLines = []
+  const current = transport()
+  const catalog = await current.packages()
+  catalog[0].re_iscustompackage = false
+  const validated = await revalidateClone(record, { ...current, packages: async () => catalog })
+  assert.equal(validated.packages[0].nameEn, 'Current package')
+})
+test('cloning preserves intentionally empty French CSTM translations', async () => {
+  const record = source()
+  record.packages[0].nameFr = ''
+  record.packages[0].scopeFr = ''
+  const copy = cloneRequest(record, { ...DEFAULT_CLONE_SECTIONS, packages: true, custom: true }, 'new')
+  const validated = await revalidateClone(copy, transport())
+  assert.equal(validated.packages[0].nameFr, '')
+  assert.equal(validated.packages[0].scopeFr, '')
 })
 test('stale or ambiguous master data rejects the clone instead of dropping or downgrading entries', async () => {
   const copy = cloneRequest(source(), { opportunity: true, equipment: true, packages: true, custom: true, notes: true }, 'new')

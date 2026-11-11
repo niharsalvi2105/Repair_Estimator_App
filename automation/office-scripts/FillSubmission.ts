@@ -113,9 +113,11 @@ const submissionLabels: Record<string, string> = {
   re_totalhours: 'Total hours', re_totalmaterial: 'Total material', re_iscustompackage: 'Custom package',
   re_istimematerial: 'Time and material', re_packagepricedkone: 'Package-priced KONE',
   re_laborrole: 'Labor role', re_hours: 'Hours', re_hourlycost: 'Hourly cost', re_totalcost: 'Line total cost',
-  re_estimatepackage: 'Assigned package', re_partnumber: 'Part number', re_entereddescription: 'Entered material description',
+  re_estimatepackage: 'Assigned package', re_estimateequipment: 'Equipment snapshot',
+  re_partnumber: 'Part number', re_entereddescription: 'Entered material description',
   re_descriptionen: 'Description (EN)', re_descriptionfr: 'Description (FR)', re_vendor: 'Vendor',
-  re_unitcost: 'Unit cost', re_unitcostprecise: 'Precise unit cost', re_unitpriceprecise: 'Precise unit selling price',
+  re_unitcost: 'Unit cost', re_unitcostprecise: 'Precise unit cost', re_unitpriceprecise: 'VK13 unit price',
+  re_sellingprice: 'Selling price override',
   re_extendedcost: 'Extended cost', re_taxamount: 'Line tax amount',
   re_parttype: 'Part classification', re_materialpricingmode: 'Material pricing source',
   re_markuppct: 'Markup (%)', re_uom: 'Unit of measure', re_taxapplicable: 'Tax applicable', re_freightapplicable: 'Freight applicable',
@@ -189,13 +191,14 @@ function main(workbook: ExcelScript.Workbook, payloadJson: string, currencyCode:
   const variance = submissionCell(h, 're_cmiivariance')?.number
   destinations.CmiiVariance = variance == null ? '' : variance * 100
   const french = /French|fran[çc]ais/i.test(submissionText(h, 're_proposallanguage'))
-  const names = p.packages.map(row => submissionText(row, french ? 're_packagenamefr' : 're_packagenameen') ||
-    submissionText(row, 're_packagenameen'))
+  const names = p.packages.map(row => french && submissionCell(row, 're_customnamefrcleared')?.number === 1 ? ''
+    : submissionText(row, french ? 're_packagenamefr' : 're_packagenameen') || submissionText(row, 're_packagenameen'))
   const preview = (value: string, limit: number): string =>
     value.length > limit || value.split('\n').length > 4 ? 'See Details for complete text (not truncated).' : value
   destinations.PackageNames = preview(names.join(' | '), 230)
   destinations.ScopePreview = preview(p.packages.map((row, i) => `${names[i]}: ${
-    submissionText(row, french ? 're_proposalscopefr' : 're_proposalscopeen') || submissionText(row, 're_proposalscopeen')}`).join('\n'), 350)
+    french && submissionCell(row, 're_customscopefrcleared')?.number === 1 ? ''
+      : submissionText(row, french ? 're_proposalscopefr' : 're_proposalscopeen') || submissionText(row, 're_proposalscopeen')}`).join('\n'), 350)
   destinations.NotesPreview = preview(submissionText(h, 're_notesforcttteam'), 300)
   const shortFields: Record<string, number> = {
     OpportunityName: 120, AccountName: 42, AccountNumber: 20, ContactName: 64,
