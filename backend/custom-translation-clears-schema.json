@@ -1,6 +1,6 @@
 {
-  "status": "design-only-not-deployed",
-  "description": "Publish both optional snapshot columns before deploying the updated Drafts assembly, frontend and Office Scripts. Never infer clear markers for historical null translations.",
+  "status": "dev-deployed-production-not-verified",
+  "description": "Both optional snapshot columns are published and read back in the selected Dev environment with the updated Drafts assembly and frontend. Office Script publication remains pending; export automation remains disabled. Never infer clear markers for historical null translations.",
   "tables": {
     "re_estimatepackage": {
       "re_customnamefrcleared": {

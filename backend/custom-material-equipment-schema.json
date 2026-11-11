@@ -1,6 +1,6 @@
 {
-  "status": "design-only-not-deployed",
-  "description": "Publish the optional material-to-estimate-equipment lookup before deploying equipment-specific custom-cost imports. Labor already has the corresponding lookup.",
+  "status": "dev-deployed-production-not-verified",
+  "description": "The optional material-to-estimate-equipment lookup and Restrict relationship are published and read back in the selected Dev environment with updated Drafts/pricing assemblies and frontend. Labor already has the corresponding lookup. Office Script publication and non-admin acceptance remain pending.",
   "tables": {
     "re_estimatematerialline": {
       "re_estimateequipment": {

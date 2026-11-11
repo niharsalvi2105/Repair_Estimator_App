@@ -2,6 +2,18 @@
 
 ## 1. Scope and evidence
 
+### Latest Dev publication and optional-location backend alignment
+
+After the user reported Calculate rejecting a blank Functional Location Description, the user approved the full latest backend deployment. The selected Dev environment now has the latest Drafts/pricing assemblies, both French-clear markers, the material-equipment lookup, and optional Location Description metadata. The updated backend accepts blank location, keeps its 300-character limit, and retains required email. Existing API dispatch and UI behavior are unchanged by this deployment itself; earlier source changes are now published.
+
+The current frontend build was successfully pushed to existing Code App `57cf4aaa-7af2-4a3d-9a44-ef067d0b44d1` in solution `RepairEstimatorApp`; built entry is `index-Du74UYJS.js`. No sharing/permissions change or new app was requested. A fresh browser verification attempt was blocked by the Microsoft sign-in redirect, so served bundle identity and the user's actual Calculate outcome are not claimed verified. Reload the draft in a freshly refreshed app before retrying after the previous error. No draft was overwritten for acceptance testing.
+
+Production build passed; 31 focused contract/matrix/workbook-source tests passed. Twelve focused backend cases and two intentionally rejected, nonpersisting live location probes are documented in the plugin/Dataverse references. Existing workbook scripts are not published by the app push; Office Script rollout and non-admin end-to-end acceptance remain pending, with export automation left disabled. This supersedes older local-only statuses for the published frontend/backend/schema, not the remaining export/browser acceptance gaps.
+
+### Catalog KM-prefix classification data correction (2026-11-10)
+
+The selected Dev catalog was corrected so Part Numbers beginning with KM (case-insensitive, without rewriting identifiers) belong to KONE; all other nonblank numbers belong to Non-KONE. Final full-catalog tenant readback verified 9,104 KONE and 28,357 Non-KONE records with zero classification mismatches. Existing type-filtered catalog searches use those corrected master values on subsequent requests; this is a catalog data update, not automatic type guessing from text in the editor. Existing estimate material snapshots, entered fields, default row type and KONE/manual pricing safeguards remain unchanged. No frontend code or bundle deployment is part of this correction. A fresh lookup/reload may be needed to discard already-loaded search results. Full live correction evidence is recorded in the Dataverse reference; published-app browser acceptance remains unverified.
+
 ### Always-editable screenshot-layout cost grids (local source, not deployed)
 
 Expand/Collapse controls, summary/detail rows and cost-line paging have been removed. The labor table now matches the supplied column structure: Equipment, Mechanic (ST/DT), Helper (ST/DT), Adjuster (ST/DT), Total Cost, followed by a totals row. All six hours cells are directly editable; total cost is read-only, using saved line rates or unique available Branch role/time rates, with each line rounded to cents as in Draft Save. Missing rates show Unavailable rather than a fabricated zero. ST/DT remain localized through surrounding labels/help.

@@ -2,6 +2,20 @@
 
 ## 1. Scope and evidence
 
+### Latest Dev backend deployment following optional-location failure
+
+The reported `re_DraftEstimate` exception was raised by the older deployed Drafts implementation; the local optional-location change had not been released. Read-only preflight confirmed the previous Drafts content hash `1ac5903cc3455438ce900e7076de0053cd5230f3aca3f6252853ed4dfe8d0506`, the missing French-clear/material-equipment fields, and ApplicationRequired location metadata. The user approved the full latest backend deployment rather than an isolated hotfix.
+
+The three additive fields were published and verified first, and `re_repairestimate.re_buildingname` was changed to RequiredLevel None with MaxLength 300 retained. Existing signed assemblies were then updated using content-only ETag-conditional PATCH and full binary readback: Drafts SHA-256 `945c79fc681eb47582f97b71c2d9ffc4f091d8bb8d2377eabf11d8e42679d957`; pricing/export assembly SHA-256 `1ed02e9bcc0fab3ba8cb701d799893b8fa6bdb511d0151d6814b5e0ed3f0b1ed`. Names, versions, signing tokens, isolation/source modes, plugin types, steps, images and Custom API registrations were checked unchanged. Private pre-deployment assembly/schema/registration backup is outside the repository. No existing estimate or master business records were changed by this deployment.
+
+Twelve focused fake-pipeline optional-location/custom-description/equipment-link cases passed. A broader export selection passed 35 cases and failed two older export fixtures at their missing Account prerequisite; those fixtures were not changed and their intended export assertions remain unverified. Live nonpersisting validation used valid configuration and a deliberately missing Account: blank location reached the Account guard, while 301 characters reached the existing length guard. Both requests failed before Create; this confirms the deployed location validation path, not a successful user Save/Calculate/Submit or non-admin authorization. Email remains mandatory. Frontend publication succeeded; Office Scripts were not published and export automation remains disabled. This deployment section supersedes earlier local-only statuses for the released backend/schema changes, not their outstanding acceptance/export evidence.
+
+### Catalog classification data correction (2026-11-10)
+
+The authorized Dev correction changes only Spare Parts master `re_sparepart.re_parttype`: case-insensitive KM prefix on the exact Part Number means KONE; other nonblank numbers mean Non-KONE; blanks are reported and skipped. Existing estimate material snapshots are excluded. The Material importer and schema ownership description now use this rule instead of classifying all source rows as KONE. No plugin dispatch, calculation formula, loader, registration/image, permissions, lock or export lifecycle code is changed or deployed.
+
+The existing catalog type filter will use corrected master classification for subsequent selections. Old saved snapshots are not migrated or recalculated; an explicit catalog refresh still follows existing server validation and may reject a changed type. Six focused local importer tests passed; Dev migration completion/readback is recorded in the Dataverse reference. Existing import contract fingerprints require fresh staging after the source change.
+
 ### Equipment-linked custom-cost import contract (local source, not deployed)
 
 Draft labor/material DTOs accept optional `equipmentNumber`, resolved by exact number against the desired estimate-equipment snapshots and the line's CSTM package subset. Unknown/cross-package equipment is rejected. New equipment snapshots receive IDs before line construction; lookups always reference estimate snapshots, never master Equipment. Omission preserves a prior association (and fails if its equipment was removed), while explicit empty text clears it. Load rejects dangling/cross-estimate references and returns exact equipment numbers. Pricing continues to count every custom line once; no rate/formula changes, new API dispatch, registration/images, master writes, authorization or lock bypass.
