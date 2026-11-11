@@ -39,7 +39,7 @@ export function MaterialPartSelect({ line, update, market, language, capability,
   function choose(part: CatalogPart) {
     update({ catalogPartId: part.id, description: part.description, part: part.number,
       vendor: part.partType === 'kone' ? 'KONE' : '', unitCost: part.unitCost,
-      unitPrice: part.unitPrice, uom: part.uom, refreshPart: true,
+      unitPrice: part.unitPrice, sellingPrice: undefined, uom: part.uom, refreshPart: true,
       markupPercent: part.partType === 'kone' ? line.markupPercent ?? capability?.defaultMarkupPercent : undefined })
     setQuery(undefined)
     setOpen(false)
@@ -56,7 +56,7 @@ export function MaterialPartSelect({ line, update, market, language, capability,
           setOpen(false)
           const partType = event.target.value === 'kone' ? 'kone' : event.target.value === 'non-kone' ? 'non-kone' : undefined
           update({ partType, catalogPartId: undefined, part: '', description: '', vendor: '',
-            unitCost: 0, unitPrice: undefined, uom: undefined, refreshPart: false,
+            unitCost: 0, unitPrice: undefined, sellingPrice: undefined, uom: undefined, refreshPart: false,
             markupPercent: partType === 'kone' ? capability?.defaultMarkupPercent : undefined })
         }}>
         {!line.partType && <option value="">{fr ? 'Saisie manuelle existante' : 'Existing manual entry'}</option>}
@@ -79,7 +79,7 @@ export function MaterialPartSelect({ line, update, market, language, capability,
               onChange={(event) => {
                 const value = event.target.value
                 setQuery(value); setActiveIndex(0); setOpen(true)
-                update({ part: value, catalogPartId: undefined, unitPrice: undefined, uom: undefined, refreshPart: false,
+                update({ part: value, catalogPartId: undefined, unitPrice: undefined, sellingPrice: undefined, uom: undefined, refreshPart: false,
                   ...(line.catalogPartId || line.partType === 'kone' ? { unitCost: 0, description: '', vendor: '' } : {}) })
               }}
               onKeyDown={(event) => {
@@ -129,7 +129,7 @@ export function MaterialPartSelect({ line, update, market, language, capability,
         </div>
       </div>
       {!readOnly && line.partType === 'non-kone' && line.catalogPartId && <button type="button" className="button tertiary"
-        onClick={() => { setQuery(undefined); setOpen(false); update({ catalogPartId: undefined, unitPrice: undefined, uom: undefined,
+        onClick={() => { setQuery(undefined); setOpen(false); update({ catalogPartId: undefined, unitPrice: undefined, sellingPrice: undefined, uom: undefined,
           unitCost: 0, part: '', description: '', refreshPart: false }) }}>
         {fr ? 'Passer à la saisie manuelle' : 'Switch to manual entry'}
       </button>}

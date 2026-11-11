@@ -48,7 +48,7 @@ namespace RepairEstimator.Drafts
             var package = line.pricingSource == "package";
             if (line.partType != (package ? "kone" : "non-kone") ||
                 !string.IsNullOrEmpty(line.catalogPartId) || line.markupPercent.HasValue ||
-                line.unitPrice.HasValue || line.refreshPart || (package && line.unitCost != 0))
+                line.unitPrice.HasValue || line.sellingPrice.HasValue || line.refreshPart || (package && line.unitCost != 0))
                 throw new InvalidPluginExecutionException("Package/manual material must not contain catalog prices or extra markup.");
             if (previous?.GetAttributeValue<OptionSetValue>("re_parttype") != null)
                 throw new InvalidPluginExecutionException("Remove the catalog material line before replacing it with package/manual pricing.");

@@ -78,6 +78,7 @@ namespace RepairEstimator.Drafts
         [DataMember(EmitDefaultValue = false)] public string catalogPartId;
         [DataMember(EmitDefaultValue = false)] public decimal? markupPercent;
         [DataMember(EmitDefaultValue = false)] public decimal? unitPrice;
+        [DataMember(EmitDefaultValue = false)] public decimal? sellingPrice;
         [DataMember(EmitDefaultValue = false)] public string uom;
         [DataMember(EmitDefaultValue = false)] public bool refreshPart;
         [DataMember(EmitDefaultValue = false)] public string pricingSource;
@@ -1207,6 +1208,7 @@ namespace RepairEstimator.Drafts
                 catalogPartId = e.GetAttributeValue<EntityReference>("re_sparepart")?.Id.ToString(),
                 markupPercent = e.GetAttributeValue<decimal?>("re_markuppct"),
                 unitPrice = e.GetAttributeValue<decimal?>("re_unitpriceprecise"),
+                sellingPrice = e.GetAttributeValue<decimal?>("re_sellingprice"),
                 uom = e.GetAttributeValue<string>("re_uom")
             }).ToList();
             foreach (var p in packageRows.OrderBy(p => p.GetAttributeValue<int?>("re_sequence") ??

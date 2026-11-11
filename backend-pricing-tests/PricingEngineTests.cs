@@ -227,6 +227,37 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
+        public void Catalog_selling_prices_replace_only_their_selling_contribution_not_true_cost()
+        {
+            var input = Baseline();
+            input.IsCustomPath = true;
+            var part = new MaterialLineInput { IsKone = false, UsesCatalogSellingPrice = true,
+                Quantity = 2, UnitCost = 10, UnitSellingPrice = 30,
+                TaxApplicable = true, FreightApplicable = true };
+            input.MaterialLines.Add(part);
+            var original = PricingEngine.Calculate(input);
+            var factor = 1m + input.UseTaxPct + input.FreightPct;
+            var expected = Math.Round((original.TotalTrueCost - Math.Round(20m * factor, 2)) /
+                (1m - original.RecommendedCmii.Value) + 60m * factor, 2, MidpointRounding.AwayFromZero);
+            Assert.Equal(expected, original.SuggestedPrice);
+            part.UnitSellingPrice = 40m;
+            var changed = PricingEngine.Calculate(input);
+            Assert.Equal(original.TotalTrueCost, changed.TotalTrueCost);
+            Assert.Equal(Math.Round(expected + 20m * factor, 2), changed.SuggestedPrice);
+            input.MaterialLines.Add(new MaterialLineInput { IsKone = true, Quantity = 3,
+                UnitCost = 5, UnitSellingPrice = 50, MarkupPercent = 10 });
+            var mixed = PricingEngine.Calculate(input);
+            Assert.Equal(Math.Round((mixed.TotalTrueCost - mixed.KoneMaterialCost - Math.Round(20m * factor, 2)) /
+                (1m - mixed.RecommendedCmii.Value) + 80m * factor + 150m * 1.10m,
+                2, MidpointRounding.AwayFromZero), mixed.SuggestedPriceWithKoneMaterial);
+            foreach (var invalid in new decimal?[] { null, 0m, -1m, 1000000001m })
+            {
+                part.UnitSellingPrice = invalid;
+                Assert.Throws<PricingException>(() => PricingEngine.Calculate(input));
+            }
+        }
+
+        [Fact]
         public void Entered_custom_material_rates_apply_to_catalog_cost_and_selling_without_changing_standard_packages()
         {
             var input = Baseline();

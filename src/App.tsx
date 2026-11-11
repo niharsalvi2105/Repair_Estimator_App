@@ -1051,10 +1051,15 @@ function App() {
         return JSON.stringify(sent.map(costLinkSignature).sort()) !==
           JSON.stringify((received ?? []).map(costLinkSignature).sort())
       })
-      if (missingDetails || missingAssignments || missingCustomDescriptions || missingCostEquipment) {
+      const missingSellingPrices = (input.materialLines ?? []).some(line => line.sellingPrice != null &&
+        record.materialLines?.find(saved => saved.id === line.id)?.sellingPrice !== line.sellingPrice)
+      if (missingDetails || missingAssignments || missingCustomDescriptions || missingCostEquipment || missingSellingPrices) {
         setDraftVersion(record.version); setDraftNumber(record.number || '')
         setSubmitted(record.status === 126110002)
         setExportDelivery(record.exportDelivery ?? undefined)
+        if (missingSellingPrices) throw new Error(language === 'fr'
+          ? 'Le serveur n’a pas conservé les prix de vente. Vos modifications restent à l’écran; déployez le schéma et les deux plug-ins mis à jour avant de recalculer.'
+          : 'The server did not retain selling prices. Your edits remain on screen; deploy the updated schema and both plugins before recalculating.')
         if (missingCostEquipment) throw new Error(language === 'fr'
           ? 'Le serveur n’a pas conservé les équipements des coûts personnalisés. Vos lignes restent à l’écran. Déployez le schéma et le plug-in de brouillon mis à jour.'
           : 'The server did not retain custom-cost equipment assignments. Your rows remain on screen. Deploy the updated schema and draft plugin.')

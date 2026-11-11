@@ -190,7 +190,8 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         <caption>{fr ? 'Détail des matériaux' : 'Material Breakdown'}</caption>
         <thead><tr>{[fr ? 'Numéro d’équipement' : 'Equipment Number', fr ? 'Description du matériau' : 'Material Description',
           fr ? 'Nom du fournisseur' : 'Vendor Name', fr ? 'Fabricant de pièce' : 'Part Mfg', fr ? 'N° de pièce' : 'Part #',
-          fr ? 'Quantité' : 'Quantity', fr ? 'Coût unitaire' : 'Unit Cost'].map(label =>
+          fr ? 'Quantité' : 'Quantity', fr ? 'Coût unitaire' : 'Unit Cost',
+          fr ? 'Prix unitaire VK13' : 'VK13 Unit Price', fr ? 'Prix de vente' : 'Selling Price'].map(label =>
           <th key={label} scope="col">{label}</th>)}</tr></thead>
         <tbody>{visibleMaterials.map((line, index) => {
           const packagePriced = line.pricingSource === 'package'
@@ -215,10 +216,10 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             <td>{catalog ? partSelect('type') : <select className="text-input" aria-label={fr ? 'Type de pièce' : 'Part type'}
               value={line.pricingSource ?? 'legacy'} disabled={locked} onChange={event => {
                 if (event.target.value === 'kone') update({ partType: 'kone', pricingSource: undefined, catalogPartId: undefined,
-                  part: '', description: '', vendor: '', unitCost: 0, unitPrice: undefined, markupPercent: capability?.defaultMarkupPercent,
+                  part: '', description: '', vendor: '', unitCost: 0, unitPrice: undefined, sellingPrice: undefined, markupPercent: capability?.defaultMarkupPercent,
                   uom: undefined, refreshPart: false })
                 else update({ partType: 'non-kone', pricingSource: 'manual', catalogPartId: undefined,
-                  unitCost: 0, unitPrice: undefined, markupPercent: undefined, uom: undefined, refreshPart: false })
+                  unitCost: 0, unitPrice: undefined, sellingPrice: undefined, markupPercent: undefined, uom: undefined, refreshPart: false })
               }}>
               {line.pricingSource == null && <option value="legacy">{fr ? 'Saisie existante' : 'Existing manual entry'}</option>}
               <option value="manual">Non-KONE</option><option value="kone">KONE</option>
@@ -238,11 +239,16 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
                 onChange={event => update({ unitCost: Number(event.target.value) })} />}
               {catalog && <div className="custom-cell-pricing">
                 {partSelect('details')}
-                <label className="field-label">{fr ? 'Prix unitaire' : 'Unit price'}
-                <input className="text-input" readOnly value={money(line.unitPrice ?? undefined)} />
-                </label>
               </div>}
             </td>
+            <td><input className="text-input" aria-label={fr ? 'Prix unitaire VK13' : 'VK13 Unit Price'}
+              readOnly value={line.catalogPartId && line.unitPrice != null ? money(line.unitPrice) : '-'} /></td>
+            <td>{line.catalogPartId && line.unitPrice != null && line.unitPrice > 0
+              ? <input className="text-input" type="number" aria-label={fr ? 'Prix de vente' : 'Selling Price'}
+                required min={0.0000000001} max={1000000000} step="any" disabled={locked}
+                value={line.sellingPrice ?? line.unitPrice}
+                onChange={event => update({ sellingPrice: event.target.value === '' ? 0 : Number(event.target.value) })} />
+              : <span>{fr ? 'Sans objet' : 'Not applicable'}</span>}</td>
           </tr>
         })}</tbody>
       </table>

@@ -22,6 +22,19 @@ test('material total uses exact unit cost times quantity, never selling price or
     assert.equal(calculatePackageCost(p, equipmentCount, rates, 126110000, 5, 14, labor, [material, manual]).material, 45.46356)
 })
 
+test('catalog selling override is bounded and does not change cost totals', () => {
+  for (const language of ['en', 'fr']) {
+    for (const sellingPrice of [0.0000000001, 55.25, 1000000000]) {
+      assert.equal(materialEntryError({ ...material, sellingPrice }, language), undefined)
+      assert.equal(calculateCustomMaterialTotal([{ ...material, sellingPrice }]), 15.46356)
+    }
+    for (const sellingPrice of [0, -1, NaN, Infinity, 1000000001, 0.12345678901])
+      assert.ok(materialEntryError({ ...material, sellingPrice }, language))
+    assert.ok(materialEntryError({ ...material, sellingPrice: 10, catalogPartId: undefined }, language))
+    assert.ok(materialEntryError({ ...material, sellingPrice: 10, unitPrice: 0 }, language))
+  }
+})
+
 test('part number and natural-number quantities are mandatory in both languages', () => {
   for (const language of ['en', 'fr']) {
     assert.equal(materialEntryError(material, language), undefined)

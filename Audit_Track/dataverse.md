@@ -2,6 +2,16 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Approved estimate-only catalog Selling Price (local schema/source, not deployed)
+
+New prerequisite `re_estimatematerialline.re_sellingprice` is an optional Decimal, precision ten, minimum 0.0000000001, maximum 1000000000, as defined in `backend/material-selling-price-schema.json`. It is an estimate-line override in the existing snapshot currency, not a Spare Parts master edit or replacement of `re_unitpriceprecise` (trusted converted VK13). Existing null values use saved VK13; no backfill or default-zero column value. No relationships, permissions or automation state changes are introduced. The user approved this column and inclusion of positive-priced Non-KONE catalog rows.
+
+UI/API `materialLines[].sellingPrice` maps to the new field; read-only `unitPrice` remains the original snapshot. New catalog defaults are UI-only until an override is entered; manual/package/unclassified lines cannot carry an override. Same-line omitted overrides preserve existing values; changing catalog/type resets the UI default, while an explicit override is preserved through clone/refresh. Inputs are positive and limited to ten decimals and the schema maximum. Backend readback retention errors preserve unsaved edits against an old server. The two added grid columns, fallback display and scroll state are UI-only. Import templates stay unchanged and new catalog imports use VK13 by default.
+
+Pricing 2026.9 reads override-or-VK13 and applies quantity plus existing tax/freight and KONE-only markup. Non-KONE catalog rows with positive VK13 explicitly switch from cost-based margin contribution to selling-price contribution; their old saved estimates are not auto-recalculated, but suggested pricing changes on subsequent Calculate. Costs and user-entered quote Sell Price/actual-CMII formulas stay unchanged. Frozen exports carry trusted VK13 and the override independently; both workbook detail paths retain the snapshot values, while fixed cost worksheet cells remain cost outputs.
+
+Source validation includes 56 engine cases, six focused integration/formula cases, catalog Save/Load/limits/refresh checks, 45 focused frontend/contract/clone/workbook cases and six mocked EN/FR browser cases plus build/lint. These checks do not prove tenant behavior. Deploy the new column before both assemblies/frontend; scripts and estimator-role end-to-end acceptance remain pending. No schema writes, data changes or deployment were performed for this new feature.
+
 ### Approved latest Dev schema/backend deployment after Calculate validation failure
 
 In the already selected Dev environment `294703ba-95fe-eca6-b3bb-dfadad011f06`, the user approved full latest deployment. Published and read-back prerequisites are now `re_estimatepackage.re_customnamefrcleared` and `re_customscopefrcleared` (optional Boolean, default false), plus `re_estimatematerialline.re_estimateequipment` (optional lookup to estimate equipment, Restrict delete, no cascading assignment/sharing/reparenting). Existing labor lookup was verified. No historical clear-marker inference or cost-line equipment backfill was performed.

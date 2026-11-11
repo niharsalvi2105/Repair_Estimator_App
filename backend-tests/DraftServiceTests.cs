@@ -420,7 +420,7 @@ static class DraftServiceTests
         Console.WriteLine("Unlisted equipment snapshot cases passed: details, age zero, validation, estimate customer, no master writes and snapshot preservation.");
     }
 
-    static void TestCatalogParts()
+    public static void TestCatalogParts()
     {
         var catalogType = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.PartCatalog");
         var search = catalogType.GetMethod("Search", BindingFlags.Static | BindingFlags.NonPublic);
@@ -485,6 +485,10 @@ static class DraftServiceTests
             ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
         });
         var input = Input(); input.market = 126110001;
+        var accountId = Guid.NewGuid();
+        service.Add(new Entity("account", accountId) { ["re_salesforceaccountid"] = "synthetic-account",
+            ["re_salesorganizations"] = "CKE", ["name"] = "Synthetic account", ["statecode"] = new OptionSetValue(0) });
+        input.accountId = accountId.ToString();
         input.laborLines = new List<LaborInput> { new LaborInput { hours = 1, role = 126110000, time = 126110000 } };
         input.materialLines = new List<MaterialInput> { new MaterialInput {
             description = "Forged", part = "FAKE", unitCost = 1, unitPrice = 1, quantity = 3,
@@ -498,6 +502,28 @@ static class DraftServiceTests
             "Server must ignore spoofed catalog costs/prices/description and preserve exact snapshots.");
         var stored = service.Rows[Guid.Parse(material.id)];
         Assert(stored.GetAttributeValue<Money>("re_extendedcost").Value == 23.20m, "Round only extended/display amounts.");
+        loaded.materialLines[0].sellingPrice = 60.123456789m;
+        Run(service, loaded);
+        loaded = Load(service, loaded);
+        Assert(loaded.materialLines[0].sellingPrice == 60.123456789m &&
+            loaded.materialLines[0].unitPrice == 49.66248m && loaded.materialLines[0].unitCost == 7.73178m,
+            "Selling override roundtrips without changing trusted VK13/cost.");
+        foreach (var invalid in new[] { 0m, -1m, 1000000001m, .12345678901m })
+        {
+            loaded.materialLines[0].sellingPrice = invalid;
+            Reject(() => Run(service, loaded), "Selling price");
+            loaded = Load(service, loaded);
+        }
+        loaded.materialLines[0].sellingPrice = null;
+        Run(service, loaded);
+        loaded = Load(service, loaded);
+        Assert(loaded.materialLines[0].sellingPrice == 60.123456789m,
+            "Old clients omitting override preserve saved selling price.");
+        loaded.materialLines[0].sellingPrice = loaded.materialLines[0].unitPrice;
+        Run(service, loaded);
+        loaded = Load(service, loaded);
+        Assert(loaded.materialLines[0].sellingPrice == loaded.materialLines[0].unitPrice,
+            "Entering VK13 explicitly resets effective selling price.");
         input = loaded; input.materialLines[0].quantity = 1.5m;
         Reject(() => Run(service, input), "whole number");
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
@@ -555,6 +581,7 @@ static class DraftServiceTests
         input.materialLines[0].refreshPart = false;
         input.materialLines[0].markupPercent = null;
         input.materialLines[0].unitCost = 25m;
+        input.materialLines[0].sellingPrice = null;
         Reject(() => Run(service, input), "classified as KONE");
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
         input.materialLines[0].part = "MANUAL-1";
@@ -565,6 +592,9 @@ static class DraftServiceTests
         Run(service, input);
         Assert(Load(service, input).materialLines.Single().unitCost == 30m,
             "Existing explicit manual non-KONE remains editable without activating the catalog.");
+        input = Load(service, input);
+        input.materialLines[0].sellingPrice = 50m;
+        Reject(() => Run(service, input), "Selling price");
         Console.WriteLine("Catalog cases passed: missing schema/disabled gate, CAD precision, spoof rejection, snapshots, refresh, classification, markup and legacy VK13 protection.");
     }
 
@@ -1062,7 +1092,7 @@ static class DraftServiceTests
                 var metadata = new EntityMetadata { LogicalName = entity.LogicalName };
                 typeof(EntityMetadata).GetProperty("Attributes").SetValue(metadata, names.Select(name => {
                     AttributeMetadata attribute;
-                    if (name == "re_unitcostprecise" || name == "re_unitpriceprecise")
+                    if (name == "re_unitcostprecise" || name == "re_unitpriceprecise" || name == "re_sellingprice")
                         attribute = new DecimalAttributeMetadata { Precision = SnapshotPrecision };
                     else if (new[] { "re_usdcost", "re_usdprice", "re_sourceusdcost", "re_sourceusdprice", "re_pricingunit" }.Contains(name))
                         attribute = new DecimalAttributeMetadata { Precision = 6 };

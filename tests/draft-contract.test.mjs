@@ -12,6 +12,19 @@ const fixture = () => ({
   packages: [{ id: 'package-id', number: 'P1', nameEn: 'Package', scopeEn: 'Scope', hours: 2.5, material: 125 }],
 })
 
+test('selling price is an independent optional catalog snapshot with strict limits', () => {
+  const record = fixture()
+  record.materialLines = [{ id: 'm', description: 'Part', vendor: 'KONE', part: 'KM1', quantity: 1,
+    unitCost: 10, unitPrice: 20, sellingPrice: 25.123456789, partType: 'kone',
+    catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', uom: 'PC', markupPercent: 10 }]
+  assert.equal(parseDraft(record).materialLines[0].sellingPrice, 25.123456789)
+  assert.equal(parseDraft(record).materialLines[0].unitPrice, 20)
+  for (const sellingPrice of [0, -1, Infinity, NaN, '25', 1000000001, .12345678901])
+    assert.throws(() => parseDraft({ ...record, materialLines: [{ ...record.materialLines[0], sellingPrice }] }), /snapshot/)
+  assert.throws(() => parseDraft({ ...record, materialLines: [{ ...record.materialLines[0],
+    partType: 'non-kone', markupPercent: undefined, catalogPartId: undefined }] }), /snapshot/)
+})
+
 test('cost equipment numbers must be selected for the referenced package, preserving leading zeros', () => {
   const original = fixture()
   original.packages[0].isCustom = true

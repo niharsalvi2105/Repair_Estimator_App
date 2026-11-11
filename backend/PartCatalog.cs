@@ -38,7 +38,7 @@ namespace RepairEstimator.Drafts
         internal static readonly string[] SnapshotColumns = {
             "re_sparepart", "re_parttype", "re_materialsource", "re_materialscope", "re_sourcekey", "re_sourceversion",
             "re_conversionversion", "re_sourceusdcost", "re_sourceusdprice", "re_unitcostprecise",
-            "re_unitpriceprecise", "re_pricingunit", "re_uom", "re_usdtocadfactor", "re_costonlyfactor",
+            "re_unitpriceprecise", "re_sellingprice", "re_pricingunit", "re_uom", "re_usdtocadfactor", "re_costonlyfactor",
             "re_markuppct", "re_sourcecurrency", "re_amountcurrency", "re_refreshedon"
         };
         static readonly string[] PartColumns = {
@@ -55,7 +55,7 @@ namespace RepairEstimator.Drafts
         static bool Compatible(AttributeMetadata attribute)
         {
             var name = attribute.LogicalName;
-            var precision = name == "re_unitcostprecise" || name == "re_unitpriceprecise" ? 10 :
+            var precision = name == "re_unitcostprecise" || name == "re_unitpriceprecise" || name == "re_sellingprice" ? 10 :
                 new[] { "re_usdcost", "re_usdprice", "re_sourceusdcost", "re_sourceusdprice", "re_pricingunit" }.Contains(name) ? 6 :
                 new[] { "re_usdtocadfactor", "re_costonlyfactor", "re_markuppct", "re_defaultmarkuppct" }.Contains(name) ? 2 : 0;
             if (precision > 0) return attribute is DecimalAttributeMetadata number && number.Precision >= precision;
@@ -246,7 +246,7 @@ namespace RepairEstimator.Drafts
             if (line.partType == null)
             {
                 if (savedType.HasValue) Fail("Reload the current app before editing catalog material.");
-                if (!string.IsNullOrEmpty(line.catalogPartId) || line.markupPercent.HasValue)
+                if (!string.IsNullOrEmpty(line.catalogPartId) || line.markupPercent.HasValue || line.sellingPrice.HasValue)
                     Fail("Part classification is required.");
                 return line.unitCost;
             }
@@ -327,6 +327,16 @@ namespace RepairEstimator.Drafts
                 row["re_markuppct"] = null;
             }
             row["re_materialscope"] = new OptionSetValue(126110000);
+            var catalogPrice = row.GetAttributeValue<decimal?>("re_unitpriceprecise");
+            if (line.sellingPrice.HasValue)
+            {
+                if (!hasCatalog || !(catalogPrice > 0) || line.sellingPrice <= 0 ||
+                    line.sellingPrice > 1000000000m || decimal.Round(line.sellingPrice.Value, 10) != line.sellingPrice.Value)
+                    Fail("Selling price requires a catalog VK13 price and a positive amount up to 1000000000 with at most ten decimals.");
+                row["re_sellingprice"] = line.sellingPrice.Value;
+            }
+            else
+                row["re_sellingprice"] = sameCatalog ? previous.GetAttributeValue<decimal?>("re_sellingprice") : null;
             return row.GetAttributeValue<decimal>("re_unitcostprecise");
         }
     }

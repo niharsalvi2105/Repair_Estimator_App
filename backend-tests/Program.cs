@@ -22,6 +22,11 @@ class Program
     }
     static void Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--catalog")
+        {
+            DraftServiceTests.TestCatalogParts();
+            return;
+        }
         if (args.Length == 1 && args[0] == "--customer-defaults")
         {
             DraftServiceTests.TestCustomerDefaults();

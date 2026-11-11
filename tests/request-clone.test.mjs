@@ -19,6 +19,15 @@ function source() {
     materialLines: [{ id: 'material', packageId: 'package', catalogPartId: 'part', unitCost: 20, quantity: 1 }],
   }
 }
+test('cloning preserves explicit selling override but refreshes catalog defaults', () => {
+  const record = source()
+  record.materialLines[0].unitPrice = 20
+  record.materialLines[0].sellingPrice = 25
+  const result = cloneRequest(record, { ...DEFAULT_CLONE_SECTIONS, packages: true, custom: true }, 'new')
+  assert.equal(result.materialLines[0].sellingPrice, 25)
+  assert.equal(result.materialLines[0].refreshPart, true)
+  assert.equal(record.materialLines[0].sellingPrice, 25)
+})
 function transport() {
   return {
     branches: async () => [{ re_branchid: 'branch', re_market: 126110000, _re_country_value: 'country', _re_currency_value: 'currency' }],

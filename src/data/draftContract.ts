@@ -19,7 +19,7 @@ export type DraftLabor = { id: string; packageId?: string | null; equipmentNumbe
 export type DraftMaterial = {
   id: string; packageId?: string | null; equipmentNumber?: string | null; description: string; vendor: string; part: string; quantity: number; unitCost: number
   partType?: 'kone' | 'non-kone' | null; catalogPartId?: string | null; markupPercent?: number | null
-  unitPrice?: number | null; uom?: string | null; refreshPart?: boolean
+  unitPrice?: number | null; sellingPrice?: number | null; uom?: string | null; refreshPart?: boolean
   pricingSource?: 'package' | 'manual' | null
 }
 export const MAX_DRAFT_BYTES = 200000
@@ -140,6 +140,9 @@ export function parseDraft(value: unknown): DraftRecord {
     (line.markupPercent != null && (line.partType !== 'kone' || !Number.isFinite(line.markupPercent) ||
       line.markupPercent < 0 || line.markupPercent > 100 || Math.round(line.markupPercent * 100) / 100 !== line.markupPercent)) ||
     (line.unitPrice != null && (!Number.isFinite(line.unitPrice) || line.unitPrice < 0)) ||
+    (line.sellingPrice != null && (!line.catalogPartId || !(line.unitPrice != null && line.unitPrice > 0) ||
+      !Number.isFinite(line.sellingPrice) || line.sellingPrice <= 0 || line.sellingPrice > 1000000000 ||
+      Number(line.sellingPrice.toFixed(10)) !== line.sellingPrice)) ||
     (line.partType === 'kone' && line.pricingSource !== 'package' &&
       (!line.catalogPartId || line.markupPercent == null || !(line.unitPrice != null && line.unitPrice > 0))))))
     throw new Error('Invalid draft material snapshot.')

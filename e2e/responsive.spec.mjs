@@ -1858,7 +1858,11 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await expect(part).toHaveValue('TEST-PART-001')
       await expect(material.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Test catalog motor')
       await expect(material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true })).toHaveValue('7.73178')
-      await expect(material.getByLabel(label('Unit price', 'Prix unitaire'), { exact: true })).toHaveValue(fr ? '40,376 USD' : '40.376 USD')
+      await expect(material.getByRole('textbox', { name: label('VK13 Unit Price', 'Prix unitaire VK13'), exact: true })).toHaveValue(fr ? '40,376 USD' : '40.376 USD')
+      const selling = material.getByRole('spinbutton', { name: label('Selling Price', 'Prix de vente'), exact: true })
+      await expect(selling).toHaveValue('40.376')
+      await selling.fill('55.25')
+      await expect(material.getByRole('textbox', { name: label('VK13 Unit Price', 'Prix unitaire VK13'), exact: true })).toHaveValue(fr ? '40,376 USD' : '40.376 USD')
       const total = page.getByLabel(label('Material', 'Matériau'), { exact: true })
       await expect(quantity).toHaveValue('1')
       await expect(total).toHaveValue(fr ? '7,73178 USD' : '7.73178 USD')
@@ -1902,7 +1906,7 @@ test('package preview rates query current branch mechanic cost data from Dataver
       ]))
       expect(lines[0]).toMatchObject({ partType: 'kone',
         unitCost: 7.73178, part: 'TEST-PART-001', quantity: 3, packageId: 'catalog-custom',
-        catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', unitPrice: 40.376, markupPercent: 10 })
+        catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', unitPrice: 40.376, sellingPrice: 55.25, markupPercent: 10 })
       expect(lines[0].pricingSource).toBeUndefined()
       expect(lines[1]).toMatchObject({ partType: 'non-kone', part: 'MANUAL-001', unitCost: 12.5, quantity: 2 })
       expect(lines[1].catalogPartId).toBeUndefined()
@@ -1979,8 +1983,8 @@ for (const language of ['en', 'fr']) {
     await openCatalogMaterial(page, true, language, fr ? 390 : 1366)
     const root = page.locator('.custom-cost-lines')
     await expect(root.locator('.custom-material-grid thead th')).toHaveText(fr
-      ? ['Numéro d’équipement', 'Description du matériau', 'Nom du fournisseur', 'Fabricant de pièce', 'N° de pièce', 'Quantité', 'Coût unitaire']
-      : ['Equipment Number', 'Material Description', 'Vendor Name', 'Part Mfg', 'Part #', 'Quantity', 'Unit Cost'])
+      ? ['Numéro d’équipement', 'Description du matériau', 'Nom du fournisseur', 'Fabricant de pièce', 'N° de pièce', 'Quantité', 'Coût unitaire', 'Prix unitaire VK13', 'Prix de vente']
+      : ['Equipment Number', 'Material Description', 'Vendor Name', 'Part Mfg', 'Part #', 'Quantity', 'Unit Cost', 'VK13 Unit Price', 'Selling Price'])
     await expect(root.locator('.custom-labor-grid thead tr').first().locator('th')).toHaveText(fr
       ? ['Équipement', 'Mécanicien', 'Aide', 'Régleur', 'Coût total']
       : ['Equipment', 'Mechanic', 'Helper', 'Adjuster', 'Total Cost'])

@@ -10,11 +10,15 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.8";
+        public const string Version = "2026.9";
 
         public static PricingResult Calculate(EstimateInput i)
         {
             var itemizedKone = i.MaterialLines.Where(m => m.IsKone == true && !m.IsPackageReference).ToList();
+            var catalogNonKone = i.MaterialLines.Where(m => m.IsKone == false && m.UsesCatalogSellingPrice).ToList();
+            if (catalogNonKone.Any(m => m.IsPackageReference || !m.UnitSellingPrice.HasValue ||
+                m.UnitSellingPrice <= 0 || m.UnitSellingPrice > 1000000000m))
+                throw new PricingException("RE-111", "PRICING_INPUT_INVALID");
             var packageKone = i.Packages.Where(x => x.PackagePricedKone).ToList();
             if (packageKone.Any(x => !x.IsCustom || !x.MaterialBeforeMarkup.HasValue || x.MaterialBeforeMarkup < 0) ||
                 (packageKone.Count == 0 && i.MaterialLines.Any(m => m.IsPackageReference)) ||
@@ -104,7 +108,11 @@ namespace RepairEstimator.Plugins.Pricing
             if (r.RecommendedCmii.HasValue && r.RecommendedCmii.Value < 1m)
             {
                 decimal rec = r.RecommendedCmii.Value;
-                r.SuggestedPrice = R2(r.TotalTrueCost / (1m - rec));
+                var nonKoneCost = i.IsCustomPath ? R2(catalogNonKone.Sum(m => m.Quantity * m.UnitCost *
+                    (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m)))) : 0m;
+                var nonKoneSelling = i.IsCustomPath ? catalogNonKone.Sum(m => m.Quantity * m.UnitSellingPrice.Value *
+                    (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m))) : 0m;
+                r.SuggestedPrice = R2((r.TotalTrueCost - nonKoneCost) / (1m - rec) + nonKoneSelling);
                 if (i.IsCustomPath && (i.KoneSparesSalesPrice > 0m || itemizedKone.Count > 0 || packageKone.Count > 0))
                 {
                     var selling = packageKone.Count > 0
@@ -114,7 +122,8 @@ namespace RepairEstimator.Plugins.Pricing
                             (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m) + m.MarkupPercent.Value / 100m))
                         : i.KoneSparesSalesPrice * (1m + p.Get(ParamCode.KoneSparesTax) +
                             p.Get(ParamCode.KoneSparesFreight) + p.Get(ParamCode.KoneSparesMarkup));
-                    r.SuggestedPriceWithKoneMaterial = R2((r.TotalTrueCost - r.KoneMaterialCost) / (1m - rec) + selling);
+                    r.SuggestedPriceWithKoneMaterial = R2((r.TotalTrueCost - r.KoneMaterialCost - nonKoneCost) /
+                        (1m - rec) + selling + nonKoneSelling);
                 }
             }
 

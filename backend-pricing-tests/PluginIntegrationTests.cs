@@ -17,6 +17,46 @@ namespace RepairEstimator.Tests
 {
     public class PluginIntegrationTests
     {
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Catalog_selling_override_reaches_saved_pricing_and_frozen_exports(bool kone)
+        {
+            var db = new Pipeline();
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            AddCustomDescriptionLines(request);
+            db.Save(ExportSnapshot.Serialize(request));
+            var line = db.Rows.Values.Single(e => e.LogicalName == "re_estimatematerialline");
+            line.Attributes.Remove("re_materialpricingmode");
+            line["re_parttype"] = new OptionSetValue(kone ? 126110000 : 126110001);
+            line["re_sparepart"] = new EntityReference("re_sparepart", Guid.NewGuid());
+            line["re_unitpriceprecise"] = 20m;
+            line["re_sellingprice"] = 30m;
+            if (kone) line["re_markuppct"] = 10m;
+            var column = kone ? Names.Estimate.SuggestedPriceKoneMaterial : Names.Estimate.SuggestedPrice;
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            var firstPrice = db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value;
+            var firstCost = db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value;
+            line["re_sellingprice"] = 40m;
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            Assert.Equal(firstCost, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.Equal(firstPrice + (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
+                db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            Assert.Equal(20m, loaded.materialLines[0].unitPrice);
+            Assert.Equal(40m, loaded.materialLines[0].sellingPrice);
+            var frozen = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
+            Assert.Equal(20m, frozen.materials[0].cells.Single(c => c.key == "re_unitpriceprecise").number);
+            Assert.Equal(40m, frozen.materials[0].cells.Single(c => c.key == "re_sellingprice").number);
+            line["re_sellingprice"] = null;
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            Assert.Equal(firstPrice - (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
+                db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
+        }
+
         [Fact]
         public void Custom_cost_equipment_links_roundtrip_clear_and_export_without_master_lookup()
         {

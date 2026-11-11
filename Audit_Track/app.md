@@ -2,6 +2,16 @@
 
 ## 1. Scope and evidence
 
+### Editable catalog selling price (local source, not deployed)
+
+The material grid now adds read-only VK13 Unit Price and editable Selling Price columns after Unit Cost (nine columns total, superseding the seven-column layout below). A catalog line with a positive VK13 snapshot displays Selling Price defaulting to that saved price. Users can change it without changing VK13, unit cost or the Spare Parts master. Both KONE and Non-KONE catalog parts are included, as explicitly approved; manual and package-priced rows show Not applicable. Values must be positive, at most 1000000000, with up to ten decimal places; invalid values block Save with localized feedback. Inputs honor existing edit/Review locks, and mobile scrolling stays inside the grid. Existing material cost totals remain cost-based.
+
+Draft material `sellingPrice` is an optional estimate-only override; null/omitted defaults visually to `unitPrice`. Choosing another part/type resets the override to its new catalog default. Explicit overrides survive Save/Load, clone and catalog refresh; users can enter the displayed VK13 value to reset the effective selling amount. A backend dropping a submitted override raises an explicit retention error while preserving local edits. Imports retain their existing seven-column template and default new catalog rows to VK13; no new spreadsheet selling input is introduced.
+
+Actual server pricing uses the effective selling price per unit, quantity and existing applicable tax/freight, with existing KONE markup only. Approved Non-KONE catalog selling contributions replace their cost-based margin contribution; manual Non-KONE pricing is unchanged. This affects suggested pricing, not cost totals or automatic replacement of the user-entered estimate quote Sell Price; actual CMII still uses that quote value. New optional `re_estimatematerialline.re_sellingprice` metadata and coordinated Drafts/pricing 2026.9/frontend deployment are required. No tenant schema or data writes, publication or live calculation acceptance for this feature.
+
+Local evidence: build/type-check and changed-source/test lint passed; 45 selected material/contract/clone/workbook-source cases passed across the focused runs; six mocked browser cases passed across EN/FR at 320px/1366px and imports, verifying default price, editable override, unchanged VK13/cost, submitted Save values and page-width containment. Relevant backend formula/persistence/frozen-export evidence is recorded in the plugin reference. These are local/synthetic checks, not production acceptance.
+
 ### Latest Dev publication and optional-location backend alignment
 
 After the user reported Calculate rejecting a blank Functional Location Description, the user approved the full latest backend deployment. The selected Dev environment now has the latest Drafts/pricing assemblies, both French-clear markers, the material-equipment lookup, and optional Location Description metadata. The updated backend accepts blank location, keeps its 300-character limit, and retains required email. Existing API dispatch and UI behavior are unchanged by this deployment itself; earlier source changes are now published.
