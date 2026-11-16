@@ -1,8 +1,23 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseDraftChoices } from '../src/data/draftChoices.ts'
+import { choiceOptionsForField, parseDraftChoices } from '../src/data/draftChoices.ts'
 
 const option = (value, en, fr) => ({ value, en, ...(fr === undefined ? {} : { fr }) })
+
+test('Competing Bids omits Unknown without filtering other fields or changing saved choice data', () => {
+  const choices = [option(126110000, 'None'), option(126110001, 'Known'),
+    option(126110002, 'Suspected'), option(126110003, 'Unknown')]
+  assert.deepEqual(choiceOptionsForField('re_competingbids', choices), choices.slice(0, 3))
+  assert.deepEqual(choiceOptionsForField('re_emergency', choices), choices)
+  assert.equal(choices[3].value, 126110003)
+})
+
+test('National Account offers only Yes and No without changing other choice fields', () => {
+  const choices = [option(126110000, 'Yes'), option(126110001, 'No'), option(126110002, 'Unknown')]
+  assert.deepEqual(choiceOptionsForField('re_nationalaccount', choices), choices.slice(0, 2))
+  assert.deepEqual(choiceOptionsForField('re_hasbeenapproved', choices), choices)
+  assert.equal(choices[2].value, 126110002)
+})
 
 test('Draft choices use published values and localized labels for every requested field', () => {
   const choices = parseDraftChoices({ mode: 'choices', fields: [

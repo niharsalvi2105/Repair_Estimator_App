@@ -1,6 +1,12 @@
 export type ChoiceOption = { value: number; en: string; fr?: string }
 export type DraftChoices = Record<string, ChoiceOption[]>
 
+export function choiceOptionsForField(key: string, options: readonly ChoiceOption[]): ChoiceOption[] {
+  if (key === 're_competingbids') return options.filter((option) => option.value !== 126110003)
+  if (key === 're_nationalaccount') return options.filter((option) => option.value !== 126110002)
+  return [...options]
+}
+
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Invalid Dataverse choice metadata.')

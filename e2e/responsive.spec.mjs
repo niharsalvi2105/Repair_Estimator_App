@@ -1470,6 +1470,8 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await page.locator('.main-nav .nav-item').nth(1).click()
   await expect(page.locator('#estimate-title')).toHaveAccessibleName(
     language === 'fr' ? 'Nom de l’opportunité*' : 'Opportunity Name*')
+  await expect(page.locator('#estimate-title')).toHaveAttribute('placeholder',
+    language === 'fr' ? 'p. ex., Réparation d’ascenseur' : 'e.g., Elevator repair')
   await expect(page.locator('#opportunity-building')).toHaveAccessibleName(
     language === 'fr' ? 'Description de l’emplacement fonctionnel' : 'Functional Location Description')
   await page.locator('#estimate-title').fill('Motor repair draft')
@@ -1491,6 +1493,25 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await page.locator('#request-re_sellprice').fill('1500')
   await next(page)
 }
+
+for (const language of ['en', 'fr']) test(`manual phone rejects alphabetic input and accepts formatted digits (${language})`, async ({ page }) => {
+  await completeDraft(page, { width: 1366, height: 900 }, language)
+  for (let index = 0; index < 4; index++) await page.locator('.form-footer > button').click()
+  await page.getByRole('button', { name: /^(Change Contact|Changer de contact)$/ }).click()
+  await page.locator('#customer-name').fill('Manual contact')
+  await page.locator('#customer-email').fill('manual@example.invalid')
+  const phone = page.locator('#customer-phone')
+  await phone.fill('1-800-FLOWERS')
+  await expect(page.locator('#customer-phone-error')).toHaveText(language === 'fr'
+    ? 'Utilisez des chiffres et les caractères téléphoniques +, -, parenthèses, point et espaces uniquement.'
+    : 'Use digits and phone characters +, -, parentheses, period, and spaces only.')
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('#customer-phone-error')).toBeVisible()
+  expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
+
+  await phone.fill('+1 (555) 010-1234')
+  await expect(page.locator('#customer-phone-error')).toHaveCount(0)
+})
 
 for (const width of [320, 1366]) {
   for (const language of ['en', 'fr']) {
@@ -3284,6 +3305,12 @@ for (const [language, width] of [['en', 1366], ['fr', 390]]) {
     for (const id of ['estimate-title', 'branch-select', 'equipment-type'])
       await expect(page.locator(`#${id}-error`)).toHaveText(language === 'fr' ? 'Champ obligatoire.' : 'Required field.')
     await expect(page.locator('#estimate-title')).toBeFocused()
+    await page.locator('#estimate-title').fill(' \t\n')
+    await save.click()
+    await expect(page.locator('#estimate-title-error')).toHaveText(language === 'fr'
+      ? 'Saisissez une valeur contenant au moins un caractère autre qu’un espace.'
+      : 'Enter a value containing at least one non-whitespace character.')
+    expect(await page.evaluate(() => window.__draftCalls ?? [])).toEqual([])
     await page.locator('#estimate-title').fill('Mandatory message regression')
     await expect(page.locator('#estimate-title-error')).toHaveCount(0)
     await save.click()
@@ -4228,6 +4255,33 @@ test('dashboard market change confirms unsaved edits and cancellation keeps the 
   await expect(market).toBeEnabled()
 })
 
+test('market change clears the active saved draft and keeps all market choices available', async ({ page }) => {
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  const saved = await page.evaluate(() => structuredClone(window.__draftSaved))
+  const market = page.locator('.market-control select')
+  await expect(market).toBeEnabled()
+  await expect(market.locator('option')).toHaveText(['MKO', 'CKE', 'CKQ'])
+
+  page.once('dialog', dialog => dialog.accept())
+  await market.selectOption('126110001')
+  await expect(market).toHaveValue('126110001')
+  await expect(market).toBeEnabled()
+  await expect(page.locator('#estimate-title')).toHaveValue('')
+  await expect(page.locator('#opportunity-building')).toHaveValue('')
+  await expect(page.locator('#branch-select')).toHaveValue('')
+  await expect(page.locator('#customer-name')).toHaveValue('')
+  expect(await page.evaluate(() => window.__draftCalls.length)).toBe(1)
+  expect(await page.evaluate(() => window.__draftSaved)).toEqual(saved)
+
+  for (const value of ['126110002', '126110000']) {
+    await expect(market).toBeEnabled()
+    await market.selectOption(value)
+    await expect(market).toHaveValue(value)
+  }
+})
+
 for (const [width, language] of [[1366, 'en'], [320, 'fr']]) {
   test(`canceled new request preserves the workspace and sidebar resumes it at ${width}px ${language}`, async ({ page }) => {
     await completeDraft(page, { width, height: 900 }, language)
@@ -4304,7 +4358,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 
     await expect(page.locator('#estimate-title')).toHaveValue('Motor repair draft')
     await expect(page.locator('#salesperson')).toHaveValue('Original Salesperson')
     await expect(page.locator('#branch-select')).toBeDisabled()
-    await expect(page.locator('.market-control select')).toBeDisabled()
+    await expect(page.locator('.market-control select')).toBeEnabled()
     await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
     const first = await page.evaluate(() => window.__draftCalls[0])
     expect(first.version).toBeNull()
