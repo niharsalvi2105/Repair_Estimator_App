@@ -2,6 +2,24 @@
 
 ## 1. Scope and evidence
 
+### Manual customer phone validation (local source only)
+
+`ResolveCustomerSelection` validates the manual phone fallback before writing
+`re_customerphone`: a nonempty value must contain a digit and may contain only
+digits, one leading `+`, spaces, parentheses, hyphens and periods, within the
+existing 50-character limit. Null and empty remain valid because phone is
+optional. A nonblank linked Contact telephone/mobile value remains
+authoritative and is not modified or validated as user-entered data. Invalid
+manual values fail the Draft API before estimate creation/update. No columns,
+API payloads, lookups, permissions, registration, pricing or export behavior
+changed.
+
+The focused fake-pipeline test passes for alphabetic/punctuation-only and
+whitespace-only rejection before Create, plus formatted-number persistence.
+The local test used `SignAssembly=false` because the private key is absent; the
+full legacy harness remains blocked earlier by its Account-less `TestChoices`
+fixture. No signed build, deployment or tenant verification occurred.
+
 ### Catalog selling-price overrides, pricing 2026.9 (local source, not deployed)
 
 Draft material input/output adds optional decimal `sellingPrice`, stored only in optional estimate material `re_sellingprice`. Trusted `re_unitpriceprecise` remains the read-only converted VK13 snapshot; source cost/price, currency, conversion and master classification ownership are unchanged. Only a selected catalog line with a positive trusted VK13 snapshot may receive an override, positive through 1000000000 with at most ten decimals. Legacy/unclassified, manual and package-priced lines reject supplied selling prices. An omitted/null value on the same saved catalog line preserves its existing override; a new/reselected line without an override defaults to its trusted VK13. Explicit override refresh/clone uses current catalog validation while keeping the entered override. Catalog schema capability checks now require the new Decimal at precision ten.

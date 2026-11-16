@@ -1052,6 +1052,15 @@ namespace RepairEstimator.Drafts
             return string.IsNullOrWhiteSpace(master) ? entered : master;
         }
 
+        static string ValidatedPhone(string value)
+        {
+            if (value == null || value.Length == 0) return value;
+            if (!System.Text.RegularExpressions.Regex.IsMatch(value, @"\A\+?[0-9(). -]*\z") ||
+                !System.Text.RegularExpressions.Regex.IsMatch(value, @"\d"))
+                Fail("Customer phone must contain digits and only the supported phone characters +, -, parentheses, period and spaces.");
+            return value;
+        }
+
         internal static ContactSearchResult CustomerContact(Entity contact)
         {
             return contact == null ? null : new ContactSearchResult {
@@ -1097,8 +1106,9 @@ namespace RepairEstimator.Drafts
             var email = Required(CustomerValue(contact?.GetAttributeValue<string>("emailaddress1"), enteredEmail), 100, "Customer email");
             if (!System.Text.RegularExpressions.Regex.IsMatch(email, @"^[^\s@]+@[^\s@]+\.[^\s@]+$"))
                 Fail("Customer email must be a valid email address.");
-            var phone = Optional(CustomerValue(CustomerValue(contact?.GetAttributeValue<string>("telephone1"),
-                contact?.GetAttributeValue<string>("mobilephone")), enteredPhone), 50);
+            var masterPhone = CustomerValue(contact?.GetAttributeValue<string>("telephone1"),
+                contact?.GetAttributeValue<string>("mobilephone"));
+            var phone = Optional(string.IsNullOrWhiteSpace(masterPhone) ? ValidatedPhone(enteredPhone) : masterPhone, 50);
             return Tuple.Create(account, contact, name, email,
                 phone,
                 account.GetAttributeValue<string>("accountnumber"), account.GetAttributeValue<string>("name"));

@@ -33,6 +33,12 @@ class Program
             Console.WriteLine("Customer defaults, eligibility, scope and truncation cases passed.");
             return;
         }
+        if (args.Length == 1 && args[0] == "--customer-phone")
+        {
+            DraftServiceTests.TestCustomerPhoneValidation();
+            Console.WriteLine("Customer phone validation cases passed.");
+            return;
+        }
         if (args.Length == 1 && args[0] == "--package-equipment")
         {
             DraftServiceTests.TestPackageEquipment();
