@@ -27,7 +27,97 @@ Local evidence: production build/type-check and changed-source lint passed; 28 p
 Both variants share named text placeholders. HTML comments delimit repeat blocks for every equipment/package/labor/material row; one example block of each is present in the static design. The integration above repeats all rows, covers all six labor role/time combinations, keeps exact identifiers, resolves choice labels and localized package text, and shows explicit empty/not-applicable/unavailable states. Tokens remain design inputs, compiled into Power Automate expressions by the generator. Dynamic text is escaped before multiline conversion; internal recipients are configured outside the templates. Saved results are distinguished from package previews; tax/freight must not be counted twice, subcontractor cost is captured only, and total selling price is the entered quote price. Do not send the unresolved static design. No recipient addresses or business records are embedded. Complete messages can become long; actual mail-client clipping/size limits and multi-row Outlook rendering still need acceptance.
 
 The initial template-only change introduced no navigation, submission/export lifecycle, schema, persistence or approval-state changes. Existing workbook/export functionality is not removed or replaced. Local Chromium checks passed for both variants at 320px and 1366px, including synthetic long text without page overflow, three equipment/package/material blocks and six labor rows, all 111 matching bilingual placeholders, required request/pricing field coverage and no scripts/external resources. Browser preview and email-client acceptance are separate: actual Outlook/mobile email rendering and delivery remain pending. No email was sent or app published; the later stopped-flow integration above supersedes the earlier template-only delivery status.
+### Supervisor label (local source)
 
+The optional `re_supervisor` input label is now “Supervisor's Name / ID” in
+English and “Nom / ID du superviseur” in French. Its optional behavior, 100-
+character limit, persistence mapping and API remain unchanged. Source only; no
+publication or tenant verification.
+
+### Stated rate cost label (local source)
+
+The `re_statedlaborrate` input label is now “Stated rate cost” in English and
+“Coût du taux indiqué” in French. Its optional numeric validation, persistence
+mapping, calculation semantics and field key are unchanged. Display-only source
+change; no publication or tenant verification.
+
+### National Account dropdown options (local source)
+
+The National Account dropdown displays only Yes and No; the published
+`Unknown` option is filtered from this field’s UI. The underlying Dataverse
+choice and saved values are unchanged. A focused choice test verifies both
+options and confirms other fields using the same choice set retain their full
+option list. Local source only; not published or tenant-verified.
+
+### Opportunity Name placeholder (local source)
+
+The Opportunity Name input shows a localized example placeholder in English
+and French. The placeholder is not a value or default; the field remains empty
+for new requests and retains the existing required validation and 100-character
+limit. An E2E assertion was added, but browser execution is unavailable locally
+because Playwright is not installed. No publication or live UI verification.
+
+### Customer phone input validation (local source)
+
+The editable manual phone field accepts digits with an optional leading `+`,
+spaces, parentheses, hyphens and periods. Alphabetic characters, punctuation-only
+values and whitespace-only values show a localized inline error and block Next,
+Save, Submit and Calculate. Blank remains valid because phone is optional.
+Linked Contact phone values remain source-authoritative and read-only; they are
+not rewritten by this validation. The error appears while invalid text is being
+typed, before any action is attempted.
+
+Seven focused phone/request unit tests and the backend fake-pipeline phone
+selector passed. An EN/FR browser regression was added but could not run because
+Playwright is not installed locally. Changes are source-only, not published or
+tenant-verified.
+
+### Whitespace-only required text validation (local source)
+
+Opportunity Name, customer name and customer email now show a dedicated
+localized error when the entered value contains only whitespace. Save, Submit
+and step navigation continue to reject these values before any write. Empty
+values retain the existing required/invalid-email messages; meaningful text,
+optional blanks and numeric fields are unchanged. The backend already rejects
+whitespace-only required values.
+
+Six focused unit tests pass for EN/FR messages and whitespace variants. An EN/FR
+browser regression asserts the visible error and no draft call, but could not be
+run locally because Playwright is not installed and installation was not
+authorized. No publication or live tenant verification occurred.
+
+### Market switching clears current request data (local source)
+
+MKO, CKE and CKQ remain selectable while the market control is idle, including
+when a saved draft is open. Changing market in the estimator workspace asks for
+confirmation when the current request is saved or has entered data. Confirming
+discards the active workspace state and starts a fresh unsaved request in the
+selected market; canceling preserves it. This clears branch, customer,
+location, equipment, packages, custom lines, request fields, pricing inputs,
+and the active saved-draft identity from the workspace. It does not update or
+delete the previous Dataverse estimate. Branch remains locked on a saved draft
+until the user changes market to start a new request.
+
+The E2E regression covers clearing and cycling through all three choices, but
+could not run locally because Playwright is not installed and installation was
+not authorized. Node syntax validation and editor diagnostics passed; ESLint
+could not run because it is not installed locally and package installation was
+not authorized. This is local source only; no frontend publication or tenant
+UI verification occurred.
+
+### Competing Bids choices (local source)
+
+The Competing Bids dropdown no longer offers the published `Unknown` choice
+(value `126110003`). `None`, `Known` and `Suspected` remain selectable. This is
+a display-only filter: Dataverse choice metadata and previously saved values
+are not rewritten; an existing `Unknown` value remains detectable as a saved
+value until the user selects another option.
+
+The focused draft-choice suite passed all eight tests, including a regression
+that verifies only Competing Bids is filtered and source choice data remains
+unchanged. No schema, API, backend validation, permissions, tenant data or
+published frontend changed. This is local source only; deployment and live UI
+verification remain pending.
 ### Editable catalog selling price (local source, not deployed)
 
 The material grid now adds read-only VK13 Unit Price and editable Selling Price columns after Unit Cost (nine columns total, superseding the seven-column layout below). A catalog line with a positive VK13 snapshot displays Selling Price defaulting to that saved price. Users can change it without changing VK13, unit cost or the Spare Parts master. Both KONE and Non-KONE catalog parts are included, as explicitly approved; manual and package-priced rows show Not applicable. Values must be positive, at most 1000000000, with up to ten decimal places; invalid values block Save with localized feedback. Inputs honor existing edit/Review locks, and mobile scrolling stays inside the grid. Existing material cost totals remain cost-based.
@@ -539,7 +629,7 @@ App keeps one in-memory request workspace while switching views. Component-local
 | Sidebar Master Data | Admin master editor | Admin UI role only; Dataverse privileges remain authoritative |
 | Sidebar Settings / header settings icon | Opens settings, remembers return view | Does not save/reset request |
 | Header request search + Search submit | Sets request search and opens Requests | Preserves in-memory estimator; no discard prompt solely for search |
-| Header market selector | Switches MKO/CKE/CKQ context | Can clear selections/reset request after applicable confirmation; fixed for saved workspace |
+| Header market selector | Switches MKO/CKE/CKQ context | All three remain selectable while idle; confirmation clears current workspace data and starts a new unsaved request; saved Dataverse estimate remains unchanged |
 | Settings language control | Updates user language/locale preference | EN/FR labels; preference save can fail visibly |
 | User avatar/role display | Shows signed-in initials/role | Display, not selectable demo identity |
 | Dashboard Start new / explicit workspace New draft | Creates fresh in-memory draft ID and clears workspace | Confirms discard if dirty; does not create Dataverse header until Save |
@@ -604,7 +694,7 @@ Full Save completion requires title, selected Account, customer name and valid e
 | Work-centre request / technicians / approved | Live choice / numeric technician count max3 / live choice | Saved inputs |
 | National account / Emergency / Customer budgeted | Live choices | Saved inputs |
 | Paper / Consultant / Competing bids | Live choices | Saved inputs used by server rules where applicable |
-| Stated labor billing rate | Optional negotiated selling-rate input | Not the branch mechanic cost rate; zero or more |
+| Stated rate cost | Optional negotiated selling-rate input | Not the branch mechanic cost rate; zero or more |
 | Subcontractor cost | Labeled **captured only** | Saved input; do not imply it is included in authoritative cost totals |
 | Proposal language | Live choice; French requirement can constrain it | Saved choice |
 | Save Opportunity details action | Opens preset/reuse surface for current details | Preset save is separate from draft save |

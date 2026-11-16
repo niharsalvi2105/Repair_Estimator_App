@@ -3,7 +3,7 @@ import { decimalInputDisplay } from './data/numberDisplay'
 import { calculateBillingPayments } from './data/billingPayments'
 import { statedRateError } from './data/requestValidation'
 import { getDraftChoices } from './data/draftChoiceRepository'
-import type { DraftChoices } from './data/draftChoices'
+import { choiceOptionsForField, type DraftChoices } from './data/draftChoices'
 import { ChoiceSelect } from './ChoiceSelect'
 import { FieldError } from './FieldError'
 import type { Re_repairestimatesBase } from './generated/models/Re_repairestimatesModel'
@@ -22,7 +22,7 @@ type Field = {
 }
 
 const requestFields = [
-  { key: 're_supervisor', en: 'Supervisor (optional)', fr: 'Superviseur (facultatif)' },
+  { key: 're_supervisor', en: "Supervisor's Name / ID", fr: 'Nom / ID du superviseur' },
   { key: 're_workcenterrequest', en: 'Work-centre request', fr: 'Centre de travail demandé', choice: true },
   { key: 're_numberoftechs', en: 'Number of technicians', fr: 'Nombre de techniciens', type: 'number', integer: true, max: 3 },
   { key: 're_hasbeenapproved', en: 'Has it been approved?', fr: 'Déjà approuvé ?', choice: true },
@@ -33,7 +33,7 @@ const requestFields = [
   { key: 're_papertype', en: 'Paper type', fr: 'Type de papier', choice: true },
   { key: 're_consultantinvolved', en: 'Consultant involved?', fr: 'Consultant impliqué ?', choice: true },
   { key: 're_competingbids', en: 'Competing bids', fr: 'Offres concurrentes', choice: true },
-  { key: 're_statedlaborrate', en: 'Stated labor billing rate ($/hour)', fr: 'Taux de facturation stipulé ($/heure)', type: 'number' },
+  { key: 're_statedlaborrate', en: 'Stated rate cost', fr: 'Coût du taux indiqué', type: 'number' },
   { key: 're_proposallanguage', en: 'Proposal language', fr: 'Langue de la proposition', choice: true },
 ] as const satisfies readonly Field[]
 
@@ -168,7 +168,8 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
             <label htmlFor={id}>{label}{taxOrFreight && custom ? ' (CSTM)' : ''}{required && <span className="required">*</span>}</label>
             <FieldError id={id} message={error} />
             {field.choice ? <ChoiceSelect id={id} language={language} value={value[key] ?? ''}
-              options={choices.choices?.[key]} onChange={(next) => onChange(key, next)} readOnly={readOnly} error={error} required={required} />
+              options={choices.choices?.[key] ? choiceOptionsForField(key, choices.choices[key]) : undefined}
+              onChange={(next) => onChange(key, next)} readOnly={readOnly} error={error} required={required} />
             : field.type === 'textarea' ? (
               <textarea id={id} className="text-input request-textarea" value={value[key] ?? ''}
                 onChange={(event) => onChange(key, event.target.value)} readOnly={readOnly} />

@@ -218,9 +218,37 @@ static class DraftServiceTests
         }
     };
 
+    public static void TestCustomerPhoneValidation()
+    {
+        var accountId = Guid.NewGuid();
+        Func<FakeService> setup = () => {
+            var service = Setup();
+            service.Add(new Entity("account", accountId) {
+                ["re_salesforceaccountid"] = "source-account", ["re_salesorganizations"] = "MKOF",
+                ["accountnumber"] = "A1", ["name"] = "Account"
+            });
+            return service;
+        };
+        foreach (var invalid in new[] { "1-800-FLOWERS", "   " })
+        {
+            var service = setup();
+            var input = Input(); input.accountId = accountId.ToString(); input.phone = invalid;
+            Reject(() => Run(service, input), "Customer phone must contain digits");
+            Assert(!service.Rows.Values.Any(row => row.LogicalName == "re_repairestimate"),
+                "Invalid manual phone must fail before estimate creation");
+        }
+
+        var validService = setup();
+        var validInput = Input(); validInput.accountId = accountId.ToString(); validInput.phone = "+1 (555) 010-1234";
+        Run(validService, validInput);
+        Assert(Load(validService, validInput).phone == validInput.phone,
+            "Formatted numeric phone must persist as an estimate snapshot");
+    }
+
     public static void RunAll()
     {
         TestChoices();
+        TestCustomerPhoneValidation();
         TestPackageEquipment();
         TestUnlistedEquipmentDetails();
         TestPresets();

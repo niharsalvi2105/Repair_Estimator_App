@@ -1,6 +1,21 @@
 import type { DraftLabor, DraftMaterial } from './draftContract'
 import { materialEntryError } from './customMaterialCosts.ts'
 
+export function whitespaceOnlyError(value: string | undefined, language: 'en' | 'fr'): string | undefined {
+  if (value == null || value.length === 0 || value.trim()) return undefined
+  return language === 'fr'
+    ? 'Saisissez une valeur contenant au moins un caractère autre qu’un espace.'
+    : 'Enter a value containing at least one non-whitespace character.'
+}
+
+export function phoneNumberError(value: string | undefined, language: 'en' | 'fr'): string | undefined {
+  if (value == null || value.length === 0) return undefined
+  if (!/^\+?[0-9(). -]*$/.test(value) || !/\d/.test(value))
+    return language === 'fr'
+      ? 'Utilisez des chiffres et les caractères téléphoniques +, -, parenthèses, point et espaces uniquement.'
+      : 'Use digits and phone characters +, -, parentheses, period, and spaces only.'
+}
+
 export function konePricingConflict(materials: DraftMaterial[], legacyPrice: string | undefined, language: 'en' | 'fr'): string | undefined {
   if (Number(legacyPrice) > 0 && materials.some(line => line.partType === 'kone' || line.pricingSource === 'package'))
     return language === 'fr'

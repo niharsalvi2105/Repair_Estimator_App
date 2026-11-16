@@ -20,7 +20,7 @@ import { DashboardMetrics } from './DashboardMetrics'
 import { Settings } from './Settings'
 import { loadSession, type AppSession } from './data/sessionRepository'
 import type { RequestInputs } from './RequestFields'
-import { customCostsError, konePricingConflict, pricingUnavailableMessage, statedRateError, submissionErrorMessage } from './data/requestValidation'
+import { customCostsError, konePricingConflict, phoneNumberError, pricingUnavailableMessage, statedRateError, submissionErrorMessage } from './data/requestValidation'
 import type { Market } from './data/estimateQuery'
 import { useUserPreferences } from './useUserPreferences'
 import { UserAvatar } from './UserAvatar'
@@ -227,7 +227,7 @@ const copy = {
     preferencesSaving: 'Saving preferences...',
     preferencesError: 'Could not load or save your preferences.',
     preferencesUnsaved: 'Your current preferences are not saved.',
-    marketChangeWarning: 'Changing market clears the branch, equipment and package selections for this unsaved request. Other entered details are kept. Continue?',
+    marketChangeWarning: 'Changing market clears all data in the current request and starts a new unsaved request. Any saved estimate remains unchanged. Continue?',
     noMarketBranches: 'No active branches are available for this market with your Dataverse permissions.',
     user: 'KONE workspace',
   },
@@ -381,7 +381,7 @@ const copy = {
     preferencesSaving: 'Enregistrement des préférences...',
     preferencesError: 'Impossible de charger ou d’enregistrer vos préférences.',
     preferencesUnsaved: 'Vos préférences actuelles ne sont pas enregistrées.',
-    marketChangeWarning: 'Changer de marché efface la succursale, les équipements et les forfaits de cette demande non enregistrée. Les autres données sont conservées. Continuer ?',
+    marketChangeWarning: 'Changer de marché efface toutes les données de la demande actuelle et démarre une nouvelle demande non enregistrée. Toute estimation enregistrée reste inchangée. Continuer ?',
     noMarketBranches: 'Aucune succursale active n’est accessible pour ce marché avec vos autorisations Dataverse.',
     user: 'Espace KONE',
   },
@@ -815,9 +815,8 @@ function App() {
     if (market === nextMarket) return
     const inWorkspace = view === 'new' || (view === 'settings' && settingsReturnView.current === 'new')
     if (inWorkspace) {
-      if (draftVersion) return
-      if (branchId && !window.confirm(t.marketChangeWarning)) return
-      resetBranch('')
+      if ((draftVersion || draftDirty) && !window.confirm(t.marketChangeWarning)) return
+      resetDraftWorkspace()
     } else {
       if (draftDirty && !window.confirm(dt.warning)) return
       if (!leaveMaster()) return
@@ -863,7 +862,7 @@ function App() {
     required: 'Renseignez le nom de l’opportunité, le compte, le contact, le courriel du contact, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
     note: 'Enregistrez un brouillon ou soumettez le devis depuis la vérification finale. La soumission valide les prix et verrouille les modifications, sans envoyer de courriel.',
     error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
-    reload: 'Recharger le brouillon', locked: 'La succursale et le marché sont fixes pour un brouillon enregistré.',
+    reload: 'Recharger le brouillon', locked: 'La succursale reste fixe. Changer de marché démarre une nouvelle demande.',
   } : {
     title: 'Opportunity Name', province: 'Building province / state', currency: 'Currency',
     save: 'Save draft', saving: 'Saving…', saved: 'Draft saved',
@@ -872,12 +871,14 @@ function App() {
     required: 'Complete opportunity name, Account, Contact, Contact email, province, equipment, packages, proposal language, time category, use tax and freight.',
     note: 'Save a draft or submit from Review. Submission validates pricing and locks editing; no email is sent.',
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
-    reload: 'Reload draft', locked: 'Branch and market are fixed for a saved draft.',
+    reload: 'Reload draft', locked: 'Branch stays fixed. Changing market starts a new request.',
   }
   const costEquipmentValid = validCustomCostEquipment([...laborLines, ...materialLines],
     selectedPackages.filter(p => p.re_iscustompackage).map(p =>
       ({ id: p.re_repairpackageid, equipmentNumbers: packageEquipmentNumbers(p, selectedEquipment) })))
+  const phoneError = selectedContact?.phone.trim() ? undefined : phoneNumberError(customerPhone, language)
   const draftComplete = Boolean(estimateTitle.trim() && customerName.trim() && customerEmail.trim() && stateId && costEquipmentValid
+    && !phoneError
     && selectedAccount?.id && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())
     && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
     && selectedPackages.every((item) => validPackageEquipment(item, selectedEquipment))
@@ -1246,7 +1247,7 @@ function App() {
             <label className="market-control">
               <span className="sr-only">{t.market}</span>
               <select aria-label={t.market} value={market} disabled={!preferences.ready || preferences.busy || draftBusy
-                || reuseBusy || (Boolean(draftVersion) && (view === 'new' || (view === 'settings' && settingsReturnView.current === 'new')))} onChange={(event) => {
+                || reuseBusy} onChange={(event) => {
                 const value = Number(event.target.value)
                 if (value === 126110000 || value === 126110001 || value === 126110002) changeMarket(value)
               }}>

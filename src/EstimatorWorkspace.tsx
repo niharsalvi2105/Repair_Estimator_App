@@ -21,7 +21,7 @@ import { submissionDeliveryMessage } from './data/submissionDelivery'
 import { findEquipmentByNumbers, getPackageCostRates } from './data/repairEstimatorRepository'
 import { EQUIPMENT_LOOKUP_BATCH_SIZE } from './data/equipmentPaste'
 import { equipmentDisplayDetails } from './data/equipmentDisplay'
-import { customCostsError, konePricingConflict } from './data/requestValidation'
+import { customCostsError, konePricingConflict, phoneNumberError, whitespaceOnlyError } from './data/requestValidation'
 import { PackageCostDetails } from './PackageCostDetails'
 import { calculateAdditionalCost, calculatePackageCost, type CostRate } from './data/packageCosts'
 import { FieldError } from './FieldError'
@@ -254,13 +254,18 @@ export default function EstimatorWorkspace({
   const pendingInvalidField = useRef<string | null>(null)
   const operationError = useRef<HTMLDivElement>(null)
   const mandatory = language === 'fr' ? 'Champ obligatoire.' : 'Required field.'
+  const phoneError = selectedContact?.phone.trim() ? undefined : phoneNumberError(customerPhone, language)
   const requirements = [
-    { id: 'estimate-title', step: 1, valid: !!estimateTitle.trim(), navigation: true },
+    { id: 'estimate-title', step: 1, valid: !!estimateTitle.trim(), navigation: true,
+      message: whitespaceOnlyError(estimateTitle, language) ?? mandatory },
     { id: 'branch-select', step: 1, valid: !!branchId, navigation: true },
     { id: 'account-master-search', step: 1, valid: !!selectedAccount?.id },
-    { id: 'customer-name', step: 1, valid: !!customerName.trim() },
+    { id: 'customer-name', step: 1, valid: !!customerName.trim(),
+      message: whitespaceOnlyError(customerName, language) ?? mandatory },
     { id: 'customer-email', step: 1, valid: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim()),
-      message: customerEmail.trim() ? language === 'fr' ? 'Saisissez un courriel valide.' : 'Enter a valid email address.' : mandatory },
+      message: whitespaceOnlyError(customerEmail, language) ?? (customerEmail.trim()
+        ? language === 'fr' ? 'Saisissez un courriel valide.' : 'Enter a valid email address.' : mandatory) },
+    { id: 'customer-phone', step: 1, valid: !phoneError, navigation: true, message: phoneError },
     { id: 'equipment-type', step: 1, valid: !!equipmentTypeId, navigation: true },
     { id: 'draft-province', step: 1, valid: !!stateId },
     { id: 'draft-currency', step: 1, valid: !!selectedBranch?._re_currency_value && !!draftReferences },
@@ -279,6 +284,7 @@ export default function EstimatorWorkspace({
   const errors: Record<string, string | undefined> = Object.fromEntries(requirements
     .filter(field => attemptedFields.includes(field.id) && !field.valid)
     .map(field => [field.id, field.message ?? mandatory]))
+  if (phoneError) errors['customer-phone'] = phoneError
   function validateRequired(action: 'next' | 'save' | 'submit') {
     const fields = requirements.filter(field => action === 'next'
       ? field.step === step && field.navigation
@@ -546,6 +552,7 @@ export default function EstimatorWorkspace({
                   <label htmlFor="estimate-title">{dt.title}<span className="required">*</span></label>
                   <FieldError id="estimate-title" message={errors['estimate-title']} />
                   <input id="estimate-title" className="text-input" value={estimateTitle} maxLength={100}
+                    placeholder={language === 'fr' ? 'p. ex., Réparation d’ascenseur' : 'e.g., Elevator repair'}
                     aria-invalid={!!errors['estimate-title']} aria-describedby={errors['estimate-title'] ? 'estimate-title-error' : undefined}
                     aria-required="true" onChange={(event) => setEstimateTitle(event.target.value)} />
                   <p className="field-help">{language === 'fr'
@@ -608,7 +615,10 @@ export default function EstimatorWorkspace({
                 phoneField={
                 <div className="field-label">
                   <label htmlFor="customer-phone">{t.customerPhone}</label>
+                  <FieldError id="customer-phone" message={errors['customer-phone']} />
                   <input id="customer-phone" type="tel" className="text-input" maxLength={50}
+                    pattern="[+]?[0-9(). -]*" aria-invalid={!!errors['customer-phone']}
+                    aria-describedby={errors['customer-phone'] ? 'customer-phone-error' : undefined}
                     readOnly={!!selectedContact?.phone.trim()}
                     disabled={!canWork || draftBusy || submitted || !selectedAccount}
                     value={customerPhone} onChange={event => onCustomerPhone(event.target.value)} />

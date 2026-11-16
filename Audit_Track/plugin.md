@@ -23,7 +23,23 @@ Draft Save no longer replaces standard-estimate `re_usetax`/`re_freight` with 0.
 Affected outputs include additional costs, aggregate tax/freight amounts, true cost and consequent suggested pricing/CMII; package estimated cost for standard packages remains unchanged. CalculationWriter continues saving resolved rates in existing header fields/aliases. No schema, API dispatch, registration/images, permissions, lock or export lifecycle changes. Existing frozen snapshots capture the saved header rates/results without new export mappings. No historical recalculation or tenant deployment performed; coordinated Drafts/pricing/frontend rollout is required.
 
 Local evidence: 58 focused pricing-engine/integration cases passed. The new fake-pipeline case Save/Loads 8%/20% and then zero through the real Drafts/loader/writer: standard package cost remains 319; with additional material 100 and miscellaneous 50, total true cost is 511 at 8%/20% and 469 at zero. A new engine case also verifies unchanged package/additional labor costs, changed additional totals and correct tax/freight deltas. An initial assertion held the fake pipeline's replaced header object; reading the current saved row corrected the test. Local mocked evidence does not establish deployed behavior.
+### Manual customer phone validation (local source only)
 
+`ResolveCustomerSelection` validates the manual phone fallback before writing
+`re_customerphone`: a nonempty value must contain a digit and may contain only
+digits, one leading `+`, spaces, parentheses, hyphens and periods, within the
+existing 50-character limit. Null and empty remain valid because phone is
+optional. A nonblank linked Contact telephone/mobile value remains
+authoritative and is not modified or validated as user-entered data. Invalid
+manual values fail the Draft API before estimate creation/update. No columns,
+API payloads, lookups, permissions, registration, pricing or export behavior
+changed.
+
+The focused fake-pipeline test passes for alphabetic/punctuation-only and
+whitespace-only rejection before Create, plus formatted-number persistence.
+The local test used `SignAssembly=false` because the private key is absent; the
+full legacy harness remains blocked earlier by its Account-less `TestChoices`
+fixture. No signed build, deployment or tenant verification occurred.
 ### Catalog selling-price overrides, pricing 2026.9 (local source, not deployed)
 
 Draft material input/output adds optional decimal `sellingPrice`, stored only in optional estimate material `re_sellingprice`. Trusted `re_unitpriceprecise` remains the read-only converted VK13 snapshot; source cost/price, currency, conversion and master classification ownership are unchanged. Only a selected catalog line with a positive trusted VK13 snapshot may receive an override, positive through 1000000000 with at most ten decimals. Legacy/unclassified, manual and package-priced lines reject supplied selling prices. An omitted/null value on the same saved catalog line preserves its existing override; a new/reselected line without an override defaults to its trusted VK13. Explicit override refresh/clone uses current catalog validation while keeping the entered override. Catalog schema capability checks now require the new Decimal at precision ten.

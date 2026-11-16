@@ -1,6 +1,27 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { konePricingConflict, pricingUnavailableMessage, statedRateError, submissionErrorMessage } from '../src/data/requestValidation.ts'
+import { konePricingConflict, phoneNumberError, pricingUnavailableMessage, statedRateError, submissionErrorMessage, whitespaceOnlyError } from '../src/data/requestValidation.ts'
+
+test('whitespace-only required text has a localized error while empty and meaningful text do not', () => {
+  for (const value of [' ', '\t', '\n', ' \t\r\n\u00a0']) {
+    assert.equal(typeof whitespaceOnlyError(value, 'en'), 'string')
+    assert.equal(typeof whitespaceOnlyError(value, 'fr'), 'string')
+    assert.notEqual(whitespaceOnlyError(value, 'en'), whitespaceOnlyError(value, 'fr'))
+  }
+  for (const value of [undefined, '', '  name  ']) {
+    assert.equal(whitespaceOnlyError(value, 'en'), undefined)
+    assert.equal(whitespaceOnlyError(value, 'fr'), undefined)
+  }
+})
+
+test('phone numbers allow digits and common punctuation but reject letters and punctuation-only values', () => {
+  for (const value of ['', undefined, '5550100', '+1 (555) 010-1234', '555.010.1234'])
+    assert.equal(phoneNumberError(value, 'en'), undefined)
+  for (const value of ['1-800-FLOWERS', 'abc123', '---', '   ', '555++123']) {
+    assert.match(phoneNumberError(value, 'en'), /Use digits and phone characters/)
+    assert.match(phoneNumberError(value, 'fr'), /Utilisez des chiffres/)
+  }
+})
 
 test('aggregate VK13 conflicts with itemized KONE but not manual non-KONE or an empty aggregate', () => {
   const base = { id: 'line', description: 'Part', quantity: 1, unitCost: 10, partNumber: 'P1' }

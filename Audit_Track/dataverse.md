@@ -31,7 +31,80 @@ Initial offline definition validation and connection preflight passed, but faile
 No new Dataverse columns. Additional Details continues mapping UI percentages to `re_repairestimate.re_usetax` and `re_freight` as fractions (0-1); pricing also writes existing percentage aliases. Standard-estimate Save/Load now retains entered rates, including zero, instead of forcing 5%/14%. Pricing 2026.10 applies them to estimate-level additional material/miscellaneous only on the standard path; standard package snapshots/subtotal still use fixed 5% tax and 14% freight. Additional labor is untaxed. CSTM still shares its pre-existing rates across custom costs and additions; no independent custom/additional field is introduced.
 
 Saved additional-cost, total tax/freight, total true cost and dependent pricing/CMII outputs can change on explicit Save/Calculate. Existing records are not automatically migrated/recalculated; no master/schema/relationship/permission/automation changes. The UI initializes new standard drafts at 5%/14%, respects existing locks and 0-100% validation, and no longer replaces loaded standard rates. Export snapshots retain the existing header inputs/results. Drafts/pricing/frontend coordinated deployment remains required; no tenant writes or publication were performed for this change. Local evidence: 58 engine/integration, 28 preview/contract and six focused mocked browser cases passed; production build/type-check/lint passed. Save/Load retained 8%/20% and zero in synthetic pipeline cases while preserving the standard package subtotal. Live acceptance remains pending.
+### Supervisor label (frontend source only)
 
+The `re_supervisor` input label changed to “Supervisor's Name / ID” (English)
+and “Nom / ID du superviseur” (French). The text column, optional behavior,
+length limit, payload mapping, persistence and permissions are unchanged. No
+schema or backend behavior changed; source only, not published or tenant-
+verified.
+
+### Stated rate cost label (frontend source only)
+
+The UI label for `re_statedlaborrate` changed to “Stated rate cost” (English)
+and “Coût du taux indiqué” (French). The Dataverse column, optional
+non-negative numeric validation, payload mapping, calculation behavior and
+permissions are unchanged. No schema or backend changes; source only, not
+published or tenant-verified.
+
+### National Account dropdown filter (frontend source only)
+
+The frontend hides the published `Unknown` (`126110002`) choice only for the
+National Account control, which displays Yes and No. The underlying choice,
+API, validation, existing saved values, schema and permissions are unchanged.
+Focused choice tests pass; the change is local source only, not published or
+tenant-verified.
+
+### Opportunity Name placeholder (frontend source only)
+
+The frontend displays a localized example placeholder for the existing
+`re_repairestimate.re_estimatename` input. It does not set or persist a value;
+the existing required behavior, length limit, column mapping and API remain
+unchanged. No schema, permissions, or plugin changes. E2E coverage was added
+but could not be run locally because Playwright is not installed; no
+publication or tenant verification occurred.
+
+### Manual phone snapshot validation (source only)
+
+Manual `phone` fallback for `re_repairestimate.re_customerphone` now requires at
+least one digit and permits only digits, a leading `+`, spaces, parentheses,
+hyphens and periods; the existing 50-character limit remains. Null/empty phone
+remains valid. The UI shows an inline localized error as invalid manual text is
+typed. A nonblank linked Contact telephone/mobile value retains
+precedence and is not changed. Invalid manual phone input is rejected before
+the Draft API writes an estimate. No schema, lookup, payload, permission or
+saved-record mapping changed. Focused frontend and backend tests passed; the
+browser regression is added but could not run without the unavailable local
+Playwright installation. No publication or tenant verification occurred.
+
+### Whitespace-only required text validation (frontend source only)
+
+The frontend now gives Opportunity Name, customer name and customer email a
+localized whitespace-only error before Save/Submit persistence. The existing
+backend `Required` guard already rejects whitespace-only required values. No
+Dataverse schema, API payload, persistence mapping, permission or plugin
+behavior changed. Focused frontend unit tests passed; the added browser check
+could not run locally because Playwright installation was not authorized.
+This remains local source, not published or tenant-verified.
+
+### Market switch reset (frontend source only)
+
+Changing MKO/CKE/CKQ in the estimator resets only the active client workspace
+and creates a fresh unsaved request context after confirmation when needed. The
+previous saved estimate is not updated or deleted. No Dataverse table, column,
+relationship, API payload, persistence rule, permission, or plugin behavior
+changed. Frontend E2E coverage was added but could not run locally because
+Playwright installation was not authorized; this is not published or tenant-
+verified.
+
+### Competing Bids display filter (frontend source only)
+
+The frontend omits Competing Bids choice value `126110003` (Unknown) from the
+dropdown. The published Dataverse choice, API contract, stored values,
+validation, permissions and plugin behavior are unchanged. Existing saved
+Unknown values are not rewritten; the UI continues to identify them as saved
+values until replaced by a user selection. Focused frontend choice tests pass.
+This is local source only, not published or tenant-verified.
 ### Approved estimate-only catalog Selling Price (local schema/source, not deployed)
 
 New prerequisite `re_estimatematerialline.re_sellingprice` is an optional Decimal, precision ten, minimum 0.0000000001, maximum 1000000000, as defined in `backend/material-selling-price-schema.json`. It is an estimate-line override in the existing snapshot currency, not a Spare Parts master edit or replacement of `re_unitpriceprecise` (trusted converted VK13). Existing null values use saved VK13; no backfill or default-zero column value. No relationships, permissions or automation state changes are introduced. The user approved this column and inclusion of positive-priced Non-KONE catalog rows.
