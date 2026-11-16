@@ -113,7 +113,14 @@ async function mockData(page, language, theme, state = 'records') {
               ...(packagePriced ? {materialBeforeMarkup:source.re_materialbeforemarkup} : {})};
           }),
           laborLines:(input.laborLines || []).map((line) => ({...line,rate:line.rate ?? 200})),
-          materialLines:input.materialLines || []
+          materialLines:(input.materialLines || []).map((line, index) => {
+            const existing = window.__draftSaved?.materialLines?.some(saved => saved.id === line.id);
+            return {...line,
+              ...(window.__serverMaterialIds && !existing ? {id:crypto.randomUUID()} : {}),
+              ...(window.__sellingPriceResponse === 'drop' ? {sellingPrice:null} : {}),
+              ...(window.__sellingPriceResponse === 'change' && line.sellingPrice != null
+                ? {sellingPrice:line.sellingPrice + 1} : {})};
+          })
         };
         if (failure === 'timeout-after-commit') throw new Error('Timeout: outcome unknown');
         return structuredClone(window.__draftSaved);
@@ -436,6 +443,8 @@ for (const viewport of viewports) {
       await expect(market).toBeEnabled()
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
       await expect(page.locator('.request-record')).toHaveCount(1)
+      await expect(page.locator('.request-id').first()).toHaveText(
+        `${language === 'fr' ? 'ID de la demande' : 'Request ID'}: test-estimate`)
       await expect(page.locator('.dashboard-stats strong').first()).toHaveText('125')
       const logo = page.locator('.brand-logo')
       await expect(logo).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
@@ -444,6 +453,8 @@ for (const viewport of viewports) {
 
       await page.locator('.main-nav .nav-item').nth(2).click()
       await expect(page.locator('.request-record')).toHaveCount(1)
+      await expect(page.locator('.request-id').first()).toHaveText(
+        `${language === 'fr' ? 'ID de la demande' : 'Request ID'}: test-estimate`)
       await page.locator('.request-pagination button').last().click()
       await expect(page.locator('.request-pagination > span')).toContainText('2')
       await checkLayout(page, viewport, 'request list page 2')
@@ -1827,6 +1838,45 @@ test('package preview rates query current branch mechanic cost data from Dataver
     return page.locator('.custom-material-row')
   }
 
+  for (const response of ['retain', 'drop', 'change']) {
+    test(`new material server ID ${response} selling-price response`, async ({ page }) => {
+      const material = (await openCatalogMaterial(page, true)).first()
+      await page.evaluate((response) => {
+        window.__serverMaterialIds = true
+        window.__sellingPriceResponse = response
+      }, response)
+      const part = material.getByRole('combobox', { name: 'Part number', exact: true })
+      await part.fill('motor')
+      await expect(material.getByRole('listbox').getByRole('option')).toContainText('TEST-PART-001')
+      await part.press('ArrowDown')
+      await part.press('Enter')
+      await material.getByRole('spinbutton', { name: 'Selling Price', exact: true }).fill('55.25')
+      await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
+      await next(page)
+      await page.locator('.draft-save-action').click()
+      const ids = await page.evaluate(() => ({
+        sent: window.__draftCalls.at(-1).materialLines[0].id,
+        saved: window.__draftSaved.materialLines[0].id,
+      }))
+      expect(ids.sent).not.toBe(ids.saved)
+      if (response === 'retain') {
+        await expect(page.locator('.draft-saved')).toBeVisible()
+        await page.locator('.draft-save-action').click()
+        await expect.poll(() => page.evaluate(() => window.__draftCalls.at(-1).materialLines[0].id)).toBe(ids.saved)
+        await expect(page.locator('.draft-saved')).toBeVisible()
+        await next(page)
+        const beforeCalculate = await page.evaluate(() => window.__draftCalls.length)
+        await page.locator('.pricing-calculate-action').first().click()
+        await expect.poll(() => page.evaluate(() => window.__draftCalls.length)).toBe(beforeCalculate + 1)
+        await expect(page.locator('.pricing-calculation-error')).toHaveCount(0)
+      } else {
+        await expect(page.locator('body')).toContainText('Could not verify the saved selling prices')
+        await page.getByRole('button', { name: 'Edit CSTM costs', exact: true }).click()
+        await expect(page.getByRole('spinbutton', { name: 'Selling Price', exact: true })).toHaveValue('55.25')
+      }
+    })
+  }
+
   test('Pricing exposes aggregate VK13 conflict and explicit clearing preserves itemized KONE before calculation', async ({ page }) => {
     const materials = await openCatalogMaterial(page, true)
     const material = materials.first()
@@ -2731,6 +2781,74 @@ for (const language of ['en', 'fr']) {
     await expect(page.locator('#customer-email')).toHaveValue('')
   })
 }
+
+for (const language of ['en', 'fr']) {
+  test(`CSTM always uses all selected equipment while standard assignments remain editable in ${language}`, async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__equipmentResults = ['TEST123', 'TEST456'].map((number, i) => ({
+        re_equipmentid: `unit-${i}`, re_equipment: number, re_equipmentname: `Unit ${i}`,
+        re_functionallocation: 'Test location', re_oem: 'OEM', re_equipmentage: 20,
+      }))
+      window.__extraPackages = [{
+        re_repairpackageid: 'cstm-all', re_packagenumber: 'CSTM-ALL', re_packagenameen: 'Custom',
+        re_packagenamefr: 'Personnalisé', re_iscustompackage: true,
+        re_mechanichours: 0, re_materialmisctaxcost: 0, re_effectivefrom: '2020-01-01',
+      }]
+    })
+    await completeDraft(page, { width: language === 'fr' ? 320 : 1366, height: 900 }, language)
+    for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+    await page.locator('#equipment-search').fill('TEST456')
+    await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+    await page.locator('#package-search').fill('CSTM-ALL')
+    await page.locator('#package-options button').filter({ hasText: 'CSTM-ALL' }).click()
+    await page.locator('.form-footer > button').first().click()
+    const groups = page.locator('.selected-package-group')
+    const custom = groups.filter({ hasText: 'CSTM-ALL' })
+    const standard = groups.filter({ hasText: 'PKG001' })
+    await expect(custom.locator('.package-equipment-selection')).toHaveCount(0)
+    await expect(custom).toContainText(language === 'fr'
+      ? 'CSTM s’applique à tous les équipements sélectionnés.' : 'CSTM applies to all selected equipment.')
+    await expect(custom.locator('.equipment-package-card h4')).toHaveText(['TEST123', 'TEST456'])
+    await expect(standard.locator('.package-equipment-selection')).toHaveCount(1)
+  })
+}
+
+test('opening a legacy CSTM subset marks the expansion unsaved without changing the saved record', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__equipmentResults = ['TEST123', 'TEST456'].map((number, i) => ({
+      re_equipmentid: `unit-${i}`, re_equipment: number, re_equipmentname: `Unit ${i}`,
+      re_functionallocation: 'Test location', re_oem: 'OEM', re_equipmentage: 20,
+    }))
+  })
+  await completeDraft(page)
+  for (let i = 0; i < 3; i++) await page.locator('.form-footer > button').click()
+  await page.locator('#equipment-search').fill('TEST456')
+  await page.locator('#equipment-options button').filter({ hasText: 'TEST456' }).first().click()
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  await page.evaluate(() => {
+    window.__draftSaved.packages[0].isCustom = true
+    window.__draftSaved.packages[0].equipmentNumbers = ['TEST123']
+    const packageId = window.__draftSaved.packages[0].id
+    window.__draftSaved.laborLines = [{ id: 'legacy-labor', packageId, equipmentNumber: 'TEST123',
+      role: 126110000, time: 126110000, hours: 1, rate: 200 }]
+    window.__draftSaved.materialLines = [{ id: 'legacy-material', packageId, equipmentNumber: 'TEST123',
+      description: 'Synthetic material', vendor: '', part: 'PART-1', quantity: 1, unitCost: 10,
+      partType: 'non-kone', pricingSource: 'manual' }]
+  })
+  await page.locator('.draft-toolbar').getByRole('button', { name: 'Reload draft', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Save and recalculate to apply this change' })).toBeVisible()
+  await expect(page.getByText('Not saved', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => window.__draftSaved.packages[0].equipmentNumbers)).toEqual(['TEST123'])
+  await next(page)
+  await expect(page.locator('.selected-package-group .package-equipment-selection')).toHaveCount(0)
+  await expect(page.locator('.selected-package-group .equipment-package-card h4')).toHaveText(['TEST123', 'TEST456'])
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toBeVisible()
+  expect(await page.evaluate(() => window.__draftSaved.packages[0])).toMatchObject({
+    equipmentNumbers: null, allEquipment: true,
+  })
+})
 
 for (const dropAssignments of [false, true]) {
   test(`Package assignments survive save or report an outdated backend (${dropAssignments})`, async ({ page }) => {

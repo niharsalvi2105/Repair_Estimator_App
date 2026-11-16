@@ -1,5 +1,13 @@
 export type PackageEquipmentSelection = { equipmentNumbers?: string[] | null }
 
+export function allEquipmentForCustomPackage<T extends PackageEquipmentSelection & { re_iscustompackage?: boolean }>(
+  selection: T,
+): T {
+  return selection.re_iscustompackage && selection.equipmentNumbers != null
+    ? { ...selection, equipmentNumbers: undefined }
+    : selection
+}
+
 export function packageEquipmentNumbers(selection: PackageEquipmentSelection, equipment: { number: string }[]): string[] {
   const available = equipment.map((unit) => unit.number)
   if (selection.equipmentNumbers == null) return available

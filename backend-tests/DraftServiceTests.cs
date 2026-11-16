@@ -14,7 +14,7 @@ static class DraftServiceTests
     static readonly MethodInfo Read = typeof(DraftPlugin).GetMethod("Read", BindingFlags.Static | BindingFlags.NonPublic);
     static readonly Guid User = Guid.NewGuid(), Branch = Guid.NewGuid(), Country = Guid.NewGuid(),
         Currency = Guid.NewGuid(), Province = Guid.NewGuid(), Type = Guid.NewGuid(),
-        MasterEquipment = Guid.NewGuid(), MasterPackage = Guid.NewGuid();
+        MasterEquipment = Guid.NewGuid(), MasterPackage = Guid.NewGuid(), Account = Guid.NewGuid();
 
     static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
     static void Run(FakeService service, Draft input) =>
@@ -179,9 +179,14 @@ static class DraftServiceTests
     static FakeService Setup()
     {
         var service = new FakeService();
+        service.Add(new Entity("account", Account) {
+            ["re_salesforceaccountid"] = "draft-fixture-account", ["re_salesorganizations"] = "MKOF",
+            ["accountnumber"] = "00001", ["name"] = "Fixture Account"
+        });
         service.Add(new Entity("re_branch", Branch) {
             ["re_country"] = new EntityReference("re_country", Country),
             ["re_currency"] = new EntityReference("transactioncurrency", Currency),
+            ["re_branchnumber"] = "BR-1",
             ["re_market"] = new OptionSetValue(126110000)
         });
         service.Add(new Entity("re_stateprovince", Province) { ["re_country"] = new EntityReference("re_country", Country) });
@@ -203,7 +208,8 @@ static class DraftServiceTests
 
     static Draft Input() => new Draft {
         mode = "save", id = Guid.NewGuid().ToString(), title = "Draft", building = "Building",
-        customer = "Customer", email = "customer@example.invalid", branchId = Branch.ToString(), stateId = Province.ToString(),
+        customer = "Customer", email = "customer@example.invalid", accountId = Account.ToString(),
+        branchId = Branch.ToString(), stateId = Province.ToString(),
         equipmentTypeId = Type.ToString(), market = 126110000,
         fields = new List<Field> {
             new Field {key="re_proposallanguage",value="126110000"},
@@ -321,6 +327,7 @@ static class DraftServiceTests
         Reject(() => Run(service, input), "Only Draft");
         TestFlexiblePackages();
         TestFlexibleEquipment();
+        TestPlannerGroupEquipmentScope();
         TestCustomLines();
         TestRequiredCustomPackages();
         TestAllLaborCombinations();
@@ -647,6 +654,92 @@ static class DraftServiceTests
         Reject(() => Run(service, input), "technical processing budget");
     }
 
+    public static void TestPlannerGroupEquipmentScope()
+    {
+        var service = Setup();
+        var input = Input();
+        var parentBranch = Guid.NewGuid();
+        var siblingBranch = Guid.NewGuid();
+        var selectedGroup = Guid.NewGuid();
+        var siblingGroup = Guid.NewGuid();
+        service.Rows[Branch]["re_branchnumber"] = "SUB-1";
+        service.Add(new Entity("re_branch", parentBranch) {
+            ["re_branchnumber"] = "MAIN", ["re_country"] = new EntityReference("re_country", Country),
+            ["re_currency"] = new EntityReference("transactioncurrency", Currency),
+            ["re_market"] = new OptionSetValue(126110000)
+        });
+        service.Rows[MasterEquipment]["re_branch"] = new EntityReference("re_branch", parentBranch);
+        service.Add(new Entity("re_plannergroup", selectedGroup) {
+            ["re_subbranchcode"] = "SUB-1", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", parentBranch)
+        });
+        service.Add(new Entity("re_plannergroup", siblingGroup) {
+            ["re_subbranchcode"] = "SUB-2", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", parentBranch)
+        });
+        var siblingEquipment = Guid.NewGuid();
+        service.Add(new Entity("re_equipment", siblingEquipment) {
+            ["re_branch"] = new EntityReference("re_branch", siblingBranch),
+            ["re_plannergroup"] = new EntityReference("re_plannergroup", siblingGroup),
+            ["re_equipment"] = "E-SIBLING", ["re_equipmentname"] = "Sibling equipment"
+        });
+        var selectedEquipment = Guid.NewGuid();
+        service.Add(new Entity("re_equipment", selectedEquipment) {
+            ["re_branch"] = new EntityReference("re_branch", Branch),
+            ["re_equipment"] = "E-SELECTED", ["re_equipmentname"] = "Selected subbranch equipment"
+        });
+        input.equipment.Add(new EquipmentInput {
+            id = selectedEquipment.ToString(), number = "E-SELECTED", matched = true
+        });
+        input.equipment.Add(new EquipmentInput {
+            id = siblingEquipment.ToString(), number = "E-SIBLING", matched = true
+        });
+        Run(service, input);
+        var savedMasterIds = new HashSet<Guid?>(service.Rows.Values
+            .Where(row => row.LogicalName == "re_estimateequipment")
+            .Select(row => row.GetAttributeValue<EntityReference>("re_equipment")?.Id));
+        Assert(savedMasterIds.SetEquals(new Guid?[] { MasterEquipment, selectedEquipment, siblingEquipment }),
+            "Selected-branch, parent-branch and sibling Planner Group equipment must all be accepted");
+
+        service = Setup();
+        input = Input();
+        service.Rows[Branch]["re_branchnumber"] = "SUB-1";
+        parentBranch = Guid.NewGuid();
+        var unrelatedParent = Guid.NewGuid();
+        service.Add(new Entity("re_plannergroup", Guid.NewGuid()) {
+            ["re_subbranchcode"] = "SUB-1", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", parentBranch)
+        });
+        var unrelatedGroup = Guid.NewGuid();
+        service.Add(new Entity("re_plannergroup", unrelatedGroup) {
+            ["re_subbranchcode"] = "OTHER", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", unrelatedParent)
+        });
+        var unrelatedEquipment = Guid.NewGuid();
+        service.Add(new Entity("re_equipment", unrelatedEquipment) {
+            ["re_branch"] = new EntityReference("re_branch", unrelatedParent),
+            ["re_plannergroup"] = new EntityReference("re_plannergroup", unrelatedGroup),
+            ["re_equipment"] = "E-OUTSIDE"
+        });
+        input.equipment[0] = new EquipmentInput {
+            id = unrelatedEquipment.ToString(), number = "E-OUTSIDE", matched = true
+        };
+        Reject(() => Run(service, input), "outside the selected branch or its Planner Group");
+
+        service = Setup();
+        input = Input();
+        service.Rows[Branch]["re_branchnumber"] = "SUB-1";
+        service.Add(new Entity("re_plannergroup", Guid.NewGuid()) {
+            ["re_subbranchcode"] = "SUB-1", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", Guid.NewGuid())
+        });
+        service.Add(new Entity("re_plannergroup", Guid.NewGuid()) {
+            ["re_subbranchcode"] = "SUB-1", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", Guid.NewGuid())
+        });
+        Reject(() => Run(service, input), "Planner Group mapping is ambiguous");
+    }
+
     static void TestFlexiblePackages()
     {
         var service = Setup(); var input = Input();
@@ -891,7 +984,7 @@ static class DraftServiceTests
         var draft = Input();
         var values = new OpportunityValues {
             branchId = draft.branchId, stateId = draft.stateId, equipmentTypeId = draft.equipmentTypeId,
-            jobTypeId = "", building = draft.building, customer = draft.customer, email = draft.email,
+            jobTypeId = "", building = draft.building, customer = draft.customer, email = draft.email, accountId = draft.accountId,
             phone = "", market = draft.market,
             fields = new List<Field> { new Field { key = "re_proposallanguage", value = "126110000" } }
         };
@@ -913,7 +1006,7 @@ static class DraftServiceTests
         Reject(() => call(service, User, save), "Invalid Opportunity preset fields");
         values.fields.RemoveAt(1);
         values.email = "";
-        Reject(() => call(service, User, save), "Complete valid Opportunity details");
+        Reject(() => call(service, User, save), "Customer email is required");
         values.email = draft.email;
         values.fields.Add(new Field { key = "re_proposallanguage", value = "126110001" });
         Reject(() => call(service, User, save), "Duplicate");

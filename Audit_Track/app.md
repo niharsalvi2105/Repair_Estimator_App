@@ -2,6 +2,32 @@
 
 ## 1. Scope and evidence
 
+### Review-email readability (Dev flow saved, OFF)
+
+The English and French review templates now use the available message width rather than a fixed 640-pixel container. The header, blue section bands, card accents and white-on-deep-blue price tile use the app's blue palette (`#1450f5` and `#0c42d9`); principal colors are inline with table `bgcolor` fallbacks for email clients. Review-inspired cards emphasize estimate, customer, site and opportunity, with entered selling price, saved suggested price, total true cost and pricing state at the top. Customer, request, equipment, package, labor, material, costing and billing details use two-column form-style fields with labels above values instead of long inline label-value lists. Two-column cards stack at narrow widths in email clients that support the media query; table-based markup retains a two-column fallback where it is stripped. Request conditions remain separate, and guidance distinguishes package previews from saved totals and the entered price from an approval or customer quotation. The detailed saved pricing, billing and existing 111 token mappings remain; repeated summary values come from the same saved header fields, not new calculations. No UI inputs, Dataverse fields, recipients, trigger or flow behavior changed.
+
+The supplied secondary palette is used for the four overview card backgrounds (light blue `#D2F5FF`, sand `#F3EEE6`, green `#AAE1C8`, pink `#FFCDD7`) and the yellow `#FFE141` price-card accent. These are decorative, not status or approval signals; the blue header and price tile remain primary.
+
+The redesigned English and French templates have been saved into the existing stopped Dev flow. It selects the saved proposal language and executes only that language's email segments and repeated-row templates. This removes unused rendering work, but actual run time has not been measured. The supplied KONE logo image is not included: no hosted URL or inline-image delivery method was selected, so the existing text wordmark remains.
+
+Generated-flow synthetic tests cover both languages, selected and skipped language branches, summary order and values, escaping and repeated rows; local browser checks exercise full-width desktop and stacked mobile cards with synthetic long text. Readback verified the saved definition and stopped state. These checks do not prove Outlook/mobile mail-client rendering, flow run time or live delivery. A safe end-to-end flow test and production routing remain outstanding.
+
+### Material selling-price save verification (local source; publication unconfirmed)
+
+The client previously matched every returned material selling price by the client row ID. Drafts source assigns a new server ID to new material rows, so a correctly saved override could trigger the reported "server did not retain selling prices" error. Existing saved rows still require their own ID and exact price; new rows are checked one-to-one against returned catalog, package, equipment, quantity, type and markup with the exact override. Matching indistinguishable duplicate new rows verifies the multiset of prices, not an individual identity. Dropped or changed overrides remain errors, and the message now asks for administrator investigation rather than assuming a plugin deployment is the remedy. Save and Calculate share this verification. This does not establish whether the reported live draft actually retained its prices or whether deployed pricing uses them.
+
+The interrupted Dev frontend push has no running push process. Read-only app metadata reports app version `2026-11-12T06:11:08Z` and last publish `2026-11-12T06:14:07Z`, but does not identify its source assets; the interrupted push's outcome and the CSTM publication state remain unconfirmed. The subsequent selling-price fix is local source only and has not been published. The affected user's on-screen edits were not reloaded or modified. A safe, authorized live Save/Load/Calculate acceptance and independent verification of both deployed assemblies are still needed.
+
+Local unit cases cover new/server IDs, reordered and duplicate rows, existing IDs, changed/dropped prices and assignment mismatches. Mocked browser cases cover retained, dropped and changed responses, preservation of displayed edits on error, subsequent saves and Calculate; these are not tenant evidence. Build and lint passed.
+
+### CSTM equipment selection and catalog availability (source / Dev schema)
+
+The local frontend removes the package-level "Customize equipment" selector for CSTM and states that CSTM applies to all selected equipment; standard packages keep their selector. Existing per-equipment cards and labor/material assignments remain. When an editable saved CSTM has an explicit subset, opening it expands the local selection, marks the draft unsaved and shows a bilingual instruction to save and recalculate. Opening alone does not write the record. Submitted or export-locked records retain their historical assignments; no data migration is performed. Saving an expanded draft uses the existing all-equipment contract. Whether this behavior reached the published app remains unconfirmed.
+
+The Dev catalog-unavailable error was traced to the missing optional material selling-price schema prerequisite, not a confirmed issue with every catalog request. The column has now been created and published in Dev, and the deployed `partcapabilities` operation returned available for all three markets. This supersedes older statements below that the Dev column is absent. Live catalog search, saving a material line, other users' permissions and end-to-end recalculation remain unverified.
+
+Local evidence: 200 Node unit cases, the build and lint passed; five mocked browser cases passed for bilingual CSTM selection, legacy subset reload/save and standard assignment retention/outdated-backend detection. These do not prove tenant behavior, locked historical record handling in the published app, or exhaustive coverage of every feature. Frontend publication status and business-user acceptance remain unresolved.
+
 ### Submitted-estimate HTML review email (Dev definition saved, OFF)
 
 The existing solution flow `Send an Email Estimate` (`dcae3756-54d7-f111-a05d-00224809bc74`) now prepares the full `email.html` / `email.fr.html` review message after an existing estimate is updated to Submitted. Submit updates `re_estimatestatus`; creating an ordinary draft is not the event. The definition is saved in BLA- America CNO Dev but deliberately **Stopped**, addressed only to the requesting user's selected test mailbox through flow configuration. Central Tendering production routing and actual delivery remain pending. No attachments, workbook generation, approval decision, app publication or backend deployment were added.
@@ -710,13 +736,42 @@ Reusable dropdown controls: [BranchSelect](../src/BranchSelect.tsx), [CustomerMa
 
 ### Equipment controls
 
+#### Planner Group equipment scope (local source; not deployed)
+
+For a selected subbranch with one active Planner Group mapping, equipment
+search and exact-number paste/import resolution include direct equipment on
+the selected subbranch and its parent Branch, plus equipment linked to every
+active subbranch Planner Group under that same parent. The mapping is
+`re_branch.re_branchnumber` to `re_plannergroup.re_subbranchcode`; the parent
+comes from `re_plannergroup.re_mainbranch`. Main-branch Planner Group rows are
+not treated as subbranches. With no mapping, equipment remains limited to the
+selected Branch. Conflicting parents, missing parent lookups, incomplete
+family reads or invalid IDs surface an error instead of returning a partial
+family.
+
+The selected Branch remains the sole source for labor rates and all estimate
+context; parent/sibling Branch rates are never merged. The picker remains
+limited to 20 prefix results. Save revalidates active matched Equipment
+against the selected Branch, parent Branch and same-parent Planner Group IDs.
+Manual/unlisted equipment remains estimate-only.
+
+The live `re_plannergroup` table was read-only verified in BLA- America CNO Dev
+with `re_subbranchcode`, `re_ismainbranch`, and `re_mainbranch`; its Equipment
+relationship is `re_equipment_plannergroup_re_plannergroup` (Equipment lookup
+`re_plannergroup`). The table was added as a local app data source. No
+equipment rows were queried for acceptance because the user reported the
+Equipment Data load flow was still running; the flow was not changed or
+restarted. Local scope unit tests and backend validation tests cover parent,
+sibling, unrelated and ambiguous mappings. No publication, plugin deployment,
+permission verification or live user acceptance is claimed.
+
 | Control | Behavior / limits |
 |---|---|
-| Equipment search input/toggle | Active branch server prefix search by number/name; max20 results; keyboard select |
+| Equipment search input/toggle | Active selected-branch server prefix search; mapped subbranches include parent and same-Planner-Group equipment; max20 results; keyboard select |
 | Result selection | Adds matched equipment once; captures display fields, server revalidates on Save |
 | Manual/unlisted option | Adds unmatched number with available entered details; no master creation |
 | Paste multiple equipment numbers | Comma/semicolon/whitespace split; detects lists without treating ordinary multiword names as lists |
-| Bulk add / result feedback | Resolves exact numbers in batches of50; distinguishes added, not found, already selected and over budget |
+| Bulk add / result feedback | Resolves exact numbers in batches of50 using the same branch/Planner Group scope; distinguishes added, not found, already selected and over budget |
 | Download equipment template | Browser generates `.xlsx` with five standard headers |
 | Import Excel | Reads file locally, validates, resolves master matches and adds workspace equipment |
 | Selected equipment Remove | Removes workspace row, later reconciled on Save; linked custom rows may need removal |
@@ -780,6 +835,12 @@ Part classification KONE/Non-KONE, catalog search/toggle/results/Retry, selected
 Package-priced KONE reference has zero unit cost and no extra per-part markup: amounts come from package. Legacy/catalog KONE requires a selected catalog part and markup. These paths are not interchangeable.
 
 Source: [CustomCostLines](../src/CustomCostLines.tsx), [MaterialPartSelect](../src/MaterialPartSelect.tsx), [request validation](../src/data/requestValidation.ts).
+
+### Request IDs and CSTM material type selection (2026-11-15, local source)
+
+Dashboard recent requests and the full Repair Requests list display the existing Dataverse repair-estimate row ID (`re_repairestimateid`) under each estimate name, localized as Request ID / ID de la demande. No separate DraftID is shown, and no new field or Dataverse mapping was added; the list query already retrieves the row ID. CSTM material type selection now reflects the line's KONE/Non-KONE classification rather than its manual/catalog pricing source. The separate markup input remains KONE-catalog-only and applies to the VK13 selling contribution, not internal material cost. Package-priced historical KONE references retain their distinct display and no additional per-part markup.
+
+Expected behavior is the same on Dashboard and Repair Requests, and for KONE/Non-KONE CSTM entries; actual behavior is implemented in local frontend source only. No Dataverse tables/columns, API operations, pricing formulas or persistence changed. Local Node unit tests, production build, changed-file ESLint and one focused responsive Playwright scenario passed. The focused responsive scenario directly asserted localized Request ID rendering on both Dashboard and Repair Requests; it did not directly assert the CSTM type selector. Frontend publication and tenant/browser acceptance are unverified.
 
 ## 8. Step 4: Pricing & margin
 

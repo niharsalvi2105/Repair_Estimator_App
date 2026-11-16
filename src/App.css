@@ -59,6 +59,16 @@
   font-weight: 400;
 }
 
+.request-record-heading h3 .request-id {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
 .recent-column-headings { display: none; }
 .recent-estimate-list .request-record-details { margin-bottom: 0; }
 .recent-estimate-list .request-record-actions .button { width: auto; }

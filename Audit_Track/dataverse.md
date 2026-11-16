@@ -2,6 +2,36 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Equipment continuation preflight (November 12, read-only)
+
+The MKO Equipment checkpoint contained 5,328 pending rows referencing 59 distinct Account source IDs absent from the completed customer verification checkpoint. A fresh exact-source-ID tenant read also found none of those 59 Accounts. Of the pending Equipment keys, 3,998 were already present in the tenant and 1,330 were absent; key presence is not full-field or parent verification. Because the approved importer requires exact verified Account parents and never overwrites native conflicts, no Equipment write was safe or performed. The missing parent identities require authoritative correction and independent verification; no Account was created or guessed.
+
+The historical full-source staging groups 41,996 CKE rows (474 previously verified, 22,169 pending, 782 context-deferred, 44 parent-deferred and 18,527 rejected) and 17,410 CKQ rows (0 previously verified, 10,074 pending and 7,336 rejected). All of those historical CKE/CKQ rejections are `numeric_precision_exceeded` under the original import contract. These staging categories are not a fresh source-to-tenant reconciliation or authorization for CKE/CKQ writes; rejects need investigation before any revised precision policy. MKO historical source staging overlaps the later MKO checkpoint and must not be summed with it.
+
+A non-atomic read-only scan of 366,718 tenant Equipment rows classified all 112,085 historical MKO conflict keys against their checkpoint Branch and verified Account identities: 78,658 had a different or absent Account lookup with Branch matching, and 33,427 had both Account and Branch differing. No conflict key was absent. This is a relationship-level classification only: it does not identify which value is authoritative or compare every mapped field, so all conflicts remain unresolved and no record was overwritten. The same scan counted 26,503 Equipment rows with saved source sales organization CKE and zero with CKQ; this includes active and inactive rows, and is not source-row matching or verified import completion. Rows with other or missing organization values are not attributed to either market.
+
+### Review-email design and language rendering (Dev flow saved, OFF)
+
+The existing unmanaged `Send an Email Estimate` workflow was updated in place with the redesigned bilingual review email. Its English/French condition executes only the selected language's repeated-row templates and email segments; it still reads the same saved header and equipment, package, labor and material snapshots. Unselected rendering is avoided, but no actual flow duration was measured. The supplied KONE logo image is not included because its delivery method remains undecided; the templates use a text wordmark.
+
+Read-only checks confirmed the definition was saved exactly as prepared, its Submitted-status trigger, recipient parameter, owner, solution membership and both existing physical connection bindings were unchanged, and the flow remained Stopped. Both connections passed preflight. Eleven synthetic renderer/contract cases and four local desktop/mobile browser layout cases passed; these do not establish production rendering, live trigger behavior or email delivery. No test submission or email was sent. Central Tendering routing, safe end-to-end acceptance and Outlook/mobile email-client checks remain outstanding.
+
+No Dataverse table, column, UI-only field, permission, record, plugin or calculation output changed. The only persisted change was the flow's email-rendering definition, saved using the current revision's conditional `clientdata` update. Historical deployment notes below describe their original point in time.
+
+### Material save response verification (local client source)
+
+For `re_estimatematerialline.re_sellingprice`, local Drafts source generates a new row ID on creation, while the previous client checked the returned price only by its original ID. The client now verifies new rows one-to-one by their catalog/assignment attributes and exact override, while existing rows require their saved ID; duplicates are checked as a multiset. No table, column, plugin, permission, business row or calculation output was changed by this correction. A failed verification can occur after the server save has committed; displayed edits remain and the reported live draft's actual persisted values are unknown.
+
+Local unit and mocked-browser tests cover retained and changed/dropped overrides, server-assigned IDs, duplicates and saved rows; build and lint passed. No live Save/Load/Calculate or pricing verification was performed. Dev app metadata shows last publish `2026-11-12T06:14:07Z`, but the interrupted push's source assets and outcome are unconfirmed; the later client correction has not been published. No backend assemblies were updated.
+
+### Catalog schema published in Dev and CSTM source behavior
+
+The optional `re_estimatematerialline.re_sellingprice` column has been created and published in the unmanaged `RepairEstimatorApp` solution in BLA- America CNO Dev. Readback confirmed Decimal, precision 10, minimum `0.0000000001`, maximum `1000000000`, optional and valid for create/read/update. This supersedes earlier notes below saying the Dev column was missing; it does not change those notes' original evidence at the time. No business rows, pricing configurations, permissions, plugin registrations or assemblies were modified.
+
+Before publication, the deployed catalog capability was unavailable because the required column was missing. After publication, the deployed `re_DraftEstimate` `partcapabilities` operation returned `available: true` for MKO, CKE and CKQ using the signed-in caller; pricing configuration was enabled for each market. This is a read-only capability check, not evidence that a specific user's search, material save, calculation or submission succeeds.
+
+Local frontend source now sends an all-equipment assignment for editable CSTM packages rather than allowing package-level subsets. Existing explicit CSTM subsets are expanded only in local editable draft state until Save; submitted/export-locked snapshots remain unchanged. Existing package assignment and child-line columns and API contracts remain unchanged; no server-side migration or automatic recalculation occurred. Standard package subsets remain supported. Source/build and mocked browser results are documented in the app reference; the interrupted frontend publication is unconfirmed and live acceptance remains outstanding.
+
 ### Submitted-estimate bilingual HTML review flow (Dev saved, OFF)
 
 Updated the existing unmanaged `Send an Email Estimate` flow/workflow `dcae3756-54d7-f111-a05d-00224809bc74` in `RepairEstimatorApp`, solution `05dd7469-373e-46ad-acd4-856e50ac3777`, BLA- America CNO Dev. No replacement flow or new connection reference was created. It is intentionally **Stopped**, with one requester-selected internal test recipient in the `ReviewRecipient` flow parameter, not in source templates or documentation. Production Central Tendering routing and actual trigger/send acceptance are not complete.
@@ -913,8 +943,8 @@ Gated export:
 | Search/select Contact | `contactsearch`, active imported Contacts under selected Account | `re_customercontact`; Contact details supply header customer name/email/phone | Server rechecks parent relationship and active/imported status; Contact must have valid name/email. |
 | Select branch | Branch, country/currency/province references, labor-rate previews | Header branch/context on Save | Current province is branch-derived; no installation-address master lookup. |
 | Customer name / email / phone | Selected Contact master fields | Header text is populated by the plugin from the validated Contact | The client cannot override the master values; phone is optional. |
-| Equipment search | Active branch equipment, number/name prefix, top 20 | None until Save | Five-way account/sold-to search is not implemented. |
-| Select/add matched equipment | Equipment master | Estimate-equipment lookup and server snapshots on Save | Validates active, branch and exact number. |
+| Equipment search | Active Equipment by number/name prefix, top 20; a mapped subbranch also includes its parent Branch and same-parent Planner Group Equipment | None until Save | No mapping keeps selected-Branch-only scope; five-way account/sold-to search is not implemented. |
+| Select/add matched equipment | Equipment master and, for mapped subbranches, Planner Group | Estimate-equipment lookup and server snapshots on Save | Validates active, selected/parent Branch or same-parent Planner Group, and exact number. |
 | Add manual/unmatched equipment | No new master lookup required | Estimate-equipment snapshot on Save | Does **not** create `re_equipment`. |
 | Equipment workbook import | Local workbook plus master-number resolution | Estimate selections on later Save | Not a master-data upload to Dataverse. |
 | Remove equipment / selected package / custom line | Workspace state | Reconciled child deletion on successful Save | Removing a master selection does not delete the master. |
@@ -1079,7 +1109,7 @@ The UI requires matching saved row version, finite amounts and complete core out
 
 ## 8. Master/reference table and column inventory
 
-These **21 approved admin master tables** come from [master inventory](../src/data/masterDataSchema.ts) and [projected schemas](../.power/schemas/dataverse). Normal estimator use reads them; admin master forms can Create/Update/activate/deactivate allowed fields via SDK. Live metadata is merged with local projected forms; an unprojected new column may not automatically appear.
+These **21 approved admin master tables** come from [master inventory](../src/data/masterDataSchema.ts) and [projected schemas](../.power/schemas/dataverse). Normal estimator use reads them; admin master forms can Create/Update/activate/deactivate allowed fields via SDK. Live metadata is merged with local projected forms; an unprojected new column may not automatically appear. `re_plannergroup` is a separate read-only equipment-scope source, not one of those admin-editable tables.
 
 Notation: all listed names are logical columns. `S(n)` = String maximum n; `D` = Decimal; `I` = Integer; `M` = Money; `L` = Lookup; `C` = Choice/Picklist; `B` = Boolean; `T` = DateTime; `Memo(n)` = multiline text maximum n. Each custom table's ID is its logical name + `id` except the explicit sales-office name below. Common system columns are described after the inventory. Types/lengths here are projected contracts, not a fresh complete live-schema certification.
 
@@ -1091,7 +1121,7 @@ Notation: all listed names are logical columns. `S(n)` = String maximum n; `D` =
 | `re_salesoffices` / `re_salesofficeses` | ID `re_salesofficesid`; `re_code` S(10); `re_district` S(50); `re_branch` L |
 | `re_margingroup` / `re_margingroups` | `re_name` S(100); `re_anchorbranch`, `re_country` L |
 | `re_equipmenttype` / `re_equipmenttypes` | `re_equipmenttype` S(100); `re_nameen`, `re_namefr` S(300); `re_typecode` S(20); `re_fixedtargetcmii` D |
-| `re_equipment` / `re_equipments` | `re_equipment` S(850); `re_equipmentname`, `re_soldtoname` S(300); `re_soldtonumber` S(20); `re_functionallocation`, `re_oem` S(100); `re_verticalcode`, `re_district` S(50); `re_equipmentage` I; `re_branch`, `re_customervertical`, `re_salesoffice` L; contract extensions below |
+| `re_equipment` / `re_equipments` | `re_equipment` S(850); `re_equipmentname`, `re_soldtoname` S(300); `re_soldtonumber` S(20); `re_functionallocation`, `re_oem` S(100); `re_verticalcode`, `re_district` S(50); `re_equipmentage` I; `re_branch`, `re_customervertical`, `re_salesoffice`, `re_plannergroup` L; contract extensions below |
 | `re_customervertical` / `re_customerverticals` | `re_nameen`, `re_namefr` S(300); `re_verticalcode` S(50); `re_verticalband` C |
 | `re_jobtype` / `re_jobtypes` | `re_jobtype` S(850); `re_jobtypecode` S(50); `re_jobtypeen`, `re_jobtypefr` S(100); `re_rating` C |
 | `re_packagecategory` / `re_packagecategories` | `re_name` S(20); `re_nameen`, `re_namefr` S(300); `re_sortorder` I |
@@ -1675,3 +1705,38 @@ planner/site and app/plugin/manual-writeback tasks remain incomplete.
 - [Pricing logical names](../backend-pricing/Infrastructure/Names.cs), [calculation plugin](../backend-pricing/Plugins/EstimateCalculationPlugin.cs), [output writer](../backend-pricing/Plugins/CalculationWriter.cs), [status history](../backend-pricing/Plugins/StatusHistoryPlugin.cs).
 - [Presets](../backend/OpportunityPresets.cs), [parts](../backend/PartCatalog.cs), [package pricing](../backend/PackageMaterialPricing.cs), [contracts](../backend/ContractEquipment.cs), [dashboard](../backend/DashboardReader.cs).
 - [Export lifecycle](../backend-pricing/Automation/ExportRequestPlugin.cs), [state transitions](../backend-pricing/Automation/ExportState.cs), [frozen snapshot](../backend-pricing/Automation/ExportSnapshot.cs), [deployment README](../README.md).
+
+### Planner Group equipment scope (local source; schema verified, not deployed)
+
+Read-only metadata verification in **BLA- America CNO Dev** confirmed the
+existing Dataverse table logical name `re_plannergroup` (entity set
+`re_plannergroups`), with `re_subbranchcode` (text), `re_ismainbranch`
+(Boolean), `re_mainbranch` (lookup to Branch), and `statecode`. The existing
+Equipment relationship is `re_equipment_plannergroup_re_plannergroup`, with
+the Equipment lookup `re_plannergroup`. The table is a read-only scope source,
+not part of the 21 admin-editable master tables. This work added it to the
+local app data-source projection; it did not create a Dataverse table, write
+schema/records, or deploy the app/plugin.
+
+Expected behavior: match selected `re_branch.re_branchnumber` to active
+non-main Planner Group `re_subbranchcode`. With exactly one `re_mainbranch`
+parent, equipment search and exact-number resolution include the selected
+Branch, parent Branch and all active Planner Group rows under that parent.
+Equipment is included by its existing `re_branch` or `re_plannergroup` lookup.
+No mapping retains selected-Branch-only behavior; missing/ambiguous/inconsistent
+mapping fails visibly. Labor-rate queries remain filtered by the estimate's
+selected `re_branch`; parent/sibling rates are not combined.
+
+Local validation: 3 focused frontend scope tests plus 5 documentation-guard
+tests passed; production build and changed-source ESLint passed. The focused
+Draft service test passed parent/sibling acceptance, unrelated-equipment
+rejection and ambiguous-parent rejection. These are local tests, not live
+equipment-data results. The user reported that the Equipment Data load flow
+was running; its status was not independently inspected, and the flow was not
+modified, restarted or used for validation. No live Equipment rows were read.
+
+Unresolved: app-user and Draft API caller Read privileges for Planner Group
+and Equipment lookup were not verified for non-admin roles. Source changes are
+not deployed/published, no plugin assembly was updated, and live picker/save
+acceptance remains pending after the dataflow completes. No new UI-only or
+persisted fields were introduced.

@@ -158,6 +158,11 @@
           "entitySetName": "re_pricingparameters",
           "logicalName": "re_pricingparameter",
           "isHidden": false
+        },
+        "plannergroups": {
+          "entitySetName": "re_plannergroups",
+          "logicalName": "re_plannergroup",
+          "isHidden": false
         }
       },
       "environmentVariableName": ""

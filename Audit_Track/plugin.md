@@ -2,6 +2,53 @@
 
 ## 1. Scope and evidence
 
+### Planner Group equipment scope (local source, not deployed)
+
+Draft Save now resolves the selected Branch's `re_branchnumber` against active
+`re_plannergroup.re_subbranchcode` rows. A single `re_mainbranch` parent expands
+the allowed matched-equipment scope to that parent Branch and all active
+subbranch Planner Group IDs under that parent; equipment lookup validation
+accepts either an in-scope `re_branch` or `re_plannergroup` lookup and still
+checks active status and exact equipment number. No active subbranch mapping
+keeps the existing selected-Branch-only rule. Missing branch number, multiple
+parents, missing/inconsistent group rows or an out-of-scope Equipment record
+fail explicitly. Existing labor-rate reads remain filtered to the estimate's
+selected Branch.
+
+Affected existing columns are `re_branch.re_branchnumber`,
+`re_equipment.re_branch`, `re_equipment.re_plannergroup`, and
+`re_plannergroup.re_subbranchcode`, `re_ismainbranch`, `re_mainbranch`.
+`re_plannergroup` is a read-only scope source, not an estimate snapshot or
+master-data write target. Draft API dispatch/payload, formulas, registration,
+images, estimate locks, persisted schema and export lifecycle are unchanged.
+The app user and Draft API caller need Read access to Planner Group and
+Equipment; non-admin privilege coverage is not verified.
+
+The live table/schema was read-only verified in BLA- America CNO Dev, and the
+table is now included as a local app data source. Local tests cover parent and
+sibling acceptance, unrelated equipment rejection, ambiguous mapping and
+branch-only fallback. The user reported the Equipment Data load flow was
+running; it was not inspected, modified or restarted, and no live equipment
+selection was validated. No app publication or plugin deployment is claimed.
+See the app and Dataverse references for the user-facing contract and exact
+table mapping.
+
+### Review-email design update (Dev flow saved, OFF)
+
+The existing submitted-estimate flow now contains the redesigned bilingual HTML and renders only the selected language's template segments and repeated-row templates. This changes neither plugin code nor the Submit, pricing, snapshot, locking, registration or export contracts. The flow remains Stopped; actual run duration, email delivery and mail-client rendering have not been verified. See the app and Dataverse references for deployment and acceptance details.
+
+### Material row identity and selling-price verification
+
+Local Drafts `BuildLines` preserves existing material row IDs but generates a new GUID for each new row; `Load` returns that server ID and `re_sellingprice`. The former frontend ID-only response check could therefore report a missing selling price even when a new row retained it. Local frontend verification now accounts for server-assigned IDs and still rejects mismatched prices. This identifies a source-level cause of false alarms, not the actual persistence result or deployed assembly revision for the reported live draft. No plugin code, registration, schema or assembly was changed for this correction; read-only capability availability does not prove saved prices or calculation behavior. See the app and Dataverse references for local tests, unknown frontend publication status and live acceptance gaps.
+
+### Catalog prerequisite resolved in Dev; CSTM client change
+
+The deployed catalog capability requires compatible `re_sparepart`, `re_partpricingconfiguration` and `re_estimatematerialline` schema, including the optional precision-10 Decimal `re_sellingprice`, plus an enabled market pricing configuration. The missing column caused the generic configuration-unavailable result. It has been published in Dev with the approved bounds; subsequent deployed `re_DraftEstimate` `partcapabilities` reads returned available for all three markets. This supersedes earlier statements below that the Dev column is missing. Search, material save and caller-specific access still need live acceptance.
+
+No plugin implementation, formulas, registration/images, permissions, locks or API dispatch were changed or deployed for this fix. The CSTM package-level selector and normalization are frontend source changes using the existing all-equipment draft contract; historical submitted/export-locked assignments are not migrated. See the app and Dataverse references for expected behavior and deployment status.
+
+For merged-code regression coverage, old synthetic backend fixtures were updated to supply a valid Account and to expect explicit zero tax/freight and the current missing-email error rather than obsolete defaults/messages. The existing required-Account validation was not bypassed. All 156 xUnit pricing/integration cases and the Draft service executable passed locally after those fixture corrections. Mocked tests do not establish which source revision is deployed or prove tenant calculations, and no existing estimates were recalculated.
+
 ### Submitted-estimate HTML review automation (Dev definition saved, OFF)
 
 The existing solution flow `Send an Email Estimate` (`dcae3756-54d7-f111-a05d-00224809bc74`) now builds a complete EN/FR inline HTML email from saved estimate header/child snapshots, without workbook/file actions or attachments. It is saved but deliberately Stopped, with a requester-selected test mailbox configured outside source templates. No backend assemblies, API dispatch, formulas, loaders, locking, registration/images, permissions or schema were changed for this integration.

@@ -196,6 +196,9 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         <tbody>{visibleMaterials.map((line, index) => {
           const packagePriced = line.pricingSource === 'package'
           const catalog = line.pricingSource == null && line.partType != null
+          const partTypeSelection = packagePriced ? 'package'
+            : line.partType === 'kone' ? 'kone'
+              : line.partType === 'non-kone' || line.pricingSource === 'manual' ? 'manual' : 'legacy'
           function update(change: Partial<DraftMaterial>) {
             setMaterials(lines => lines.map(row => row.id === line.id ? { ...row, ...change } : row))
           }
@@ -214,14 +217,14 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
               value={line.vendor} disabled={locked} readOnly={!!line.catalogPartId}
               onChange={event => update({ vendor: event.target.value })} /></td>
             <td>{catalog ? partSelect('type') : <select className="text-input" aria-label={fr ? 'Type de pièce' : 'Part type'}
-              value={line.pricingSource ?? 'legacy'} disabled={locked} onChange={event => {
+              value={partTypeSelection} disabled={locked} onChange={event => {
                 if (event.target.value === 'kone') update({ partType: 'kone', pricingSource: undefined, catalogPartId: undefined,
                   part: '', description: '', vendor: '', unitCost: 0, unitPrice: undefined, sellingPrice: undefined, markupPercent: capability?.defaultMarkupPercent,
                   uom: undefined, refreshPart: false })
                 else update({ partType: 'non-kone', pricingSource: 'manual', catalogPartId: undefined,
                   unitCost: 0, unitPrice: undefined, sellingPrice: undefined, markupPercent: undefined, uom: undefined, refreshPart: false })
               }}>
-              {line.pricingSource == null && <option value="legacy">{fr ? 'Saisie existante' : 'Existing manual entry'}</option>}
+              {line.partType == null && line.pricingSource == null && <option value="legacy">{fr ? 'Saisie existante' : 'Existing manual entry'}</option>}
               <option value="manual">Non-KONE</option><option value="kone">KONE</option>
               {packagePriced && <option value="package">{fr ? 'KONE (forfait historique)' : 'KONE (legacy package)'}</option>}
             </select>}</td>

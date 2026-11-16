@@ -45,6 +45,12 @@ class Program
             Console.WriteLine("Package equipment persistence and validation cases passed.");
             return;
         }
+        if (args.Length == 1 && args[0] == "--planner-group-equipment")
+        {
+            DraftServiceTests.TestPlannerGroupEquipmentScope();
+            Console.WriteLine("Planner Group equipment scope cases passed.");
+            return;
+        }
         if (args.Length != 0) throw new ArgumentException("Unknown test selector.");
         var header = new Entity();
         Apply.Invoke(null, new object[] { header, Valid(), true });

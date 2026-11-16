@@ -711,8 +711,8 @@ namespace RepairEstimator.Tests
             var header = db.Rows[db.EstimateId];
             Assert.Equal(319m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
             Assert.Equal(638m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPrice).Value);
-            Assert.Equal(0.05m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
-            Assert.Equal(0.14m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
+            Assert.Equal(0m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
+            Assert.Equal(0m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
             db.Rows[db.PackageId]["re_mechanichours"] = 999m;
             db.Rows[db.PackageId]["re_materialmisctaxcost"] = new Money(999m);
             var version = header.RowVersion;
@@ -1009,7 +1009,7 @@ namespace RepairEstimator.Tests
             public readonly List<string> Traces = new List<string>(), ConfigReads = new List<string>();
             public readonly Guid EstimateId = Guid.NewGuid(), BranchId = Guid.NewGuid(), StateId = Guid.NewGuid(),
                 CountryId = Guid.NewGuid(), CurrencyId = Guid.NewGuid(), TypeId = Guid.NewGuid(),
-                PackageId = Guid.NewGuid(), EquipmentId = Guid.NewGuid(), UserId = Guid.NewGuid();
+                PackageId = Guid.NewGuid(), EquipmentId = Guid.NewGuid(), UserId = Guid.NewGuid(), AccountId = Guid.NewGuid();
             public IOrganizationService Caller { get; }
             readonly IOrganizationService config;
             IPluginExecutionContext current;
@@ -1272,9 +1272,13 @@ namespace RepairEstimator.Tests
                 Add(Names.RedundancyBand.Entity, ("re_minimumequipment", 1), ("re_redundancyband", new OptionSetValue(126110000)));
             }
             public string DraftJson(string rowVersion = null) {
+                if (!Rows.ContainsKey(AccountId))
+                    Fixed(AccountId, "account", ("re_salesforceaccountid", "integration-fixture-account"),
+                        ("re_salesorganizations", "MKOF"), ("accountnumber", "00001"), ("name", "Fixture Account"));
                 return "{\"mode\":\"save\",\"id\":\"" + EstimateId + "\",\"version\":" +
                     (rowVersion == null ? "null" : "\"" + rowVersion + "\"") +
-                    ",\"title\":\"Draft\",\"building\":\"Building\",\"customer\":\"Customer\",\"email\":\"customer@example.invalid\",\"branchId\":\"" +
+                    ",\"title\":\"Draft\",\"building\":\"Building\",\"customer\":\"Customer\",\"email\":\"customer@example.invalid\",\"accountId\":\"" +
+                    AccountId + "\",\"branchId\":\"" +
                     BranchId + "\",\"stateId\":\"" + StateId + "\",\"equipmentTypeId\":\"" + TypeId +
                     "\",\"market\":126110000,\"fields\":[{\"key\":\"re_proposallanguage\",\"value\":\"126110000\"}," +
                     "{\"key\":\"re_timecategory\",\"value\":\"126110000\"},{\"key\":\"re_usetax\",\"value\":\"0\"}," +
