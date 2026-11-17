@@ -915,8 +915,10 @@ function App() {
     const customIds = packages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid)
     const labor = (record.laborLines ?? []).map((line) => ({ ...line,
       packageId: line.packageId || (customIds.length === 1 ? customIds[0] : undefined) }))
-    const materials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '',
+    const savedMaterials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '',
       packageId: line.packageId || (customIds.length === 1 ? customIds[0] : undefined) }))
+    const materials = record.status === 126110002 || record.exportDelivery ? savedMaterials
+      : savedMaterials.map(line => line.catalogPartId && line.partType === 'kone' ? { ...line, markupPercent: 10 } : line)
     setLaborLines(labor); setMaterialLines(materials)
     setDraftId(record.id); setDraftVersion(record.version); setDraftNumber(record.number ?? '')
     setSavedSalesperson(record.salesperson ?? '')
@@ -941,7 +943,7 @@ function App() {
       customerPhone: record.phone ?? '', accountId: record.accountId ?? '', contactId: record.contactId ?? '',
       equipmentTypeId: record.equipmentTypeId, jobTypeId: record.jobTypeId ?? '',
       market: record.market, requestInputs: inputs, selectedEquipment: equipment, selectedPackages: savedPackages,
-      laborLines: labor, materialLines: materials,
+      laborLines: labor, materialLines: savedMaterials,
     }))
   }
 
@@ -952,6 +954,11 @@ function App() {
     try {
       const record = await draftOperation({ mode: 'load', id })
       applyDraft(record)
+      if (record.status !== 126110002 && !record.exportDelivery &&
+        record.materialLines?.some(line => line.catalogPartId && line.partType === 'kone' && line.markupPercent !== 10))
+        setDraftNotice(language === 'fr'
+          ? 'La majoration KONE est maintenant fixée à 10 % du prix de vente. Enregistrez et recalculez pour appliquer ce changement.'
+          : 'KONE markup is now fixed at 10% of the selling price. Save and recalculate to apply this change.')
       if (record.status !== 126110002 && !record.exportDelivery &&
         record.packages.some(item => item.isCustom && item.equipmentNumbers != null))
         setDraftNotice(language === 'fr'
@@ -976,7 +983,9 @@ function App() {
         nameFr: item.re_packagenamefr, scopeFr: item.re_proposalscopefr,
         hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial,
         equipmentNumbers: item.equipmentNumbers ?? null, allEquipment: item.equipmentNumbers == null })),
-      laborLines: labor, materialLines: materials,
+      laborLines: labor, materialLines: materials.map(line => line.catalogPartId
+        ? { ...line, markupPercent: line.partType === 'kone' ? 10 : undefined }
+        : line),
     }
   }
   function validateCostImport(labor: DraftLabor[], materials: DraftMaterial[]) {

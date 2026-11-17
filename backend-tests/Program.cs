@@ -25,6 +25,7 @@ class Program
         if (args.Length == 1 && args[0] == "--catalog")
         {
             DraftServiceTests.TestCatalogParts();
+            DraftServiceTests.TestCatalogTransparency();
             return;
         }
         if (args.Length == 1 && args[0] == "--customer-defaults")

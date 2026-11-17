@@ -2,6 +2,50 @@
 
 ## 1. Scope and evidence
 
+### Transparent catalog version 2 (2026-11-17, local source, not deployed)
+
+`partcapabilities`/`partcatalog` retain their existing dispatch but now identify
+`catalogVersion: 2`. Part search no longer filters master classification, state
+or effectivity. Empty search is supported; number/description/name matching,
+part-number/GUID ordering and 20-row paging use `partPage`/`catalogCursor` and
+return `more`/`nextPage`/`nextCursor`. Invalid continuation/wildcards fail
+explicitly. Effective, enabled, compatible market currency/conversion
+configuration remains required; no exchange-rate default is invented.
+
+Catalog results include nullable raw/converted values, server-generated source
+details and diagnostic codes, rather than failing an entire search on an
+incomplete row. Native GUID selection identifies the chosen record even when
+source keys overlap. User-selected estimate KONE/Non-KONE no longer has to match
+the master's classification. KONE markup is exactly 10% of effective selling
+price; Non-KONE rejects markup. Existing package-priced/legacy aggregate
+isolation, whole quantities, permissions and estimate locks remain.
+
+Save permits estimate-only completion of unusable cost, missing description/UOM
+and unusable selling price; completed pricing must be positive, bounded and
+within precision. Trusted usable costs/descriptions/UOM still override client
+values. Original zero/missing VK13 is retained separately from `re_sellingprice`.
+Incoming `catalogDetails` is ignored; the server snapshots its own source
+observations in new optional `re_catalogdetailsjson` Memo (capacity 20000).
+Ordinary saves retain source evidence; reselection/clone explicitly refreshes.
+Selected classification changes do not rewrite the Spare Parts master. Explicit
+manual-to-catalog transitions clear the old material pricing mode.
+
+Pricing 2026.11 accepts a positive completed catalog selling price even when
+saved VK13 is zero/null and uses it for the selected KONE or Non-KONE selling
+contribution. Internal costs are unchanged by markup. New diagnostic snapshots
+require completed prices and fixed KONE markup; historical snapshots without
+the Memo retain their existing calculation interpretation until explicitly saved.
+Frozen exports capture the Memo through existing all-column snapshot capture;
+no registration/images, API registration, privilege, lock or delivery change.
+
+Rollout prerequisite: publish `backend/catalog-transparency-schema.json` and
+release coordinated Drafts/pricing/frontend. The current Dev capability has no
+version-2 marker and Dev lacks the Memo; the new client correctly refuses the
+older API. No deployment, historical migration or master activation occurred.
+Focused local Drafts catalog cases and three pricing integration cases passed;
+the latter cover zero source VK13, completed price, cost isolation and frozen
+diagnostic export. These are synthetic checks, not tenant acceptance.
+
 ### Planner Group equipment scope (local source, not deployed)
 
 Draft Save now resolves the selected Branch's `re_branchnumber` against active
@@ -32,6 +76,14 @@ running; it was not inspected, modified or restarted, and no live equipment
 selection was validated. No app publication or plugin deployment is claimed.
 See the app and Dataverse references for the user-facing contract and exact
 table mapping.
+
+The local pricing integration-test fixture now seeds its synthetic Branch
+with `re_branchnumber = SYNTHETIC`, satisfying the resolver's documented scope
+prerequisite so unrelated integration assertions can run. This is test data
+only; plugin runtime behavior and production Dataverse records/schema are
+unchanged. The pricing VSTest project passed 157/157 tests, and the DraftTests
+console harness passed. No plugin deployment or live scope verification is
+claimed.
 
 ### Review-email design update (Dev flow saved, OFF)
 

@@ -2,6 +2,104 @@
 
 ## 1. Scope and evidence
 
+### Customer detail row alignment (local source; not deployed)
+
+The customer form keeps the documented desktop pairings: Account number with
+Account name, Contact name with required customer email, and customer phone
+with Functional Location Description. Account-default loading, error and
+selection messages remain full-width but no longer occupy an empty grid row
+between Account and Contact. This fixes the displayed alignment without
+changing field order, validation, customer selection, persistence or pricing.
+
+Affected Dataverse tables/columns: none. No UI-only or persisted fields were
+added; existing Account, Contact, email, phone and location fields and their
+limits are unchanged. Expected behavior is the three aligned rows above;
+before this correction, the defaults-status container separated the Contact
+row even when it had no visible message. Local evidence: both English and
+French geometry regressions passed, the 20 selected browser regressions and
+four fresh-request cases passed, the full responsive suite completed with exit
+code 0, production build and ESLint passed, and all 218 frontend unit tests
+passed. No deployment or live tenant UI/non-admin verification was performed.
+
+### Material source evidence presentation (local source; not deployed)
+
+The custom material grid keeps its existing nine-column, horizontally
+scrollable layout, but the KONE markup is now a compact label/value with a
+short explanation. Detailed catalog source values and warnings open in a
+viewport-sized, read-only dialog instead of expanding inside the narrow unit
+cost cell. The dialog groups values into responsive cards, shows an issue count
+beside the entry point, and supports the native close/Escape interaction.
+Source evidence and estimate completion requirements remain available; no
+pricing, validation, save, or catalog behavior changed.
+
+Affected Dataverse tables/columns: none. No UI-only or persisted fields were
+added. Expected behavior is a compact material row and readable, viewport-fit
+source details at small and desktop widths. The user reviewed the local UI and
+reported that it looked perfect. The existing wide material grid still requires
+horizontal scrolling; converting the full grid to responsive cards is outside
+this targeted correction.
+
+Local evidence: production build/type-check passed, ESLint passed for the
+changed TypeScript and browser test files, and six focused responsive browser
+cases passed in English and French at 320px, 589px and 1366px. These checks and
+the user's visual feedback do not establish tenant behavior. No app publish,
+Dataverse schema change, tenant write, or authenticated live acceptance was
+performed.
+
+### Complete and transparent part selection (2026-11-17, local source; rollout required)
+
+The approved catalog version 2 browser exposes every Spare Parts record under
+either user-selected KONE or Non-KONE type, without excluding inactive, expired,
+future or incomplete rows. Empty search browses the catalog; number/description
+search and deterministic 20-row pages with Load more keep the entire catalog
+reachable without rendering all records at once. The last read-only Dev/source
+reconciliation matched 37,461 valid source identities; the 12 source-error rows
+remain quarantined, not newly imported by this change.
+
+The user's selected type controls the estimate classification, independently
+of the displayed master type. KONE markup is fixed at 10% of the effective
+selling price, never of internal cost; Non-KONE has no KONE markup. Switching
+type retains the selected part, original source evidence and manual completion.
+Editable historical KONE selections adopt 10% locally and need Save/recalculation;
+submitted/export-locked snapshots retain their historical values.
+
+Every result can display its source classification, state, validity, source
+context/version, raw cost/VK13, currency, pricing unit, descriptions/UOM and
+converted amounts, with explicit missing/invalid/inactive/expired/future reasons.
+Unusable cost, missing description and missing UOM enable estimate-only entry.
+Selling price is editable even when source VK13 is zero or missing. A positive
+effective cost and selling price, description, UOM (20 characters) and whole
+quantity are required before Save/Calculate. Monetary completion is in estimate
+currency, positive through 1000000000 with at most ten decimals; descriptions
+remain limited to 2000 characters. Source zero stays zero and missing stays
+unavailable; entered values never masquerade as original VK13. Source records
+are neither activated nor updated. Existing manual Non-KONE and historical
+package-priced references remain separate supported paths.
+
+Server-generated diagnostics persist in optional material
+`re_catalogdetailsjson` (Memo, 20000 characters), alongside existing trusted
+source snapshots and effective entered fields. Save verification checks retained
+manual completion as well as selling overrides, including server-assigned IDs.
+Existing catalog rows without detailed diagnostics stay readable; reselection
+explicitly refreshes source data. Ordinary saves preserve frozen source values.
+
+Deployment is not complete: read-only Dev verification found the deployed
+capability available but without `catalogVersion`, and the new Memo absent.
+The new client deliberately rejects that older filtering API with an explicit
+schema/backend update instruction rather than silently reverting to hidden
+parts. Publish the Memo and release Drafts, pricing 2026.11 and frontend together.
+No schema/assembly/app deployment or business/master write was performed for
+this change. Non-admin and published-tenant acceptance remain outstanding.
+
+Local evidence: 53 focused Node contract/completion/clone/import cases, the
+Drafts catalog executable, three pricing integration cases, production
+build/type-check and changed-source lint passed. Fourteen mocked browser cases
+passed, including EN/FR at 320px/1366px, manual completion and saved-source
+evidence, both selected types, full continuation, old-API rejection and existing
+selling-price/manual-entry regressions. Browser checks caught and corrected a
+changing accessible select name and duplicate alerts. These local checks do
+not prove tenant rollout or exhaustive catalog enumeration in the published app.
+
 ### Review-email readability (Dev flow saved, OFF)
 
 The English and French review templates now use the available message width rather than a fixed 640-pixel container. The header, blue section bands, card accents and white-on-deep-blue price tile use the app's blue palette (`#1450f5` and `#0c42d9`); principal colors are inline with table `bgcolor` fallbacks for email clients. Review-inspired cards emphasize estimate, customer, site and opportunity, with entered selling price, saved suggested price, total true cost and pricing state at the top. Customer, request, equipment, package, labor, material, costing and billing details use two-column form-style fields with labels above values instead of long inline label-value lists. Two-column cards stack at narrow widths in email clients that support the media query; table-based markup retains a two-column fallback where it is stripped. Request conditions remain separate, and guidance distinguishes package previews from saved totals and the entered price from an approval or customer quotation. The detailed saved pricing, billing and existing 111 token mappings remain; repeated summary values come from the same saved header fields, not new calculations. No UI inputs, Dataverse fields, recipients, trigger or flow behavior changed.

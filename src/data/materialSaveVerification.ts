@@ -7,6 +7,14 @@ function signature(line: DraftMaterial): string {
   ])
 }
 
+function retainsCompletion(sent: DraftMaterial, saved: DraftMaterial): boolean {
+  const details = sent.catalogDetails
+  return (!details || !!saved.catalogDetails) &&
+    (!details?.requiresCost || sent.unitCost === saved.unitCost) &&
+    (!details?.requiresDescription || sent.description.trim() === saved.description.trim()) &&
+    (!details?.requiresUom || sent.uom?.trim() === saved.uom?.trim())
+}
+
 export function missingMaterialSellingPrices(
   sent: DraftMaterial[], received: DraftMaterial[], previouslySaved: DraftMaterial[],
 ): boolean {
@@ -18,8 +26,8 @@ export function missingMaterialSellingPrices(
   for (const line of sent) {
     const saved = byId.get(line.id.toLowerCase())
     if (saved) {
-      if (line.sellingPrice != null && saved.sellingPrice !== line.sellingPrice) return true
-    } else if (line.sellingPrice != null) {
+      if (!retainsCompletion(line, saved) || (line.sellingPrice != null && saved.sellingPrice !== line.sellingPrice)) return true
+    } else if (line.sellingPrice != null || line.catalogDetails != null) {
       if (savedIds.has(line.id.toLowerCase())) return true
       unmatchedNew.push(line)
     }
@@ -29,7 +37,8 @@ export function missingMaterialSellingPrices(
     !sentIds.has(line.id.toLowerCase()) && !savedIds.has(line.id.toLowerCase()))
   for (const line of unmatchedNew) {
     const match = candidates.findIndex(saved =>
-      signature(saved) === signature(line) && saved.sellingPrice === line.sellingPrice)
+      signature(saved) === signature(line) && (line.sellingPrice == null || saved.sellingPrice === line.sellingPrice) &&
+        retainsCompletion(line, saved))
     if (match < 0) return true
     candidates.splice(match, 1)
   }

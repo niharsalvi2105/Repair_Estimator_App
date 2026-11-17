@@ -1,0 +1,20 @@
+{
+  "status": "approved-design-not-deployed",
+  "description": "Catalog version 2 preserves server-generated source details and warnings separately from estimate-only manual completion.",
+  "tables": {
+    "re_estimatematerialline": {
+      "re_catalogdetailsjson": {
+        "type": "Memo",
+        "maxLength": 20000,
+        "required": false,
+        "description": "Server-generated version-1 JSON: original part identity/classification, status, dates, source context, description/UOM, raw and converted prices/costs, completion requirements and diagnostic codes. Incoming client JSON is never trusted."
+      }
+    }
+  },
+  "deployment": [
+    "Publish the optional Memo with capacity at least 20000 before enabling catalog version 2. Existing catalog and precision-10 selling-price prerequisites remain.",
+    "Deploy Drafts, pricing 2026.11 and frontend together; the new client explicitly refuses an older catalog response.",
+    "No master activation, source-price update, historical backfill or automatic recalculation is authorized.",
+    "Verify both estimate classifications, full paging, manual completion, Save/Load, clones, exports and non-admin access in Dev before production."
+  ]
+}

@@ -53,14 +53,18 @@ export function CustomCostExcelUpload(props: Props) {
         const resolved = new Map<string, Partial<DraftMaterial>>()
         for (const row of parts.filter(p => p.partType === 'kone')) {
           if (!resolved.has(row.part)) {
-            const result = await getPartCatalog(market, row.part, 'kone')
-            const matches = result.parts.filter(part => part.number === row.part)
-            if (!result.available || result.more || matches.length !== 1)
+            let result = await getPartCatalog(market, row.part)
+            let matches = result.parts.filter(part => part.number === row.part)
+            while (result.available && result.more && !matches.length) {
+              result = await getPartCatalog(market, row.part, result.nextPage ?? undefined, result.nextCursor ?? undefined)
+              matches = [...matches, ...result.parts.filter(part => part.number === row.part)]
+            }
+            if (!result.available || matches.length !== 1)
               throw new Error(fr ? `Pièce KONE introuvable ou ambiguë dans le catalogue : ${row.part}.`
                 : `KONE part is unavailable or ambiguous in the approved catalog: ${row.part}.`)
             const part = matches[0]
-            resolved.set(row.part, { catalogPartId: part.id, unitCost: part.unitCost,
-              unitPrice: part.unitPrice, markupPercent: result.defaultMarkupPercent, uom: part.uom,
+            resolved.set(row.part, { catalogPartId: part.id, catalogDetails: part.details, unitCost: part.unitCost ?? 0,
+              unitPrice: part.unitPrice, markupPercent: 10, uom: part.uom,
               description: part.description, partType: 'kone', refreshPart: true })
           }
           Object.assign(row, resolved.get(row.part))

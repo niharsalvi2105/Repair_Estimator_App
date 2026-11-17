@@ -509,8 +509,10 @@ static class DraftServiceTests
         service.Rows[Currency]["isocurrencycode"] = "CAD";
         service.Rows[configId]["re_market"] = new OptionSetValue(126110001);
         service.Rows[partId]["re_pricingunit"] = 10m;
-        Reject(() => search.Invoke(null, new object[] { service,
-            new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "00" } }), "per-unit");
+        var nonUnit = (CatalogResult)search.Invoke(null, new object[] { service,
+            new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "00" } });
+        Assert(nonUnit.parts.Single().details.issues.Contains("unsupported-pricing-unit") &&
+            nonUnit.parts.Single().unitCost == null, "Unsupported pricing units remain visible with manual completion required.");
         service.Rows[partId]["re_pricingunit"] = 1m;
         service.Rows[Branch]["re_market"] = new OptionSetValue(126110001);
         service.Rows[MasterPackage]["re_iscustompackage"] = true;
@@ -578,11 +580,11 @@ static class DraftServiceTests
         Assert(loaded.materialLines.Single().unitCost == 7.73178m,
             "Saved snapshots survive source changes and unrelated saves even when catalog disabled.");
         input = loaded; input.materialLines[0].markupPercent = 20;
-        Reject(() => Run(service, input), "not enabled");
+        Reject(() => Run(service, input), "markup");
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
         service.Rows[configId]["re_isenabled"] = true;
         input.materialLines[0].partType = "non-kone";
-        Reject(() => Run(service, input), "classification");
+        Reject(() => Run(service, input), "Markup");
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
         input.materialLines[0].partType = "kone";
         input.materialLines[0].markupPercent = 101;
@@ -602,14 +604,18 @@ static class DraftServiceTests
         service.Rows[partId]["re_effectiveto"] = DateTime.UtcNow.AddDays(-1);
         var stale = (CatalogResult)search.Invoke(null, new object[] { service,
             new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "00" } });
-        Assert(stale.parts.Count == 0, "Expired parts cannot be searched.");
+        Assert(stale.parts.Single().details.issues.Contains("expired"), "Expired parts remain searchable with their reason.");
         var replacement = new Entity("re_sparepart", Guid.NewGuid());
         foreach (var attribute in service.Rows[partId].Attributes) replacement[attribute.Key] = attribute.Value;
         replacement["re_effectiveto"] = null;
         service.Add(replacement);
         input = Load(service, loaded);
+        input.fields.Single(field => field.key == "re_konesparessalespricevk13").value = "";
         input.materialLines[0].refreshPart = true;
-        Reject(() => Run(service, input), "expired or ambiguous");
+        Run(service, input);
+        input = Load(service, input);
+        Assert(input.materialLines.Single().catalogDetails.issues.Contains("expired"),
+            "A native catalog GUID remains selectable despite expired or overlapping source-key records.");
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
         input.materialLines[0].partType = "non-kone";
         input.materialLines[0].catalogPartId = null;
@@ -617,8 +623,8 @@ static class DraftServiceTests
         input.materialLines[0].markupPercent = null;
         input.materialLines[0].unitCost = 25m;
         input.materialLines[0].sellingPrice = null;
-        Reject(() => Run(service, input), "classified as KONE");
-        input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+        Run(service, input);
+        input = Load(service, input);
         input.materialLines[0].part = "MANUAL-1";
         Run(service, input);
         input = Load(service, input);
@@ -631,6 +637,118 @@ static class DraftServiceTests
         input.materialLines[0].sellingPrice = 50m;
         Reject(() => Run(service, input), "Selling price");
         Console.WriteLine("Catalog cases passed: missing schema/disabled gate, CAD precision, spoof rejection, snapshots, refresh, classification, markup and legacy VK13 protection.");
+    }
+
+    public static void TestCatalogTransparency()
+    {
+        var type = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.PartCatalog");
+        var search = type.GetMethod("Search", BindingFlags.Static | BindingFlags.NonPublic);
+        var apply = type.GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic);
+        var service = Setup();
+        service.CatalogSchema = true;
+        service.Add(new Entity("transactioncurrency", Currency) { ["isocurrencycode"] = "USD" });
+        service.Add(new Entity("re_partpricingconfiguration", Guid.NewGuid()) {
+            ["re_market"] = new OptionSetValue(126110000), ["re_currency"] = new EntityReference("transactioncurrency", Currency),
+            ["re_version"] = "v1", ["re_usdtocadfactor"] = 1.4m, ["re_costonlyfactor"] = 1.23m,
+            ["re_defaultmarkuppct"] = 25m, ["re_isenabled"] = true, ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
+        });
+        service.CatalogDetailsCapacity = 19999;
+        Assert(!((CatalogResult)search.Invoke(null, new object[] { service,
+            new Draft { mode = "partcapabilities", market = 126110000 } })).available,
+            "The diagnostics snapshot prerequisite must be deployed before enabling catalog version 2.");
+        service.CatalogDetailsCapacity = 20000;
+        for (var index = 0; index < 43; index++)
+        {
+            var part = new Entity("re_sparepart", Guid.NewGuid()) {
+                ["re_partnumber"] = "VISIBLE-" + index.ToString("D3"),
+                ["re_parttype"] = new OptionSetValue(index % 2 == 0 ? 126110000 : 126110001),
+                ["re_usdcost"] = index == 0 ? 0m : 4m, ["re_usdprice"] = 0m, ["re_pricingunit"] = 1m,
+                ["re_sourcecurrency"] = "USD", ["re_sourcekey"] = "source-" + index,
+                ["re_effectivefrom"] = DateTime.UtcNow.AddDays(index % 3 == 0 ? 1 : -2),
+                ["re_effectiveto"] = DateTime.UtcNow.AddDays(-1)
+            };
+            service.Add(part);
+            part["statecode"] = new OptionSetValue(1);
+        }
+        foreach (var selection in new[] { "kone", "non-kone" })
+        {
+            var ids = new HashSet<string>();
+            var request = new Draft { mode = "partcatalog", market = 126110000, partType = selection, search = "" };
+            CatalogResult result;
+            do
+            {
+                result = (CatalogResult)search.Invoke(null, new object[] { service, request });
+                Assert(result.catalogVersion == 2 && result.defaultMarkupPercent == 10m, "Version 2 has fixed 10% markup.");
+                foreach (var part in result.parts)
+                {
+                    Assert(ids.Add(part.id), "Paging must not duplicate records.");
+                    Assert(part.details.issues.Contains("inactive") && part.details.issues.Contains("expired") &&
+                        part.details.requiresSellingPrice, "Inactive/expired/zero-price rows must be visible with reasons.");
+                }
+                request.partPage = result.nextPage ?? 0;
+                request.catalogCursor = result.nextCursor;
+            } while (result.more);
+            Assert(ids.Count == 43, "Every record of both master classifications must be reachable under either selected type.");
+        }
+        Reject(() => search.Invoke(null, new object[] { service,
+            new Draft { mode = "partcatalog", market = 126110000, partType = "kone", partPage = 2 } }), "continuation");
+        var selected = service.Rows.Values.First(row => row.LogicalName == "re_sparepart");
+        var originalState = selected.GetAttributeValue<OptionSetValue>("statecode").Value;
+        var currency = new EntityReference("transactioncurrency", Currency);
+        var input = new Draft { market = 126110000 };
+        var line = new MaterialInput { partType = "kone", catalogPartId = selected.Id.ToString(),
+            part = "FORGED", description = "Completed description", uom = "PC", unitCost = 8.123456789m, markupPercent = 10m,
+            catalogDetails = new CatalogDetails { requiresCost = false, sourcePrice = 999m } };
+        Entity prior = null;
+        Func<Entity> save = () => {
+            var row = new Entity("re_estimatematerialline", Guid.NewGuid());
+            apply.Invoke(null, new object[] { service, line, prior, row, input, currency, null });
+            row["transactioncurrencyid"] = currency;
+            return row;
+        };
+        Reject(() => save(), "selling price");
+        line.sellingPrice = 12.3456789012m;
+        line.uom = "";
+        Reject(() => save(), "unit of measure");
+        line.uom = new string('x', 21);
+        Reject(() => save(), "unit of measure");
+        line.uom = "PC";
+        line.unitCost = .12345678901m;
+        Reject(() => save(), "unit cost");
+        line.unitCost = 8.123456789m;
+        line.markupPercent = 20m;
+        Reject(() => save(), "exactly 10");
+        line.markupPercent = 10m;
+        prior = save();
+        var json = prior.GetAttributeValue<string>("re_catalogdetailsjson");
+        var details = (CatalogDetails)type.GetMethod("ReadDetails", BindingFlags.Static | BindingFlags.NonPublic)
+            .Invoke(null, new object[] { prior });
+        Assert(details.sourceCost == 0m && details.sourcePrice == 0m && details.description == null &&
+            details.issues.Contains("missing-description") && details.requiresCost,
+            "Saved diagnostics must come from the server source, not forged client details.");
+        Assert(prior.GetAttributeValue<decimal>("re_unitcostprecise") == 8.123456789m &&
+            prior.GetAttributeValue<decimal>("re_unitpriceprecise") == 0m &&
+            prior.GetAttributeValue<decimal>("re_sellingprice") == 12.3456789012m &&
+            prior.GetAttributeValue<string>("re_partnumber") == details.number &&
+            prior.GetAttributeValue<string>("re_entereddescription") == "Completed description",
+            "Manual completion must retain source VK13 zero, native identity and effective entered values separately.");
+        selected["re_usdcost"] = selected["re_usdprice"] = 99m;
+        line.partType = "non-kone";
+        line.markupPercent = null;
+        prior = save();
+        Assert(prior.GetAttributeValue<OptionSetValue>("re_parttype").Value == 126110001 &&
+            prior.GetAttributeValue<decimal?>("re_markuppct") == null &&
+            prior.GetAttributeValue<string>("re_catalogdetailsjson") == json,
+            "Switching selected classification must preserve the catalog identity, completions and frozen warnings.");
+        Assert(selected.GetAttributeValue<OptionSetValue>("statecode").Value == originalState &&
+            selected.GetAttributeValue<string>("re_descriptionen") == null,
+            "Estimate completion must never activate or enrich the Spare Parts master.");
+        line.refreshPart = true;
+        line.unitCost = 1m;
+        prior = save();
+        Assert(prior.GetAttributeValue<decimal>("re_unitcostprecise") == 99m,
+            "A refresh must trust a usable current source cost rather than client input.");
+        Console.WriteLine("Transparent catalog cases passed: both classifications, full paging, diagnostics, manual completion, fixed markup and frozen provenance.");
     }
 
     static void TestFlexibleEquipment()
@@ -1094,6 +1212,7 @@ static class DraftServiceTests
         public bool PresetSchema;
         public bool ContractSchema;
         public int SnapshotPrecision = 10;
+        public int CatalogDetailsCapacity = 20000;
         public readonly Dictionary<string, int[]> ChoiceValues = new Dictionary<string, int[]> {
             {"re_papertype", new[] { 126110000, 126110001, 126110002, 727000042 }},
             {"re_yesnounknowchoice", new[] { 126110000, 126110001, 126110002 }},
@@ -1224,6 +1343,7 @@ static class DraftServiceTests
                     else if (name == "re_parttype" || name == "re_materialsource" || name == "re_materialscope" || name == "re_market")
                         attribute = new PicklistAttributeMetadata { OptionSet = new OptionSetMetadata(new OptionMetadataCollection(
                             new[] { 126110000, 126110001, 126110002 }.Select(value => new OptionMetadata(new Label("", 1033), value)).ToList())) };
+                    else if (name == "re_catalogdetailsjson") attribute = new MemoAttributeMetadata { MaxLength = CatalogDetailsCapacity };
                     else if (name == "re_isenabled") attribute = new BooleanAttributeMetadata();
                     else if (name == "statecode") attribute = new StateAttributeMetadata();
                     else if (name == "re_effectivefrom" || name == "re_effectiveto" || name == "re_refreshedon") attribute = new DateTimeAttributeMetadata();

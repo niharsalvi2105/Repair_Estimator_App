@@ -31,7 +31,7 @@ test('catalog selling override is bounded and does not change cost totals', () =
     for (const sellingPrice of [0, -1, NaN, Infinity, 1000000001, 0.12345678901])
       assert.ok(materialEntryError({ ...material, sellingPrice }, language))
     assert.ok(materialEntryError({ ...material, sellingPrice: 10, catalogPartId: undefined }, language))
-    assert.ok(materialEntryError({ ...material, sellingPrice: 10, unitPrice: 0 }, language))
+    assert.equal(materialEntryError({ ...material, sellingPrice: 10, unitPrice: 0 }, language), undefined)
   }
 })
 

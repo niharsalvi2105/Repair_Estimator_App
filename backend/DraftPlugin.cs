@@ -82,6 +82,7 @@ namespace RepairEstimator.Drafts
         [DataMember(EmitDefaultValue = false)] public string uom;
         [DataMember(EmitDefaultValue = false)] public bool refreshPart;
         [DataMember(EmitDefaultValue = false)] public string pricingSource;
+        [DataMember(EmitDefaultValue = false)] public CatalogDetails catalogDetails;
     }
 
     [DataContract]
@@ -165,6 +166,8 @@ namespace RepairEstimator.Drafts
         [DataMember] public string mode;
         [DataMember(EmitDefaultValue = false)] public string search;
         [DataMember(EmitDefaultValue = false)] public string partType;
+        [DataMember(EmitDefaultValue = false)] public int partPage;
+        [DataMember(EmitDefaultValue = false)] public string catalogCursor;
         [DataMember(EmitDefaultValue = false)] public string presetName;
         [DataMember(EmitDefaultValue = false)] public string nextToken;
         [DataMember(EmitDefaultValue = false)] public string accountId;
@@ -852,7 +855,8 @@ namespace RepairEstimator.Drafts
             {
                 if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
                 var previous = priorMaterial.FirstOrDefault(r => r.Id.ToString() == line.id);
-                if (line.pricingSource == null && PackageMaterialPricing.Source(previous ?? new Entity(Material)) != null)
+                if (line.pricingSource == null && string.IsNullOrEmpty(line.catalogPartId) &&
+                    PackageMaterialPricing.Source(previous ?? new Entity(Material)) != null)
                     Fail("Reload the current app before editing package/manual material.");
                 if (line.quantity <= 0 || line.quantity > 100000 || decimal.Truncate(line.quantity) != line.quantity)
                     Fail("Material quantity must be a whole number from 1 to 100000.");
@@ -861,6 +865,7 @@ namespace RepairEstimator.Drafts
                         (line.unitCost <= 0 || line.unitCost > 1000000000 || decimal.Round(line.unitCost, 2) != line.unitCost)))
                     Fail("Invalid material quantity or unit cost (two decimals required).");
                 var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
+                if (!string.IsNullOrEmpty(line.catalogPartId)) row[PackageMaterialPricing.Mode] = null;
                 row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
                 SetLineEquipment(row, previous, line.equipmentNumber, line.packageId, input, equipment);
                 row["re_name"] = "Custom material";
@@ -1290,6 +1295,7 @@ namespace RepairEstimator.Drafts
                 markupPercent = e.GetAttributeValue<decimal?>("re_markuppct"),
                 unitPrice = e.GetAttributeValue<decimal?>("re_unitpriceprecise"),
                 sellingPrice = e.GetAttributeValue<decimal?>("re_sellingprice"),
+                catalogDetails = PartCatalog.ReadDetails(e),
                 uom = e.GetAttributeValue<string>("re_uom")
             }).ToList();
             foreach (var p in packageRows.OrderBy(p => p.GetAttributeValue<int?>("re_sequence") ??

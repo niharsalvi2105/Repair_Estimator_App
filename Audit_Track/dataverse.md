@@ -2,6 +2,108 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Full catalog visibility and estimate-only completion (2026-11-17, source only)
+
+Approved behavior replaces catalog selection eligibility, not master import
+ownership: all existing `re_sparepart` rows must be reachable under either
+selected estimate KONE/Non-KONE type, including inactive, expired, future and
+incomplete records. Read-only reconciliation matched all 37,461 valid source
+keys with no differences in checked number/type/state/currency/cost/VK13/unit/
+UOM/validity fields. Twelve source-error rows remain quarantined. No missing
+master row was created, activated or repriced.
+
+The prior active/effective/type filters explain the reported omissions.
+Catalog version 2 removes those filters, pages by part number/native GUID in
+groups of 20 and exposes original source values and diagnostic reasons. Native
+lookup GUID, not a guessed number or overlapping source key, identifies a
+selection. Selected estimate classification is independent of master
+`re_sparepart.re_parttype`: fixed 10% KONE markup applies to effective selling
+price only; Non-KONE has none. Master classification and import prefix policy
+are unchanged.
+
+New prerequisite: optional `re_estimatematerialline.re_catalogdetailsjson`,
+Memo with capacity 20000, described in
+`backend/catalog-transparency-schema.json`. It freezes server-generated
+version-1 JSON containing source identity/classification, state, dates/context,
+descriptions/UOM, raw and converted amounts, completion flags and reason codes.
+Client-supplied diagnostic JSON is not authoritative. Existing
+`re_sparepart` lookup, `re_source*`, conversion fields and zero/null
+`re_unitpriceprecise` retain source evidence; effective completed cost uses
+`re_unitcostprecise`, completed description/UOM use their existing material
+fields, and positive manually completed/overridden price uses `re_sellingprice`.
+These fields affect the estimate only, never the Spare Parts master.
+
+Manual completion is required before Save/Calculate when source cost,
+description, UOM or selling price is unusable. Monetary values are in estimate
+currency, positive through 1000000000, precision 10; UOM allows 20 characters,
+description 2000, quantity a whole 1-100000. No new UI-only input is omitted
+from persistence. Ordinary saves preserve diagnostic snapshots; reselection
+and clone explicitly refresh. Submitted/export locks and permissions remain.
+Pricing 2026.11 loads completed prices without requiring positive source VK13;
+frozen export capture includes the Memo automatically. Existing workbook/email
+presentation of every diagnostic field is not implemented or asserted.
+
+Actual deployment differs from source: a fresh read-only Dev capability call
+returned available with markup 10 but no `catalogVersion`; metadata confirmed
+the new Memo absent. The new frontend therefore reports a version-2 deployment
+requirement, not a new loss of master records. Publish schema first, then deploy
+Drafts, pricing and frontend together. No schema, plugin, app, business/master
+record or automation deployment/write occurred for this feature.
+
+Local validation: 53 focused Node cases, the catalog executable, three pricing
+integration cases, build/type-check, changed-source lint and 14 mocked browser
+cases passed. Browser coverage includes bilingual mobile/desktop completion,
+source evidence after save, both selected classifications, all continuation
+pages in the synthetic set, and explicit old-API rejection. This is not a
+published-tenant enumeration of 37,461 choices. Source/local synthetic evidence
+is distinct from read-only Dev evidence; version-2 tenant search, business-user
+permissions, Save/Load/Calculate and production deployment remain unverified.
+
+### Branch and Equipment relationship reconciliation (2026-11-17)
+
+The user approved exact, non-destructive mappings from the three supplied CSV
+files in the configured Dev environment: Branch parent to
+`re_branch.re_mappedequipmentbranch`, Planner Group primary Branch to
+`re_plannergroup.re_mainbranch`, and Equipment main Branch / Planner Group to
+`re_equipment.re_branch` / `re_equipment.re_plannergroup`. No schema, records,
+or unrelated fields were created, deleted, activated, or rewritten.
+
+The source contained 241 Branch rows, 556 Planner Group rows, and 428,396
+Equipment-link rows. Read-only preflight found 241 active Branches and 555
+active Planner Groups. All 154 supplied nonblank Branch-parent relationships
+had unique exact targets and were written to the empty mapped-equipment lookup;
+all 154 were read back exactly. The other 87 Branch source rows had no parent
+value and were left blank.
+
+Of the Planner Group rows with a primary Branch, 551 exact live identities
+already had the expected `re_mainbranch` lookup and required no write. Four
+source rows had no primary Branch, and one source identity had no exact live
+Planner Group match. No Planner Group rows were created or changed.
+
+For Equipment, 427,327 source keys matched one live Equipment record. Of the
+source rows with an explicit main Branch, 299,309 existing Branch lookups
+already matched, 86,316 empty lookups were filled and read back exactly, and
+40,763 existing different Branch lookups were preserved as conflicts. No
+Equipment Planner Group lookup was changed: resolvable existing assignments
+matched the source. These are source-row relationship counts, not a claim that
+all source Equipment records exist or are correctly linked.
+
+Unresolved: 1,120 source Equipment-link rows reference a Planner Group without
+an exact live target; 840 rows contain no Planner Group or Branch mapping;
+939 additional rows have a Planner Group but no main-Branch number; and 229
+source Equipment keys are absent from Dataverse. These categories may overlap
+and must not be summed. The 40,763 existing Branch conflicts remain untouched.
+No code/number normalization or name-based fallback was used.
+
+Validation: the source CSVs and live tables were reconciled using exact keys;
+the successful Dev write run read back all 154 Branch-parent and 86,316
+Equipment-Branch changes. Four focused local importer tests passed. The new
+`automation/apply-branch-equipment-mappings.py` is local source only; no app,
+plugin, schema, or solution deployment/publication occurred. The mapping is
+therefore improved but **not complete** pending authoritative resolution of
+the unmatched Planner Group, source gaps, absent Equipment, and existing
+conflicting Branch relationships.
+
 ### Equipment continuation preflight (November 12, read-only)
 
 The MKO Equipment checkpoint contained 5,328 pending rows referencing 59 distinct Account source IDs absent from the completed customer verification checkpoint. A fresh exact-source-ID tenant read also found none of those 59 Accounts. Of the pending Equipment keys, 3,998 were already present in the tenant and 1,330 were absent; key presence is not full-field or parent verification. Because the approved importer requires exact verified Account parents and never overwrites native conflicts, no Equipment write was safe or performed. The missing parent identities require authoritative correction and independent verification; no Account was created or guessed.
