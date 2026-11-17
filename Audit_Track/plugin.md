@@ -258,7 +258,7 @@ Draft API transaction
 - Equipment master must be active and branch/number match. Unlisted equipment creates **estimate snapshot only**, never equipment master.
 - Existing unchanged equipment/package/rate/material identities reuse snapshots; master changes are not silently reapplied on unrelated edit.
 - Packages validate currency/country/effective dates and nonnegative source hours/cost. Quantity scales with equipment.
-- Each CSTM needs labor/material association. Labor rate is exactly one active effective branch/role/time combination.
+- Each CSTM needs at least one labor or material association (labor-only and material-only packages are valid). Labor rate is exactly one active effective branch/role/time combination.
 - Material routes are distinct: legacy, approved catalog, manual non-KONE, package-priced KONE reference. Server resolves catalog conversion/snapshot, not client claimed values.
 - Reconciles removed children and desired Create/Update rows; dependency checks prevent orphaned retained custom lines.
 - Input200000 UTF-8 bytes; response1000000 bytes; child mutation budget1000 includes deletes and retained writes. Child/pricing read budgets also apply. No silent truncation; large replacement can exceed budget despite smaller final count.

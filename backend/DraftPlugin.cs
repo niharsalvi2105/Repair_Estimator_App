@@ -608,8 +608,8 @@ namespace RepairEstimator.Drafts
             foreach (var package in customPackages)
             {
                 var key = Id(package, "re_repairpackage");
-                if (!input.laborLines.Any(l => l.packageId == key) || !input.materialLines.Any(l => l.packageId == key))
-                    Fail("Each CSTM package requires at least one labor line and one material line.");
+                if (!input.laborLines.Any(l => l.packageId == key) && !input.materialLines.Any(l => l.packageId == key))
+                    Fail("Please enter either Labor or Material. At least one is required.");
             }
             var lineRows = BuildLines(service, input, priorLabor, priorMaterial, header, branch, currency,
                 old?.GetAttributeValue<EntityReference>("ownerid") ?? new EntityReference("systemuser", user), customPackages, equipmentRows);

@@ -891,7 +891,7 @@ Gated export:
 | Equipment workbook import | Local workbook plus master-number resolution | Estimate selections on later Save | Not a master-data upload to Dataverse. |
 | Remove equipment / selected package / custom line | Workspace state | Reconciled child deletion on successful Save | Removing a master selection does not delete the master. |
 | Select package / package cards | Active effective package in country/currency; preview rates | Package snapshot on Save | Quantity scales with selected equipment count. |
-| Add/edit CSTM labor | Branch/role/time effective labor rate | Labor child, frozen hourly rate and total on Save | Each CSTM needs at least one labor and material line. |
+| Add/edit CSTM labor | Branch/role/time effective labor rate | Labor child, frozen hourly rate and total on Save | Each CSTM needs at least one labor or material line; labor-only and material-only packages are valid. |
 | Add/edit manual material | Entered part, vendor, amount, flags | Material child and costs on Save | Current KONE/non-KONE and markup semantics still exist. |
 | Catalog material search | `partcapabilities` / `partcatalog`, gated part configuration | No catalog master writes; estimate snapshot on Save | Disabled/invalid configuration prevents selection. |
 | Package-priced KONE reference | Package material-before-markup | Package opt-in and material pricing-mode snapshots | Separate from spare-part catalog path. |

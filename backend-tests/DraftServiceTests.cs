@@ -824,7 +824,7 @@ static class DraftServiceTests
         {
             var service = Setup(); var input = Input();
             service.Rows[MasterPackage]["re_iscustompackage"] = true;
-            Reject(() => Run(service, input), "at least one labor line and one material line");
+            Reject(() => Run(service, input), "Please enter either Labor or Material");
             service.Add(new Entity("re_laborrate", Guid.NewGuid()) {
                 ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110000),
                 ["re_timecategory"] = new OptionSetValue(126110000), ["re_hourlycost"] = 100m,
@@ -862,7 +862,7 @@ static class DraftServiceTests
             Reject(() => Run(service, input), "Assign each custom line");
             input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
             input.laborLines[0].packageId = MasterPackage.ToString();
-            Reject(() => Run(service, input), "at least one labor line and one material line");
+            Reject(() => Run(service, input), "Please enter either Labor or Material");
             input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
             input.laborLines.Add(new LaborInput { packageId = second.Id.ToString(), role = 126110000, time = 126110000, hours = 3 });
             input.materialLines.Add(new MaterialInput { packageId = second.Id.ToString(), description = "Second", part = "MANUAL-2", quantity = 2, unitCost = 20 });

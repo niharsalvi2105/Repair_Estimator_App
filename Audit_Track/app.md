@@ -745,7 +745,7 @@ Sources: [PackageSelect](../src/PackageSelect.tsx), [PackageCostDetails](../src/
 | Material read-only total | Browser sum of visible material unit costs × quantities, before tax/freight |
 | Remove material | Local removal; does not delete spare-part master |
 | Labor/material Previous / Next |10 rows per page; active CSTM filtering applies |
-| Complete CSTM | Requires every selected CSTM to have valid labor and material; returns to package selection |
+| Complete CSTM | Requires every selected CSTM to have at least one valid labor or material entry (both blank shows "Please enter either Labor or Material. At least one is required."); returns to package selection |
 | Selected package costs / combined total | Browser previews; sums selected package preview totals |
 | Branch rate / catalog Retry | Specific failed read retry, not a Save |
 
