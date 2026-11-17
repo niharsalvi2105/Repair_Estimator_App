@@ -126,7 +126,6 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       ? 'Ajoutez un forfait CSTM ou supprimez explicitement toutes les lignes personnalisées et le prix VK13 avant d’enregistrer.'
       : 'Add a CSTM package or explicitly remove all custom lines and the VK13 price before saving.'}</p>}
     <h3>{fr ? 'Main-d’œuvre' : 'Labor'} ({matrix.length})</h3>
-    {importPanel('labor')}
     <div className="custom-grid-scroll" role="region" aria-label={fr ? 'Grille de main-d’œuvre' : 'Labor grid'} tabIndex={0}>
       <table className="custom-cost-grid custom-labor-grid">
         <caption>{fr ? 'Détail des heures de main-d’œuvre' : 'Labor Hours Breakdown'}</caption>
@@ -173,8 +172,8 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       onClick={() => setLabor(lines => [...lines, { id: crypto.randomUUID(),
         packageId: activePackageId ?? (packages.length === 1 ? packages[0].id : undefined),
         role: 126110000, time: 126110000, hours: 0 }])}>{fr ? 'Ajouter main-d’œuvre' : 'Add labor'}</button>}
+    {importPanel('labor')}
     <h3>{fr ? 'Matériaux' : 'Materials'} ({visibleMaterials.length})</h3>
-    {importPanel('material')}
     {enabled && hasCatalogLines && !capability?.available && <div className="draft-notice" role="status">
       <p>{!catalogState ? (fr ? 'Vérification du catalogue de pièces…' : 'Checking spare-parts catalog…')
         : fr ? 'Catalogue indisponible. La saisie manuelle Non-KONE reste disponible.'
@@ -259,5 +258,6 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         packageId: activePackageId ?? (packages.length === 1 ? packages[0].id : undefined),
         description: '', vendor: '', part: '', quantity: 1, unitCost: 0, partType: 'kone' }])}>
       {fr ? 'Ajouter un matériau' : 'Add material'}</button>}
+    {importPanel('material')}
   </section>
 }

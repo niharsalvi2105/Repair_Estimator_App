@@ -40,7 +40,9 @@ values and whitespace-only values show a localized inline error and block Next,
 Save, Submit and Calculate. Blank remains valid because phone is optional.
 Linked Contact phone values remain source-authoritative and read-only; they are
 not rewritten by this validation. The error appears while invalid text is being
-typed, before any action is attempted.
+typed, before any action is attempted. The message is a block element between the
+label and the input (`.field-label > .field-error` in `App.css`); previously it
+was inline with the label and wrapped over the input in the customer section.
 
 Seven focused phone/request unit tests and the backend fake-pipeline phone
 selector passed. An EN/FR browser regression was added but could not run because
@@ -128,7 +130,7 @@ All rows are rendered within horizontally scrollable table regions, preserving u
 
 ### Equipment-specific CSTM Excel imports (local source, not deployed)
 
-Each open CSTM package now has separate labor and material Excel panels, matching the equipment-import layout: Download Excel template, Upload Excel file, format/rules and explicit feedback. Templates have a blank entry sheet plus an Instructions sheet with synthetic examples and the package's eligible equipment numbers. Labor columns are Equipment Number, Mechanic ST, Mechanic DT, Helper ST, Helper DT, Adjuster ST, Adjuster DT; positive cells expand into individual role/time rows, blanks/zeros are skipped. Material columns are Equipment Number, Material Description, Vendor Name, Part Mfg, Part #, Quantity, Unit Cost. The template headers remain English in either UI language; notices, errors and confirmation are EN/FR.
+Each open CSTM package now has separate labor and material Excel panels, matching the equipment-import layout: Download Excel template, Upload Excel file, format/rules and explicit feedback. In each CSTM section the Labor Hours Breakdown and Material Breakdown grids now appear first, with their import panels below them (layout only; local source, not deployed). Templates have a blank entry sheet plus an Instructions sheet with synthetic examples and the package's eligible equipment numbers. Labor columns are Equipment Number, Mechanic ST, Mechanic DT, Helper ST, Helper DT, Adjuster ST, Adjuster DT; positive cells expand into individual role/time rows, blanks/zeros are skipped. Material columns are Equipment Number, Material Description, Vendor Name, Part Mfg, Part #, Quantity, Unit Cost. The template headers remain English in either UI language; notices, errors and confirmation are EN/FR.
 
 Uploads replace only the currently open package's corresponding line type after confirmation. Other packages and the other line type are preserved. Invalid files, cancel, unavailable/ambiguous KONE catalog matches or changed draft state leave existing lines untouched. Files must be .xlsx, at most 5 MB, with one data sheet (Instructions is ignored). Headers, plain scalar cells, exact selected-package equipment identifiers including zeros, expanded labor counts, text/numeric bounds, full UTF-8 request size and create/update/delete operation budget are checked before replacement; formulas, dates, links and errors are rejected. Labor hours: positive, at most 100000 with two decimals; material quantity: whole 1..100000; manual unit cost: positive, at most 1000000000 with two decimals; description/optional vendor/part limits: 2000/100/100. Equipment numbers are at most 20 characters without whitespace. Vendor remains optional, matching manual entry.
 

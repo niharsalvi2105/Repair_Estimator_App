@@ -699,6 +699,11 @@
   font-weight: 600;
 }
 
+.field-label > .field-error {
+  display: block;
+  margin-top: 4px;
+}
+
 [data-theme='dark'] .field-error {
   color: #ffb4ab;
 }
