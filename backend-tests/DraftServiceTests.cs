@@ -825,6 +825,60 @@ static class DraftServiceTests
             var service = Setup(); var input = Input();
             service.Rows[MasterPackage]["re_iscustompackage"] = true;
             Reject(() => Run(service, input), "Please enter either Labor or Material");
+            foreach (var laborOnly in new[] { true, false })
+            {
+                var singleService = Setup(); var singleInput = Input();
+                singleService.Rows[MasterPackage]["re_iscustompackage"] = true;
+                singleService.Add(new Entity("re_laborrate", Guid.NewGuid()) {
+                    ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110000),
+                    ["re_timecategory"] = new OptionSetValue(126110000), ["re_hourlycost"] = 100m,
+                    ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
+                });
+                var singleLabor = new LaborInput {
+                    packageId = MasterPackage.ToString(), role = 126110000, time = 126110000, hours = 2
+                };
+                var singleMaterial = new MaterialInput {
+                    packageId = MasterPackage.ToString(), description = "Material", part = "MANUAL-1", quantity = 1, unitCost = 10
+                };
+                singleInput.laborLines = new List<LaborInput>();
+                singleInput.materialLines = new List<MaterialInput>();
+                if (laborOnly) singleInput.laborLines.Add(singleLabor);
+                else singleInput.materialLines.Add(singleMaterial);
+                Run(singleService, singleInput);
+                var singleLoaded = Load(singleService, singleInput);
+                Assert(singleLoaded.laborLines.Count == (laborOnly ? 1 : 0)
+                    && singleLoaded.materialLines.Count == (laborOnly ? 0 : 1),
+                    "Single-type custom packages must save and reload");
+                var retainedId = laborOnly ? singleLoaded.laborLines.Single().id : singleLoaded.materialLines.Single().id;
+                Assert(laborOnly
+                    ? singleLoaded.laborLines.Single().packageId == MasterPackage.ToString() && singleLoaded.laborLines.Single().hours == 2
+                    : singleLoaded.materialLines.Single().packageId == MasterPackage.ToString() && singleLoaded.materialLines.Single().unitCost == 10,
+                    "Single-type custom costs must retain their values and package association");
+
+                singleInput.version = singleLoaded.version;
+                singleInput.laborLines = singleLoaded.laborLines; singleInput.materialLines = singleLoaded.materialLines;
+                if (laborOnly) singleInput.materialLines.Add(singleMaterial);
+                else singleInput.laborLines.Add(singleLabor);
+                Run(singleService, singleInput);
+                singleLoaded = Load(singleService, singleInput);
+                Assert(singleLoaded.laborLines.Count == 1 && singleLoaded.materialLines.Count == 1,
+                    "Both line types must exist before testing removal");
+                var removedId = laborOnly ? singleLoaded.materialLines.Single().id : singleLoaded.laborLines.Single().id;
+                singleInput.version = singleLoaded.version;
+                singleInput.laborLines = singleLoaded.laborLines; singleInput.materialLines = singleLoaded.materialLines;
+                if (laborOnly) singleInput.materialLines.Clear();
+                else singleInput.laborLines.Clear();
+                Run(singleService, singleInput);
+                singleLoaded = Load(singleService, singleInput);
+                Assert(singleLoaded.laborLines.Count == (laborOnly ? 1 : 0)
+                    && singleLoaded.materialLines.Count == (laborOnly ? 0 : 1)
+                    && !singleService.Rows.ContainsKey(Guid.Parse(removedId)),
+                    "Removing the last line of one type must preserve the other type");
+                Assert(laborOnly
+                    ? singleLoaded.laborLines.Single().id == retainedId && singleLoaded.laborLines.Single().packageId == MasterPackage.ToString()
+                    : singleLoaded.materialLines.Single().id == retainedId && singleLoaded.materialLines.Single().packageId == MasterPackage.ToString(),
+                    "Retained custom lines must preserve their identity and package association");
+            }
             service.Add(new Entity("re_laborrate", Guid.NewGuid()) {
                 ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110000),
                 ["re_timecategory"] = new OptionSetValue(126110000), ["re_hourlycost"] = 100m,
