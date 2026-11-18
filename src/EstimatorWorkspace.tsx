@@ -144,7 +144,7 @@ export default function EstimatorWorkspace({
   const [packagePage, setPackagePage] = useState(0)
   const [activeCustom, setActiveCustom] = useState<string>()
   const [customError, setCustomError] = useState('')
-  const [customValidationAttempted, setCustomValidationAttempted] = useState(false)
+  const [showCustomFieldErrors, setShowCustomFieldErrors] = useState(false)
   const [preview, setPreview] = useState<{ signature: string; total?: number; error?: string }>()
   const [rateResult, setRateResult] = useState<{ branchId: string; rates?: CostRate[]; error?: string }>()
   const [rateAttempt, setRateAttempt] = useState(0)
@@ -287,6 +287,7 @@ export default function EstimatorWorkspace({
     .map(field => [field.id, field.message ?? mandatory]))
   if (phoneError) errors['customer-phone'] = phoneError
   function validateRequired(action: 'next' | 'save' | 'submit') {
+    if (action !== 'next' && customValidation) setShowCustomFieldErrors(true)
     const fields = requirements.filter(field => action === 'next'
       ? field.step === step && field.navigation
       : !field.submitOnly || action === 'submit')
@@ -349,7 +350,7 @@ export default function EstimatorWorkspace({
   function calculatePreview() {
     try {
       if (customValidation) {
-        setCustomValidationAttempted(true)
+        setShowCustomFieldErrors(true)
         throw new Error(customValidation)
       }
       if (!currency || !assignmentValid || !selectedPackages.length) throw new Error(language === 'fr'
@@ -376,17 +377,28 @@ export default function EstimatorWorkspace({
   </section>
   function clearCustomValidation() {
     setCustomError('')
-    setCustomValidationAttempted(false)
+    setShowCustomFieldErrors(false)
   }
   function choosePackage(p: RepairPackage) {
     const adding = !selectedPackageIds.has(p.re_repairpackageid)
     togglePackage(p)
-    if (adding && p.re_iscustompackage) { setActiveCustom(p.re_repairpackageid); clearCustomValidation(); setStep(3) }
+    if (adding && p.re_iscustompackage) {
+      setActiveCustom(p.re_repairpackageid); clearCustomValidation(); setStep(3)
+    }
+  }
+  function reportFirstInvalidCustomField() {
+    const controls = requestSection.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+      'input, select, textarea',
+    )
+    const invalid = Array.from(controls ?? []).find(control => !control.checkValidity())
+    if (!invalid) return false
+    invalid.reportValidity()
+    return true
   }
   function finishCustomPackage() {
-    if (customValidation) { setCustomError(''); setCustomValidationAttempted(true); return }
-    const controls = requestSection.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')
-    if (controls && !Array.from(controls).every((input) => input.reportValidity())) return
+    setShowCustomFieldErrors(true)
+    if (reportFirstInvalidCustomField()) return
+    if (customValidation) return
     try {
       // Validate the entered package costs before estimate-wide tax/freight are configured.
       for (const p of customPackages) calculatePackageCost(p, quantityFor(p), rates, costInputs.time,
@@ -896,7 +908,7 @@ export default function EstimatorWorkspace({
                           <p>{localizeScope(repairPackage, language) || t.noScope}</p>
                         </div>
                         {repairPackage.re_iscustompackage && <button className="button secondary small" onClick={() => {
-                            setActiveCustom(repairPackage.re_repairpackageid); clearCustomValidation(); setStep(3)
+                          setActiveCustom(repairPackage.re_repairpackageid); clearCustomValidation(); setStep(3)
                         }}>{language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs'}</button>}
                       </div>
                       <div className="selected-package-pricing">
@@ -970,6 +982,7 @@ export default function EstimatorWorkspace({
             </div>}
             {step === 3 && ((activeCustom && hasCustom) || (!hasCustom && (laborLines.length > 0 || materialLines.length > 0))) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
+                showValidationErrors={showCustomFieldErrors}
                 rates={rates}
                 childCount={selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length}
                 validateImport={validateCostImport}
@@ -986,8 +999,7 @@ export default function EstimatorWorkspace({
                     [field === 'name'
                       ? language === 'fr' ? 're_packagenamefr' : 're_packagenameen'
                       : language === 'fr' ? 're_proposalscopefr' : 're_proposalscopeen']: value }))}
-                activePackageId={activeCustom} currency={currency}
-                showValidationErrors={customValidationAttempted} />}
+                activePackageId={activeCustom} currency={currency} />}
             {step === 3 && customValidation && <p role="alert" className="error-box">{customValidation}</p>}
             {step === 3 && customError && customError !== customValidation &&
               <p role="alert" className="error-box">{customError}</p>}
@@ -1105,9 +1117,11 @@ export default function EstimatorWorkspace({
             <button
               className="button primary"
               onClick={() => {
+                if (step === 3) setShowCustomFieldErrors(true)
                 if (!validateRequired('next')) return
                 if (step === 3 && activeCustom) { finishCustomPackage(); return }
-                if (step === 3 && customValidation) { setCustomError(''); setCustomValidationAttempted(true); return }
+                if (step === 3 && reportFirstInvalidCustomField()) return
+                if (step === 3 && customValidation) { setCustomError(''); return }
                 const inputs = requestSection.current?.querySelectorAll<HTMLInputElement>('input')
                 if (inputs && !Array.from(inputs).every((input) =>
                   step === 1 && input.id === 'customer-email' || input.reportValidity())) return

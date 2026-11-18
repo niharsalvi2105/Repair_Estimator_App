@@ -377,10 +377,12 @@ Draft API transaction
 - Equipment master must be active and branch/number match. Unlisted equipment creates **estimate snapshot only**, never equipment master.
 - Existing unchanged equipment/package/rate/material identities reuse snapshots; master changes are not silently reapplied on unrelated edit.
 - Packages validate currency/country/effective dates and nonnegative source hours/cost. Quantity scales with equipment.
-- Each CSTM needs at least one labor or material association (labor-only and material-only packages are valid). Labor rate is exactly one active effective branch/role/time combination.
+- Each CSTM needs at least one associated labor or material line; if both are absent, Save returns `Please enter either Labor or Material. At least one is required.` Every supplied line is still validated. Labor rate is exactly one active effective branch/role/time combination.
 - Material routes are distinct: legacy, approved catalog, manual non-KONE, package-priced KONE reference. Server resolves catalog conversion/snapshot, not client claimed values.
 - Reconciles removed children and desired Create/Update rows; dependency checks prevent orphaned retained custom lines.
 - Input200000 UTF-8 bytes; response1000000 bytes; child mutation budget1000 includes deletes and retained writes. Child/pricing read budgets also apply. No silent truncation; large replacement can exceed budget despite smaller final count.
+
+The local validation correction preserves the existing package/labor/material tables and columns; no registration, permission, API shape or deployment changed. Draft service tests and the backend build passed locally. No tenant verification or plugin publication was performed, so deployed behavior may still require both line types.
 
 ### Snapshot plugins are guards, not copy engines
 

@@ -2222,7 +2222,7 @@ for (const language of ['en', 'fr']) for (const width of [320, 1366]) {
     await material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true }).fill('10')
     const equipment = material.getByRole('combobox', { name: label('Equipment Number', 'Numéro d’équipement'), exact: true })
     await expect(material.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('')
-    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor needs|Les lignes CSTM exigent/ })).toHaveCount(1)
+    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor lines need|Les lignes de main-d’œuvre CSTM exigent/ })).toHaveCount(1)
     await expect(equipment).toHaveValue('')
     await next(page)
 
@@ -2233,11 +2233,11 @@ for (const language of ['en', 'fr']) for (const width of [320, 1366]) {
     await expect(equipment).not.toHaveAttribute('aria-invalid', 'true')
     await expect(page.locator('.custom-cost-lines')).toContainText(label(
       'Equipment Number is optional.', 'Numéro d’équipement facultatif :'))
-    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor needs|Les lignes CSTM exigent/ })).toHaveCount(1)
+    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor lines need|Les lignes de main-d’œuvre CSTM exigent/ })).toHaveCount(1)
 
     await description.fill('Manual bracket')
     await expect(description).not.toHaveAttribute('aria-invalid', 'true')
-    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor needs|Les lignes CSTM exigent/ })).toHaveCount(0)
+    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor lines need|Les lignes de main-d’œuvre CSTM exigent/ })).toHaveCount(0)
   })
 }
 

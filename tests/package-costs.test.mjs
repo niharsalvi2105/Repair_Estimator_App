@@ -51,6 +51,8 @@ test('each custom package requires assigned positive labor or material entries',
   assert.equal(customCostsError(['a'], [], materials, 'en'), undefined)
   assert.equal(customCostsError(['a'], [], [], 'en'), 'Please enter either Labor or Material. At least one is required.')
   assert.ok(customCostsError(['a', 'b'], labor, materials, 'en'))
+  assert.match(customCostsError(['a'], [], [{ ...materials[0], description: '', unitCost: 0 }], 'en') ?? '',
+    /Each material line needs a description, positive quantity and positive unit cost/)
   for (const hours of [0, -1, NaN]) assert.ok(customCostsError(['a'], [{ ...labor[0], hours }], materials, 'en'))
   for (const change of [{ quantity: 0 }, { quantity: 1.5 }, { part: ' ' }, { unitCost: 0 }, { description: ' ' }, { packageId: null }])
     assert.ok(customCostsError(['a'], labor, [{ ...materials[0], ...change }], 'en'))
@@ -75,6 +77,8 @@ test('custom previews isolate packages, use branch role/time rates and count ent
   const materials = [{ id: 'm', packageId: 'a', part: 'MOTOR-1', description: 'Motor', quantity: 2, unitCost: 25 }]
   assert.deepEqual(calculatePackageCost(p, 3, rates, 126110000, 5, 10, labor, materials),
     { hours: 2, rate: 100, labor: 400, material: 50, total: 457.5 })
+  assert.doesNotThrow(() => calculatePackageCost(p, 3, rates, 126110000, 5, 10, labor, []))
+  assert.doesNotThrow(() => calculatePackageCost(p, 3, rates, 126110000, 5, 10, [], materials))
   assert.equal(calculatePackageCost(p, 3, rates, 126110000, 8, 20, labor, materials).total, 464)
   assert.throws(() => calculatePackageCost(p, 3, rates, 126110000, NaN, NaN, labor, materials), /invalid/)
   assert.throws(() => calculatePackageCost(p, 3, [], 126110000, 5, 10, labor, materials), /missing or ambiguous/)
