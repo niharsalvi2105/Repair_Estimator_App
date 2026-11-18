@@ -982,6 +982,7 @@ export default function EstimatorWorkspace({
             </div>}
             {step === 3 && ((activeCustom && hasCustom) || (!hasCustom && (laborLines.length > 0 || materialLines.length > 0))) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
+                showValidationErrors={showCustomFieldErrors}
                 rates={rates}
                 childCount={selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length}
                 validateImport={validateCostImport}
