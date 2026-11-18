@@ -2186,6 +2186,61 @@ test('CSTM part lookup reports no matches and service errors then recovers after
   await expect(page.getByLabel('Material', { exact: true })).toHaveValue('7.73178 USD')
 })
 
+for (const language of ['en', 'fr']) for (const width of [320, 1366]) {
+  test(`CSTM breakdowns and Excel imports are grouped in order at ${width}px ${language}`, async ({ page }) => {
+    const fr = language === 'fr'
+    const label = (en, french) => fr ? french : en
+    await openCatalogMaterial(page, true, language, width)
+    const root = page.locator('.custom-cost-lines')
+    const materialBreakdown = root.locator('.custom-cost-breakdown').nth(0)
+    const laborBreakdown = root.locator('.custom-cost-breakdown').nth(1)
+    const materialPanel = root.getByRole('region', { name: `${fr ? 'Matériaux' : 'Materials'} Excel import`, exact: true })
+    const laborPanel = root.getByRole('region', { name: `${fr ? 'Main-d’œuvre' : 'Labor'} Excel import`, exact: true })
+
+    await expect(materialBreakdown.locator('.custom-material-grid caption')).toHaveText(label('Material Breakdown', 'Détail des matériaux'))
+    await expect(materialBreakdown.getByRole('button', { name: label('Add material', 'Ajouter un matériau'), exact: true })).toBeVisible()
+    await expect(materialPanel.getByRole('heading')).toHaveText(fr ? 'Importer : matériaux' : 'Import Materials from Excel')
+    await expect(laborBreakdown.locator('.custom-labor-grid caption')).toHaveText(label('Labor Hours Breakdown', 'Détail des heures de main-d’œuvre'))
+    await expect(laborBreakdown.getByRole('button', { name: label('Add labor', 'Ajouter main-d’œuvre'), exact: true })).toBeVisible()
+    await expect(laborPanel.getByRole('heading')).toHaveText(fr ? 'Importer : main-d’œuvre' : 'Import Labor from Excel')
+    expect(await materialBreakdown.evaluate((element, next) => element.nextElementSibling === next, await materialPanel.elementHandle())).toBe(true)
+    expect(await laborBreakdown.evaluate((element, next) => element.nextElementSibling === next, await laborPanel.elementHandle())).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
+}
+
+for (const language of ['en', 'fr']) for (const width of [320, 1366]) {
+  test(`CSTM missing material description is highlighted while package sharing remains valid at ${width}px ${language}`, async ({ page }) => {
+    const fr = language === 'fr'
+    const label = (en, french) => fr ? french : en
+    const material = (await openCatalogMaterial(page, false, language, width)).first()
+    await material.getByRole('combobox', { name: label('Part type', 'Type de pièce'), exact: true }).selectOption('non-kone')
+    await material.getByRole('button', {
+      name: label('Use manual entry without catalog', 'Utiliser la saisie manuelle sans catalogue'), exact: true,
+    }).click()
+    await material.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true }).fill('P-100')
+    await material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true }).fill('10')
+    const equipment = material.getByRole('combobox', { name: label('Equipment Number', 'Numéro d’équipement'), exact: true })
+    await expect(material.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('')
+    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor needs|Les lignes CSTM exigent/ })).toHaveCount(1)
+    await expect(equipment).toHaveValue('')
+    await next(page)
+
+    await expect(page.locator('.custom-cost-lines')).toBeVisible()
+    const description = material.getByRole('textbox', { name: 'Description', exact: true })
+    await expect(description).toHaveAttribute('aria-invalid', 'true')
+    await expect(material).toContainText(label('Material description is required.', 'La description du matériau est obligatoire.'))
+    await expect(equipment).not.toHaveAttribute('aria-invalid', 'true')
+    await expect(page.locator('.custom-cost-lines')).toContainText(label(
+      'Equipment Number is optional.', 'Numéro d’équipement facultatif :'))
+    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor needs|Les lignes CSTM exigent/ })).toHaveCount(1)
+
+    await description.fill('Manual bracket')
+    await expect(description).not.toHaveAttribute('aria-invalid', 'true')
+    await expect(page.getByRole('alert').filter({ hasText: /CSTM labor needs|Les lignes CSTM exigent/ })).toHaveCount(0)
+  })
+}
+
 for (const language of ['en', 'fr']) {
   test(`CSTM Excel imports download templates, replace atomically and retain equipment after save in ${language}`, async ({ page }, testInfo) => {
     const fr = language === 'fr'
