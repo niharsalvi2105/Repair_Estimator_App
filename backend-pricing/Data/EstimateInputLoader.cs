@@ -86,17 +86,9 @@ namespace RepairEstimator.Plugins.Data
                 loaded.RedundancyCount = 1;
             }
 
-            if (input.IsCustomPath)
-            {
-                var taxes = TaxDefaults.Resolve(est, province, branch, input.Parameters);
-                input.UseTaxPct = taxes.UseTax;
-                input.FreightPct = taxes.Freight;
-            }
-            else
-            {
-                input.UseTaxPct = EstimateInput.StandardUseTax;
-                input.FreightPct = EstimateInput.StandardFreight;
-            }
+            var taxes = TaxDefaults.Resolve(est, province, branch, input.Parameters);
+            input.UseTaxPct = taxes.UseTax;
+            input.FreightPct = taxes.Freight;
 
             if (loaded.MarginGroup != null)
             {

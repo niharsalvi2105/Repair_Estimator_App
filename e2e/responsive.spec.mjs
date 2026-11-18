@@ -1486,8 +1486,8 @@ async function completeDraft(page, viewport = { width: 1366, height: 768 }, lang
   await next(page)
   await expect(page.locator('#request-re_usetax')).toHaveValue('5.00')
   await expect(page.locator('#request-re_freight')).toHaveValue('14.00')
-  await expect(page.locator('#request-re_usetax')).not.toBeEditable()
-  await expect(page.locator('#request-re_freight')).not.toBeEditable()
+  await expect(page.locator('#request-re_usetax')).toBeEditable()
+  await expect(page.locator('#request-re_freight')).toBeEditable()
   await expect(page.locator('#request-re_additionallaborhours')).toBeEditable()
   await next(page)
   await page.locator('#request-re_sellprice').fill('1500')
@@ -1760,7 +1760,7 @@ for (const language of ['en', 'fr']) {
     await page.addInitScript(() => { window.__largeRates = true })
     await completeDraft(page, { width: 1366, height: 900 }, language)
     for (let i = 0; i < 2; i++) await page.locator('.form-footer > button').click()
-    await expect(page.locator('#request-re_usetax')).not.toBeEditable()
+    await expect(page.locator('#request-re_usetax')).toBeEditable()
     await page.locator('.form-footer > button').click()
     const card = page.locator('.selected-package-card').first()
     await expect(card.locator('.package-cost-pending')).toHaveCount(0)
@@ -2232,19 +2232,22 @@ for (const width of [320, 1366]) {
     for (let i = 0; i < 2; i++) await page.locator('.form-footer > button').click()
     await expect(page.getByRole('heading', { name: 'Additional details', exact: true })).toBeVisible()
     await expect(page.locator('.custom-cost-lines')).toHaveCount(0)
-    await expect(page.locator('#request-re_usetax')).not.toBeEditable()
-    await expect(page.locator('#request-re_freight')).not.toBeEditable()
+    await expect(page.locator('#request-re_usetax')).toBeEditable()
+    await expect(page.locator('#request-re_freight')).toBeEditable()
     for (const [key, value] of [
       ['re_additionallaborhours', '1'], ['re_additionalmaterial', '10'],
       ['re_additionalmiscellaneous', '5'], ['re_additionalscope', 'Additional site work'],
+      ['re_usetax', '8'], ['re_freight', '20'],
     ]) {
       await expect(page.locator(`#request-${key}`)).toBeEditable()
+      await page.locator(`#request-${key}`).focus()
       await page.locator(`#request-${key}`).fill(value)
     }
     await expect(page.locator('.form-main')).not.toContainText('Select a CSTM package to edit additional costs')
     await next(page)
     await page.locator('.local-calculate-action').click()
-    await expect(page.locator('.local-cost-total')).toContainText('377.35')
+    await expect(page.locator('.local-cost-total')).toContainText('378.70')
+    await expect(page.locator('.package-combined-total dd')).toHaveText('259.50 USD')
     await next(page)
     await page.locator('.draft-save-action').click()
     await expect(page.locator('.draft-saved')).toBeVisible()
@@ -2252,6 +2255,7 @@ for (const width of [320, 1366]) {
     expect(fields).toEqual(expect.arrayContaining([
       { key: 're_additionallaborhours', value: '1' }, { key: 're_additionalmaterial', value: '10' },
       { key: 're_additionalmiscellaneous', value: '5' }, { key: 're_additionalscope', value: 'Additional site work' },
+      { key: 're_usetax', value: '8' }, { key: 're_freight', value: '20' },
     ]))
     await page.locator('.draft-secondary-actions button').nth(1).click()
     await next(page)
@@ -2260,6 +2264,8 @@ for (const width of [320, 1366]) {
     await expect(page.locator('#request-re_additionalmaterial')).toHaveValue('10.00')
     await expect(page.locator('#request-re_additionalmiscellaneous')).toHaveValue('5.00')
     await expect(page.locator('#request-re_additionalscope')).toHaveValue('Additional site work')
+    await expect(page.locator('#request-re_usetax')).toHaveValue('8.00')
+    await expect(page.locator('#request-re_freight')).toHaveValue('20.00')
   })
 
   test(`all three package costs carry forward before additions without reopening CSTM at ${width}px`, async ({ page }, testInfo) => {
@@ -4397,7 +4403,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 1366, height: 768 
 }
 
 for (const width of [320, 1366]) {
-  test(`standard rates stay locked after saving and reloading at ${width}px`, async ({ page }) => {
+  test(`additional rates remain editable after saving and reloading at ${width}px`, async ({ page }) => {
     await completeDraft(page, { width, height: 900 })
     await page.locator('.draft-save-action').click()
     await expect(page.locator('.draft-saved')).toBeVisible()
@@ -4413,8 +4419,8 @@ for (const width of [320, 1366]) {
     await next(page)
     await expect(page.locator('#request-re_usetax')).toHaveValue('5.00')
     await expect(page.locator('#request-re_freight')).toHaveValue('14.00')
-    await expect(page.locator('#request-re_usetax')).not.toBeEditable()
-    await expect(page.locator('#request-re_freight')).not.toBeEditable()
+    await expect(page.locator('#request-re_usetax')).toBeEditable()
+    await expect(page.locator('#request-re_freight')).toBeEditable()
     await expect(page.locator('.unsaved-badge')).toContainText('Draft saved')
   })
 

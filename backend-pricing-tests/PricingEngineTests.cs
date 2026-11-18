@@ -431,6 +431,31 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
+        public void Edited_additional_rates_do_not_change_standard_package_subtotal()
+        {
+            var input = Baseline();
+            input.AdditionalLaborHours = 2m;
+            input.AdditionalMaterial = 100m;
+            input.AdditionalMisc = 50m;
+            var before = PricingEngine.Calculate(input);
+            input.UseTaxPct = .08m;
+            input.FreightPct = .20m;
+            var after = PricingEngine.Calculate(input);
+            Assert.Equal(before.PackageEstimatedCost, after.PackageEstimatedCost);
+            Assert.Equal(before.PackageLaborCost, after.PackageLaborCost);
+            Assert.Equal(before.AdditionalLaborCost, after.AdditionalLaborCost);
+            Assert.Equal(before.TotalAdditionalCost + 13.50m, after.TotalAdditionalCost);
+            Assert.Equal(before.TotalTrueCost + 13.50m, after.TotalTrueCost);
+            Assert.Equal(before.UseTaxAmount + 4.50m, after.UseTaxAmount);
+            Assert.Equal(before.FreightAmount + 9m, after.FreightAmount);
+            input.UseTaxPct = 0m;
+            input.FreightPct = 0m;
+            var zero = PricingEngine.Calculate(input);
+            Assert.Equal(before.PackageEstimatedCost, zero.PackageEstimatedCost);
+            Assert.Equal(before.TotalAdditionalCost - 28.50m, zero.TotalAdditionalCost);
+        }
+
+        [Fact]
         public void Equipment_count_adds_comma_separated_additional_equipment_and_multiplies_package_costs()
         {
             var i = Baseline();

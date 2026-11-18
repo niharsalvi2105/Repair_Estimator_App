@@ -270,7 +270,7 @@ static class DraftServiceTests
         Assert(decimal.Parse(result.fields.Single(f => f.key == "re_usetax").value,
             System.Globalization.CultureInfo.InvariantCulture) == 5m, "Percentage roundtrip");
         Assert(decimal.Parse(result.fields.Single(f => f.key == "re_freight").value,
-            System.Globalization.CultureInfo.InvariantCulture) == 14m, "Standard freight overrides submitted zero");
+            System.Globalization.CultureInfo.InvariantCulture) == 0m, "Additional freight preserves submitted zero on standard estimates");
         Assert(service.Rows.Values.Single(e => e.LogicalName == "re_estimateequipment").GetAttributeValue<bool>("re_isprimary"),
             "First equipment must be primary");
         Assert(service.Rows.Values.Single(e => e.LogicalName == "re_estimatepackage").GetAttributeValue<int>("re_quantity") == 1,

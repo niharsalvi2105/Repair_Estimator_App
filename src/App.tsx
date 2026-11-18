@@ -469,7 +469,8 @@ function App() {
   const customRatesInitialized = useRef(false)
   const requestInputs = useMemo<RequestInputs>(() => selectedPackages.some((p) => p.re_iscustompackage)
     ? editableRequestInputs
-    : { ...editableRequestInputs, re_usetax: '5', re_freight: '14' }, [editableRequestInputs, selectedPackages])
+    : { ...editableRequestInputs, re_usetax: editableRequestInputs.re_usetax ?? '5',
+      re_freight: editableRequestInputs.re_freight ?? '14' }, [editableRequestInputs, selectedPackages])
   const [draftReferences, setDraftReferences] = useState<DraftReferences>()
   const [draftReferenceError, setDraftReferenceError] = useState('')
   const [stateId, setStateId] = useState('')
@@ -802,8 +803,8 @@ function App() {
     const province = draftReferences?.states.find((s) => s.id === branch?._re_stateprovince_value)
     setRequestInputs((current) => ({
       ...current,
-      re_usetax: typeof branch?.re_defaultusetax !== 'number' ? '' : String(branch.re_defaultusetax * 100),
-      re_freight: typeof branch?.re_defaultfreight !== 'number' ? '' : String(branch.re_defaultfreight * 100),
+      re_usetax: '5',
+      re_freight: '14',
       re_timecategory: current.re_timecategory || '126110000',
       re_proposallanguage: province?.frenchRequired ? '126110001' : current.re_proposallanguage || (language === 'fr' ? '126110001' : '126110000'),
     }))
@@ -909,10 +910,6 @@ function App() {
       equipmentNumbers: item.equipmentNumbers,
     }))
     const customIds = packages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid)
-    if (!customIds.length) {
-      inputs.re_usetax = '5'
-      inputs.re_freight = '14'
-    }
     const labor = (record.laborLines ?? []).map((line) => ({ ...line,
       packageId: line.packageId || (customIds.length === 1 ? customIds[0] : undefined) }))
     const materials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '',

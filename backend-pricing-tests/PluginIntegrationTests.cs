@@ -17,6 +17,35 @@ namespace RepairEstimator.Tests
 {
     public class PluginIntegrationTests
     {
+        [Fact]
+        public void Standard_additional_rates_roundtrip_without_changing_package_subtotal()
+        {
+            var db = new Pipeline();
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.fields.Single(f => f.key == "re_usetax").value = "8";
+            request.fields.Single(f => f.key == "re_freight").value = "20";
+            request.fields.Add(new Field { key = "re_additionalmaterial", value = "100" });
+            request.fields.Add(new Field { key = "re_additionalmiscellaneous", value = "50" });
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            var header = db.Rows[db.EstimateId];
+            Assert.Equal(.08m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
+            Assert.Equal(.20m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
+            Assert.Equal(319m, header.GetAttributeValue<Money>(Names.Estimate.PackageEstimatedCost).Value);
+            Assert.Equal(192m, header.GetAttributeValue<Money>(Names.Estimate.TotalAdditionalCost).Value);
+            Assert.Equal(511m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            loaded.mode = "save";
+            loaded.fields.Single(f => f.key == "re_usetax").value = "0";
+            loaded.fields.Single(f => f.key == "re_freight").value = "0";
+            db.Save(ExportSnapshot.Serialize(loaded));
+            header = db.Rows[db.EstimateId];
+            Assert.Equal(0m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
+            Assert.Equal(0m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
+            Assert.Equal(319m, header.GetAttributeValue<Money>(Names.Estimate.PackageEstimatedCost).Value);
+            Assert.Equal(469m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+        }
+
         [Theory]
         [InlineData(true)]
         [InlineData(false)]
