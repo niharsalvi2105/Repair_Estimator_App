@@ -47,10 +47,10 @@ test('each custom package requires assigned positive labor or material entries',
   const labor = [{ id: 'l', packageId: 'a', role: 126110000, time: 126110000, hours: 2 }]
   const materials = [{ id: 'm', packageId: 'a', part: 'MOTOR-1', description: 'Motor', quantity: 1, unitCost: 10 }]
   assert.equal(customCostsError(['a'], labor, materials, 'en'), undefined)
-  assert.ok(customCostsError(['a', 'b'], labor, materials, 'en'))
-  assert.equal(customCostsError(['a'], [], materials, 'en'), undefined)
   assert.equal(customCostsError(['a'], labor, [], 'en'), undefined)
+  assert.equal(customCostsError(['a'], [], materials, 'en'), undefined)
   assert.equal(customCostsError(['a'], [], [], 'en'), 'Please enter either Labor or Material. At least one is required.')
+  assert.ok(customCostsError(['a', 'b'], labor, materials, 'en'))
   assert.match(customCostsError(['a'], [], [{ ...materials[0], description: '', unitCost: 0 }], 'en') ?? '',
     /Each material line needs a description, positive quantity and positive unit cost/)
   for (const hours of [0, -1, NaN]) assert.ok(customCostsError(['a'], [{ ...labor[0], hours }], materials, 'en'))
@@ -83,6 +83,8 @@ test('custom previews isolate packages, use branch role/time rates and count ent
   assert.throws(() => calculatePackageCost(p, 3, rates, 126110000, NaN, NaN, labor, materials), /invalid/)
   assert.throws(() => calculatePackageCost(p, 3, [], 126110000, 5, 10, labor, materials), /missing or ambiguous/)
   assert.throws(() => calculatePackageCost(p, 3, rates, 126110000, 5, 10, [], []), /Complete the CSTM/)
+  assert.ok(calculatePackageCost(p, 3, rates, 126110000, 5, 10, [], materials).material > 0)
+  assert.ok(calculatePackageCost(p, 3, rates, 126110000, 5, 10, labor, []).labor > 0)
   assert.throws(() => calculatePackageCost(p, 3, [...rates, rates[0]], 126110000, 5, 10, labor, materials), /ambiguous/)
 })
 
@@ -173,9 +175,11 @@ test('CSTM equipment cards include entered hours and costs exactly once across a
   assert.equal(calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10,
     [{ ...labor[0], hours: 8, rate: 175 }], materials).labor, 700)
   assert.throws(() => calculateEquipmentPackageCost(p, 0, rates, 126110000, 5, 10, labor, materials), /invalid/)
-  assert.doesNotThrow(() => calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, [], materials))
-  assert.doesNotThrow(() => calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, labor, []))
   assert.throws(() => calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, [], []), /Complete the CSTM/)
+  assert.equal(calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, [], materials).labor, 0)
+  const laborOnly = calculateEquipmentPackageCost(p, 2, rates, 126110000, 5, 10, labor, [])
+  assert.equal(laborOnly.labor, 600)
+  assert.equal(laborOnly.material, 0)
   assert.throws(() => calculateEquipmentPackageCost(p, 2, [], 126110000, 5, 10, labor, materials), /missing or ambiguous/)
 })
 

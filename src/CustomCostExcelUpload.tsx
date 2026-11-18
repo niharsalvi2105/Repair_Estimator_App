@@ -14,7 +14,7 @@ export function CustomCostExcelUpload(props: Props) {
   const { kind, language, disabled, packageId, equipmentNumbers, maxLines, market } = props
   const fr = language === 'fr'
   const labor = kind === 'labor'
-  const label = labor ? (fr ? 'main-d’œuvre' : 'labor') : (fr ? 'matériaux' : 'materials')
+  const label = labor ? (fr ? 'main-d’œuvre' : 'Labor') : (fr ? 'matériaux' : 'Materials')
   const [busy, setBusy] = useState(false)
   const [templateBusy, setTemplateBusy] = useState(false)
   const [error, setError] = useState('')

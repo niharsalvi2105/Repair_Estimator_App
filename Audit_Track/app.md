@@ -230,7 +230,9 @@ values and whitespace-only values show a localized inline error and block Next,
 Save, Submit and Calculate. Blank remains valid because phone is optional.
 Linked Contact phone values remain source-authoritative and read-only; they are
 not rewritten by this validation. The error appears while invalid text is being
-typed, before any action is attempted.
+typed, before any action is attempted. The message is a block element between the
+label and the input (`.field-label > .field-error` in `App.css`); previously it
+was inline with the label and wrapped over the input in the customer section.
 
 Seven focused phone/request unit tests and the backend fake-pipeline phone
 selector passed. An EN/FR browser regression was added but could not run because
@@ -315,9 +317,21 @@ The material table has exactly seven columns in order: Equipment Number, Materia
 
 All rows are rendered within horizontally scrollable table regions, preserving usable cell widths on mobile rather than compressing seven/eight columns into narrow fields. The scroll regions also contain positioned accessible labels; otherwise hidden labels in offscreen columns can enlarge the page on mobile. Local evidence: production build/type-check and changed-source/test lint passed; 60 selected unit/contract/parser/clone/documentation tests passed, including six new matrix cases. Twenty focused mocked browser cases passed across EN/FR, desktop/mobile and light/dark, covering catalog/manual/KONE safeguards, exact column groups/order, no Expand/Collapse controls, imported six-cell grouping, sequential decimal typing without focus loss, row/grand totals, Save/Review/reopen, package isolation and more than ten rows. Four catalog-material cases passed after the final label styling. The final French mobile import recheck exposed page overflow from positioned labels; containing them in the scroll regions fixed it, and both enhanced EN/FR import cases then passed, including Review page-width assertions. Screenshots were inspected; offscreen columns require horizontal scrolling by design. No deployment, tenant writes or live app verification; previously documented import lookup/coordinated-deployment prerequisites still apply.
 
+### CSTM material/labor section layout (2026-11-18, local source)
+
+Expected and implemented order: Material Breakdown, Import Materials from Excel, Labor Hours Breakdown, Import Labor from Excel. Each Add material/Add labor control stays inside its matching breakdown; its Excel panel follows that breakdown. English import headings use the requested title case; French copy remains localized. Only component grouping/order and heading presentation changed. Existing scrollable cost grids and stacked import panels remain responsive. Validation requirements, calculations, import parsing/replacement, API payloads, and persistence are unchanged; affected Dataverse tables/columns: none.
+
+Local evidence: production build/type-check, ESLint, and all 219 unit tests passed. A focused source regression test passed, plus four mocked Playwright cases verified order, adjacent import panels, nested add controls, and no page-width overflow at 320px and 1366px in English and French. The shared Power Apps page could not verify access during this session; no tenant data was read or changed. Deployment and published-app behavior remain unverified.
+
+### CSTM validation feedback (2026-11-18, local source)
+
+The existing CSTM validation already rejects missing material descriptions and invalid/unassigned CSTM package IDs. After a user attempts to continue or calculate a preview, a blank Material Description is marked `aria-invalid`, gets the existing red invalid-field outline and a field-specific message; an unassigned CSTM package selector is similarly identified when that selector is shown. The duplicate copy of the aggregate CSTM validation message is suppressed. A blank Equipment Number is intentionally valid: “Share across package” means the line is allocated across the package, and helper text now clarifies this rather than marking it invalid or making it required.
+
+No business validation rule, calculation, persistence or Dataverse mapping changed; affected tables/columns: none. Local evidence: build/type-check, ESLint and all 219 unit tests passed; ten mocked Playwright cases passed at 320px/1366px in English/French, covering section order, description highlighting/clearing, optional package-shared equipment, and existing Excel import flows. No tenant data was accessed or changed; deployment and published-app behavior remain unverified.
+
 ### Equipment-specific CSTM Excel imports (local source, not deployed)
 
-Each open CSTM package now has separate labor and material Excel panels, matching the equipment-import layout: Download Excel template, Upload Excel file, format/rules and explicit feedback. Templates have a blank entry sheet plus an Instructions sheet with synthetic examples and the package's eligible equipment numbers. Labor columns are Equipment Number, Mechanic ST, Mechanic DT, Helper ST, Helper DT, Adjuster ST, Adjuster DT; positive cells expand into individual role/time rows, blanks/zeros are skipped. Material columns are Equipment Number, Material Description, Vendor Name, Part Mfg, Part #, Quantity, Unit Cost. The template headers remain English in either UI language; notices, errors and confirmation are EN/FR.
+Each open CSTM package now has separate labor and material Excel panels, matching the equipment-import layout: Download Excel template, Upload Excel file, format/rules and explicit feedback. Material Breakdown appears first, followed by Import Materials from Excel; Labor Hours Breakdown follows, then Import Labor from Excel. Add controls are inside the corresponding breakdowns. Templates have a blank entry sheet plus an Instructions sheet with synthetic examples and the package's eligible equipment numbers. Labor columns are Equipment Number, Mechanic ST, Mechanic DT, Helper ST, Helper DT, Adjuster ST, Adjuster DT; positive cells expand into individual role/time rows, blanks/zeros are skipped. Material columns are Equipment Number, Material Description, Vendor Name, Part Mfg, Part #, Quantity, Unit Cost. The template headers remain English in either UI language; notices, errors and confirmation are EN/FR.
 
 Uploads replace only the currently open package's corresponding line type after confirmation. Other packages and the other line type are preserved. Invalid files, cancel, unavailable/ambiguous KONE catalog matches or changed draft state leave existing lines untouched. Files must be .xlsx, at most 5 MB, with one data sheet (Instructions is ignored). Headers, plain scalar cells, exact selected-package equipment identifiers including zeros, expanded labor counts, text/numeric bounds, full UTF-8 request size and create/update/delete operation budget are checked before replacement; formulas, dates, links and errors are rejected. Labor hours: positive, at most 100000 with two decimals; material quantity: whole 1..100000; manual unit cost: positive, at most 1000000000 with two decimals; description/optional vendor/part limits: 2000/100/100. Equipment numbers are at most 20 characters without whitespace. Vendor remains optional, matching manual entry.
 
@@ -961,7 +975,7 @@ Sources: [PackageSelect](../src/PackageSelect.tsx), [PackageCostDetails](../src/
 | Material read-only total | Browser sum of visible material unit costs × quantities, before tax/freight |
 | Remove material | Local removal; does not delete spare-part master |
 | Labor/material Previous / Next |10 rows per page; active CSTM filtering applies |
-| Complete CSTM | Requires each selected CSTM to have at least one valid labor or material line; returns to package selection |
+| Complete CSTM | Requires each selected CSTM to have at least one labor or material line; both blank shows "Please enter either Labor or Material. At least one is required." Every supplied line must also be valid; returns to package selection |
 | Selected package costs / combined total | Browser previews; sums selected package preview totals |
 | Branch rate / catalog Retry | Specific failed read retry, not a Save |
 

@@ -709,6 +709,11 @@
   font-weight: 600;
 }
 
+.field-label > .field-error {
+  display: block;
+  margin-top: 4px;
+}
+
 [data-theme='dark'] .field-error {
   color: #ffb4ab;
 }
@@ -3393,6 +3398,7 @@
 .custom-cost-grid td > .button { margin-top: 8px; }
 .custom-cost-grid .branch-popup { position: static; width: 100%; min-width: 0; margin-top: 8px; }
 .custom-cost-grid .field-help { font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+.custom-cost-grid .field-error { margin: 4px 0 0; overflow-wrap: anywhere; }
 .custom-material-markup {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3479,7 +3485,7 @@
 }
 .custom-grid-number { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .custom-grid-empty { padding: 0 16px 16px; color: var(--muted); }
-.custom-cost-lines > h3 { margin-top: 28px; }
+.custom-cost-lines > h3, .custom-cost-breakdown > h3 { margin-top: 28px; }
 
 .custom-line-actions {
   display: flex;

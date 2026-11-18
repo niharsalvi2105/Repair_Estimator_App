@@ -349,7 +349,10 @@ export default function EstimatorWorkspace({
   }
   function calculatePreview() {
     try {
-      if (customValidation) throw new Error(customValidation)
+      if (customValidation) {
+        setShowCustomFieldErrors(true)
+        throw new Error(customValidation)
+      }
       if (!currency || !assignmentValid || !selectedPackages.length) throw new Error(language === 'fr'
         ? 'Sélectionnez la devise et au moins un équipement par forfait.' : 'Select a currency and at least one equipment unit per package.')
       let total = selectedPackages.reduce((sum, p) => sum + calculatePackageCost(p,
@@ -372,11 +375,15 @@ export default function EstimatorWorkspace({
         { style: 'currency', currency })}</output>
       : preview && <p role="status">{language === 'fr' ? 'Aperçu obsolète : recalculez après les modifications.' : 'Preview is out of date: recalculate after changes.'}</p>}
   </section>
+  function clearCustomValidation() {
+    setCustomError('')
+    setShowCustomFieldErrors(false)
+  }
   function choosePackage(p: RepairPackage) {
     const adding = !selectedPackageIds.has(p.re_repairpackageid)
     togglePackage(p)
     if (adding && p.re_iscustompackage) {
-      setActiveCustom(p.re_repairpackageid); setCustomError(''); setShowCustomFieldErrors(false); setStep(3)
+      setActiveCustom(p.re_repairpackageid); clearCustomValidation(); setStep(3)
     }
   }
   function reportFirstInvalidCustomField() {
@@ -396,7 +403,7 @@ export default function EstimatorWorkspace({
       // Validate the entered package costs before estimate-wide tax/freight are configured.
       for (const p of customPackages) calculatePackageCost(p, quantityFor(p), rates, costInputs.time,
         0, 0, laborLines, materialLines)
-      setCustomError(''); setActiveCustom(undefined); setShowCustomFieldErrors(false); setStep(2)
+      clearCustomValidation(); setActiveCustom(undefined); setStep(2)
     } catch (reason) { setCustomError(reason instanceof Error ? reason.message : String(reason)) }
   }
   const pageSize = 20
@@ -436,7 +443,7 @@ export default function EstimatorWorkspace({
           <p>{localizePackage(p, language)}</p>
           <PackageCostDetails repairPackage={p} {...costInputs} quantity={quantityFor(p)} />
           {step === 3 && p.re_iscustompackage && <button className="button secondary small" onClick={() => {
-            setActiveCustom(p.re_repairpackageid); setCustomError(''); setShowCustomFieldErrors(false)
+            setActiveCustom(p.re_repairpackageid); clearCustomValidation()
           }}>{language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs'}</button>}
         </article>
       ))}
@@ -901,7 +908,7 @@ export default function EstimatorWorkspace({
                           <p>{localizeScope(repairPackage, language) || t.noScope}</p>
                         </div>
                         {repairPackage.re_iscustompackage && <button className="button secondary small" onClick={() => {
-                          setActiveCustom(repairPackage.re_repairpackageid); setCustomError(''); setShowCustomFieldErrors(false); setStep(3)
+                          setActiveCustom(repairPackage.re_repairpackageid); clearCustomValidation(); setStep(3)
                         }}>{language === 'fr' ? 'Modifier les coûts CSTM' : 'Edit CSTM costs'}</button>}
                       </div>
                       <div className="selected-package-pricing">
@@ -1099,7 +1106,7 @@ export default function EstimatorWorkspace({
 
       <div className="form-footer">
         <button className="button tertiary" onClick={() => {
-          setActiveCustom(undefined); setCustomError(''); setShowCustomFieldErrors(false)
+          setActiveCustom(undefined); clearCustomValidation()
           if (step === 1) onDashboard()
           else setStep((current) => current - 1)
         }}>
@@ -1114,12 +1121,11 @@ export default function EstimatorWorkspace({
                 if (!validateRequired('next')) return
                 if (step === 3 && activeCustom) { finishCustomPackage(); return }
                 if (step === 3 && reportFirstInvalidCustomField()) return
-                if (step === 3 && customValidation) return
+                if (step === 3 && customValidation) { setCustomError(''); return }
                 const inputs = requestSection.current?.querySelectorAll<HTMLInputElement>('input')
                 if (inputs && !Array.from(inputs).every((input) =>
                   step === 1 && input.id === 'customer-email' || input.reportValidity())) return
-                setActiveCustom(undefined); setCustomError('')
-                setShowCustomFieldErrors(false)
+                setActiveCustom(undefined); clearCustomValidation()
                 setStep((current) => current + 1)
               }}
               aria-describedby={step === 1 && (!selectedAccount?.id || !customerName.trim() || !customerEmail.trim())
