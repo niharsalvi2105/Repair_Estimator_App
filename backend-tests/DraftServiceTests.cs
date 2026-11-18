@@ -330,6 +330,7 @@ static class DraftServiceTests
         TestPlannerGroupEquipmentScope();
         TestCustomLines();
         TestRequiredCustomPackages();
+        TestLaborOrMaterialOnlyCustomPackages();
         TestAllLaborCombinations();
         TestCatalogParts();
         Console.WriteLine("Draft service cases passed: snapshots, totals, roundtrip, updates, stale version, dependent lines, duplicate create, French, currency, number, dates, status, 125 packages, custom lines, all six labor combinations and rate-query caching.");
@@ -1035,7 +1036,7 @@ static class DraftServiceTests
         {
             var service = Setup(); var input = Input();
             service.Rows[MasterPackage]["re_iscustompackage"] = true;
-            Reject(() => Run(service, input), "Please enter either Labor or Material");
+            Reject(() => Run(service, input), "Please enter either Labor or Material. At least one is required.");
             service.Add(new Entity("re_laborrate", Guid.NewGuid()) {
                 ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110000),
                 ["re_timecategory"] = new OptionSetValue(126110000), ["re_hourlycost"] = 100m,
@@ -1073,7 +1074,7 @@ static class DraftServiceTests
             Reject(() => Run(service, input), "Assign each custom line");
             input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
             input.laborLines[0].packageId = MasterPackage.ToString();
-            Reject(() => Run(service, input), "Please enter either Labor or Material");
+            Reject(() => Run(service, input), "Please enter either Labor or Material. At least one is required.");
             input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
             input.laborLines.Add(new LaborInput { packageId = second.Id.ToString(), role = 126110000, time = 126110000, hours = 3 });
             input.materialLines.Add(new MaterialInput { packageId = second.Id.ToString(), description = "Second", part = "MANUAL-2", quantity = 2, unitCost = 20 });
@@ -1090,6 +1091,33 @@ static class DraftServiceTests
             Assert(Load(service, input).laborLines.All(l => l.packageId == second.Id.ToString()),
                 "Reassign lines before deleting the old package with Restrict Delete");
         }
+
+    static void TestLaborOrMaterialOnlyCustomPackages()
+    {
+        foreach (var laborOnly in new[] { true, false })
+        {
+            var service = Setup(); var input = Input();
+            service.Rows[MasterPackage]["re_iscustompackage"] = true;
+            service.Add(new Entity("re_laborrate", Guid.NewGuid()) {
+                ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110000),
+                ["re_timecategory"] = new OptionSetValue(126110000), ["re_hourlycost"] = 100m,
+                ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
+            });
+            input.laborLines = laborOnly
+                ? new List<LaborInput> { new LaborInput { role = 126110000, time = 126110000, hours = 2 } }
+                : new List<LaborInput>();
+            input.materialLines = laborOnly
+                ? new List<MaterialInput>()
+                : new List<MaterialInput> { new MaterialInput { description = "Material", part = "MANUAL-1", quantity = 1, unitCost = 10 } };
+
+            Run(service, input);
+            var loaded = Load(service, input);
+            Assert(laborOnly
+                ? loaded.laborLines.Count == 1 && loaded.materialLines.Count == 0
+                : loaded.laborLines.Count == 0 && loaded.materialLines.Count == 1,
+                "A custom package with either valid labor or valid material must save and load");
+        }
+    }
     static void TestPresets()
     {
         var method = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.OpportunityPresets")

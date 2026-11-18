@@ -1051,7 +1051,7 @@ Gated export:
 | Equipment workbook import | Local workbook plus master-number resolution | Estimate selections on later Save | Not a master-data upload to Dataverse. |
 | Remove equipment / selected package / custom line | Workspace state | Reconciled child deletion on successful Save | Removing a master selection does not delete the master. |
 | Select package / package cards | Active effective package in country/currency; preview rates | Package snapshot on Save | Quantity scales with selected equipment count. |
-| Add/edit CSTM labor | Branch/role/time effective labor rate | Labor child, frozen hourly rate and total on Save | Each CSTM needs at least one labor or material line; labor-only and material-only packages are valid. |
+| Add/edit CSTM labor | Branch/role/time effective labor rate | Labor child, frozen hourly rate and total on Save | Each CSTM needs at least one valid labor or material line; every supplied line is validated; labor-only and material-only packages are valid. |
 | Add/edit manual material | Entered part, vendor, amount, flags | Material child and costs on Save | Current KONE/non-KONE and markup semantics still exist. |
 | Catalog material search | `partcapabilities` / `partcatalog`, gated part configuration | No catalog master writes; estimate snapshot on Save | Disabled/invalid configuration prevents selection. |
 | Package-priced KONE reference | Package material-before-markup | Package opt-in and material pricing-mode snapshots | Separate from spare-part catalog path. |
@@ -1069,6 +1069,18 @@ Gated export:
 | Removed contract-equipment card | No current UI calls | None | Backend `contractcapabilities`, `contractsearch`, `contractresolve` retained and read-only. |
 
 Sources: [App](../src/App.tsx), [workspace](../src/EstimatorWorkspace.tsx), [PricingSummary](../src/PricingSummary.tsx), [master CRUD](../src/data/masterDataRepository.ts), [master inventory](../src/data/masterDataSchema.ts), [preferences](../src/data/userPreferences.ts), [presets](../backend/OpportunityPresets.cs), [catalog](../backend/PartCatalog.cs), [contracts](../backend/ContractEquipment.cs).
+
+### CSTM labor-or-material validation (local source; not deployed)
+
+Each saved CSTM package now requires at least one assigned labor or material
+line; the backend rejects only when both are absent. Existing validation for
+positive labor hours, material description/quantity/cost and package assignment
+is unchanged. Affected records are existing `re_estimatepackage`,
+`re_estimatelaborline` and `re_estimatematerialline` rows; no Dataverse
+columns, API operations, permissions or mappings changed. Frontend and backend
+tests/build passed locally. The supplied workbook could not be inspected
+because Windows denied access; no tenant verification or deployment was
+performed, so a deployed app/plugin may still show the old both-required rule.
 
 ## 4. Transaction tables and relationships
 
@@ -1157,7 +1169,7 @@ Examples: `re_buildingaddress`, `re_buildingcity`, `re_workcenter`, `re_internal
 5. Plugin writes `re_customeraccount` / `re_customercontact` and derives header customer name/email/phone from Contact. It does not trust UI-supplied Contact details.
 6. Equipment snapshots copy number/name/location/sold-to/vertical/OEM/age from master. Unmatched equipment uses entered description/location/OEM/age and customer fallback; age 0..200.
 7. Packages validate active status, country, currency, effective dates and nonnegative hours/costs. Snapshot quantity is equipment count; totals scale once per equipment.
-8. CSTM rows validate package associations, labor/material presence, numeric ranges and server rate/catalog snapshots.
+8. CSTM rows validate package associations, require at least one labor or material line per package, and validate numeric ranges and server rate/catalog snapshots.
 9. Reconcile child Create/Update/Delete using batch tags to avoid premature recalculation.
 10. Final header `re_numberofequipment` touch triggers one calculation after children are present.
 11. Load returns header inputs, Account/Contact references and master-derived details, child snapshots, row version, pricing state and export delivery state. Frontend reads saved pricing for that version.
