@@ -235,7 +235,7 @@ export function buildEstimateEmailFlow({ recipient, metadata, connectionReferenc
     display(call('div', call('float', call('sub', cents, depositCents)), '100')))
   compose(actions, 'Header_values', Object.fromEntries(Object.entries(header).map(([key, value]) => [key, `@${htmlText(value)}`])), previous)
   previous = 'Header_values'
-  for (const name of ['equipment', 'package', 'labor', 'material']) {
+  for (const name of ['equipment', 'package', 'labor', 'material', 'email']) {
     actions[`Initialize_${name}`] = { type: 'InitializeVariable', inputs: { variables: [
       { name: `${name}_html`, type: 'string', value: '' }] }, runAfter: after(previous) }
     previous = `Initialize_${name}`
@@ -349,10 +349,17 @@ export function buildEstimateEmailFlow({ recipient, metadata, connectionReferenc
       if (!(key in values)) throw new Error(`Unmapped ${type} token ${key}`)
       return `outputs('${type}_values')?[${quote(key)}]`
     }
-    compose(nested, `${type}_en`, compileHtml(blocks[type].en, getToken), `${type}_values`)
-    compose(nested, `${type}_fr`, compileHtml(blocks[type].fr, getToken), `${type}_en`)
-    nested[`Append_${type}_row`] = { type: 'AppendToStringVariable', inputs: { name: `${type}_html`,
-      value: `@${choose(fr, `outputs('${type}_fr')`, `outputs('${type}_en')`)}` }, runAfter: after(`${type}_fr`) }
+    const languageBranch = language => {
+      const branch = {}
+      const rowName = `${type}_${language}`
+      compose(branch, rowName, compileHtml(blocks[type][language], getToken))
+      branch[`Append_${type}_${language}`] = { type: 'AppendToStringVariable',
+        inputs: { name: `${type}_html`, value: `@outputs('${rowName}')` }, runAfter: after(rowName) }
+      return branch
+    }
+    nested[`Render_${type}_language`] = { type: 'If', expression: `@${fr}`,
+      actions: languageBranch('fr'), else: { actions: languageBranch('en') },
+      runAfter: after(`${type}_values`) }
     actions[`For_each_${type}`] = { type: 'Foreach', foreach: `@body('List_${source}')?['value']`,
       actions: nested, runAfter: after(previous), runtimeConfiguration: { concurrency: { repetitions: 1 } } }
     previous = `For_each_${type}`
@@ -360,6 +367,7 @@ export function buildEstimateEmailFlow({ recipient, metadata, connectionReferenc
       call('concat', "'<p>'", htmlText(local('No rows', 'Aucune ligne')), "'</p>'"), `variables('${type}_html')`)}`, previous)
     previous = `Rendered_${type}`
   }
+  const languageBranches = {}
   for (const language of ['en', 'fr']) {
     // Split only outside tokens; preserving every character is mandatory.
     const segments = []
@@ -372,21 +380,26 @@ export function buildEstimateEmailFlow({ recipient, metadata, connectionReferenc
       remaining = remaining.slice(end)
     }
     if (segments.join('') !== templates[language]) throw new Error('Template splitting failed')
-    const names = []
+    const branch = {}
+    const segmentOutputs = []
+    let tail
     for (const [index, segment] of segments.entries()) {
       const name = `Email_${language}_${index + 1}`
-      compose(actions, name, compileHtml(segment, key => {
+      compose(branch, name, compileHtml(segment, key => {
         if (key.endsWith('_html')) return `outputs('Rendered_${key.slice(0, -5)}')`
         if (!(key in header)) throw new Error(`Unmapped header token ${key}`)
         return `outputs('Header_values')?[${quote(key)}]`
-      }), previous)
-      previous = name
-      names.push(`outputs('${name}')`)
+      }), tail)
+      tail = name
+      segmentOutputs.push(`outputs('${name}')`)
     }
-    compose(actions, `Email_${language}`, `@${call('concat', ...names)}`, previous)
-    previous = `Email_${language}`
+    branch[`Set_email_${language}`] = { type: 'SetVariable',
+      inputs: { name: 'email_html', value: `@${call('concat', ...segmentOutputs)}` }, runAfter: after(tail) }
+    languageBranches[language] = branch
   }
-  compose(actions, 'Email_HTML', `@${choose(fr, "outputs('Email_fr')", "outputs('Email_en')")}`, previous)
+  actions.Render_email_language = { type: 'If', expression: `@${fr}`, actions: languageBranches.fr,
+    else: { actions: languageBranches.en }, runAfter: after(previous) }
+  compose(actions, 'Email_HTML', "@variables('email_html')", 'Render_email_language')
   actions.Check_rendered_email = { type: 'If', expression: "@contains(outputs('Email_HTML'),'{{')", runAfter: after('Email_HTML'),
     actions: { Unresolved_template: { type: 'Terminate', inputs: { runStatus: 'Failed',
       runError: { code: 'ESTIMATE_EMAIL_UNRESOLVED', message: 'Email template contains unresolved placeholders. No email sent.' } } } },

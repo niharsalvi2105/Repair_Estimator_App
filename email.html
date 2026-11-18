@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Repair estimate - review request</title>
+  <style>
+    @media only screen and (max-width: 600px) {
+      .email-column { display:block !important; width:100% !important; box-sizing:border-box !important; }
+      .email-content { padding:16px !important; }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background-color:#f2f5f8;color:#182b3a;font-family:Arial,Helvetica,sans-serif;">
   <!-- Static email template. Replace named placeholders with HTML-escaped values before sending.
@@ -15,169 +21,169 @@
   <div style="display:none;font-size:1px;line-height:1px;color:#f2f5f8;max-height:0;max-width:0;overflow:hidden;mso-hide:all;">Repair estimate {{EstimateNumber}} is ready for Central Tendering review.</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f2f5f8;">
     <tr>
-      <td align="center" style="padding:24px 12px;">
-        <!--[if mso]><table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background-color:#ffffff;border:1px solid #dce4ec;">
+      <td align="center" style="padding:8px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#ffffff;border:1px solid #dce4ec;">
           <tr>
-            <td bgcolor="#0065df" style="padding:24px;color:#ffffff;">
-              <p style="margin:0 0 16px;font-size:26px;font-weight:bold;letter-spacing:3px;">KONE</p>
+            <td bgcolor="#1450f5" style="padding:30px 24px;color:#ffffff;border-bottom:6px solid #082b92;">
+              <p style="margin:0 0 16px;font-size:30px;font-weight:bold;letter-spacing:4px;">KONE</p>
               <p style="margin:0 0 6px;font-size:12px;line-height:18px;letter-spacing:1px;">REPAIR ESTIMATOR &middot; INTERNAL REVIEW</p>
-              <h1 style="margin:0;font-size:24px;line-height:32px;font-weight:bold;">Estimate review request</h1>
+              <h1 style="margin:0;font-size:27px;line-height:35px;font-weight:bold;">Estimate review request</h1>
             </td>
           </tr>
           <tr>
-            <td style="padding:24px;">
+            <td class="email-content" style="padding:24px;">
               <p style="margin:0 0 12px;font-size:16px;line-height:24px;">Hello Central Tendering Team,</p>
-              <p style="margin:0 0 24px;font-size:14px;line-height:22px;color:#435567;">Please review the full repair estimate below, including customer information, scope, detailed costs and saved pricing. All amounts are in {{CurrencyCode}} unless stated otherwise.</p>
-              <h2 style="margin:0 0 12px;font-size:16px;line-height:24px;">Estimate overview</h2>
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;table-layout:fixed;font-size:14px;line-height:22px;">
+              <p style="margin:0 0 20px;font-size:14px;line-height:22px;color:#435567;">Please review this submitted estimate. Start with the summary and saved pricing below, then check the equipment, scope and detailed costs. All amounts are in {{CurrencyCode}} unless stated otherwise.</p>
+              <p style="margin:0 0 4px;color:#315a9a;font-size:12px;line-height:18px;letter-spacing:1px;font-weight:bold;">01 &nbsp; REQUEST OVERVIEW</p>
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Estimate overview</h2>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;">
                 <tr>
-                  <th scope="row" width="38%" align="left" valign="top" style="padding:10px 12px;background-color:#f4f7fb;border-bottom:1px solid #dce4ec;font-weight:normal;color:#435567;">Estimate number</th>
-                  <td valign="top" style="padding:10px 12px;border-bottom:1px solid #dce4ec;word-wrap:break-word;overflow-wrap:anywhere;font-weight:bold;">{{EstimateNumber}}</td>
+                  <td class="email-column" width="50%" valign="top" style="padding:0 6px 12px 0;">
+                    <div style="padding:16px;background-color:#d2f5ff;border:1px solid #a9c5fa;border-top:4px solid #1450f5;border-radius:6px;word-wrap:break-word;overflow-wrap:anywhere;">
+                      <p style="margin:0 0 5px;color:#315a9a;font-size:12px;line-height:18px;">ESTIMATE NUMBER</p>
+                      <p style="margin:0;color:#174a78;font-size:20px;line-height:28px;font-weight:bold;">{{EstimateNumber}}</p>
+                    </div>
+                  </td>
+                  <td class="email-column" width="50%" valign="top" style="padding:0 0 12px 6px;">
+                    <div style="padding:16px;background-color:#f3eee6;border:1px solid #d5ccc0;border-radius:6px;word-wrap:break-word;overflow-wrap:anywhere;">
+                      <p style="margin:0 0 5px;color:#315a9a;font-size:12px;line-height:18px;">OPPORTUNITY</p>
+                      <p style="margin:0;color:#183d60;font-size:18px;line-height:28px;font-weight:bold;">{{OpportunityName}}</p>
+                    </div>
+                  </td>
                 </tr>
                 <tr>
-                  <th scope="row" align="left" valign="top" style="padding:10px 12px;background-color:#f4f7fb;border-bottom:1px solid #dce4ec;font-weight:normal;color:#435567;">Customer</th>
-                  <td valign="top" style="padding:10px 12px;border-bottom:1px solid #dce4ec;word-wrap:break-word;overflow-wrap:anywhere;">{{CustomerName}}</td>
-                </tr>
-                <tr>
-                  <th scope="row" align="left" valign="top" style="padding:10px 12px;background-color:#f4f7fb;border-bottom:1px solid #dce4ec;font-weight:normal;color:#435567;">Site / location</th>
-                  <td valign="top" style="padding:10px 12px;border-bottom:1px solid #dce4ec;word-wrap:break-word;overflow-wrap:anywhere;">{{SiteDescription}}</td>
-                </tr>
-              </table>
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Customer &amp; request details</h2>
-              <div style="padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
-                <strong>Opportunity name:</strong> {{OpportunityName}}<br>
-                <strong>Account number:</strong> {{AccountNumber}}<br>
-                <strong>Contact name:</strong> {{ContactName}}<br>
-                <strong>Contact email:</strong> {{ContactEmail}}<br>
-                <strong>Contact phone:</strong> {{ContactPhone}}<br>
-                <strong>Market / branch:</strong> {{Market}} / {{Branch}}<br>
-                <strong>State / province:</strong> {{StateProvince}}<br>
-                <strong>Equipment type:</strong> {{EquipmentType}}<br>
-                <strong>Job type:</strong> {{JobType}}<br>
-                <strong>Estimate status:</strong> {{EstimateStatus}}<br>
-                <strong>Proposal language:</strong> {{ProposalLanguage}}<br>
-                <strong>Salesperson:</strong> {{Salesperson}}<br>
-                <strong>Supervisor:</strong> {{Supervisor}}<br>
-                <strong>Work-centre request:</strong> {{WorkCentreRequest}}<br>
-                <strong>Number of technicians:</strong> {{NumberOfTechnicians}}<br>
-                <strong>Already approved? (request input):</strong> {{HasBeenApproved}}<br>
-                <strong>National Account:</strong> {{NationalAccount}}<br>
-                <strong>Emergency / unit shutdown:</strong> {{Emergency}}<br>
-                <strong>Customer budgeted for repair:</strong> {{CustomerBudgeted}}<br>
-                <strong>Paper type:</strong> {{PaperType}}<br>
-                <strong>Consultant involved:</strong> {{ConsultantInvolved}}<br>
-                <strong>Competing bids:</strong> {{CompetingBids}}
-              </div>
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Equipment</h2>
-              <!-- BEGIN repeat equipment -->
-              <div style="margin-bottom:10px;padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
-                <strong>Equipment number:</strong> {{EquipmentNumber}}<br>
-                <strong>Name:</strong> {{EquipmentName}}<br>
-                <strong>Location:</strong> {{EquipmentLocation}}<br>
-                <strong>Customer:</strong> {{EquipmentCustomer}}<br>
-                <strong>OEM / age:</strong> {{EquipmentOem}} / {{EquipmentAge}}<br>
-                <strong>Master match:</strong> {{EquipmentMatched}}
-              </div>
-              <!-- END repeat equipment -->
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Packages &amp; scope of work</h2>
-              <!-- BEGIN repeat package -->
-              <div style="margin-bottom:10px;padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
-                <strong>{{PackageNumber}} &mdash; {{PackageName}}</strong><br>
-                <strong>Package type:</strong> {{PackageType}}<br>
-                <strong>Assigned equipment:</strong> {{PackageEquipment}}<br>
-                <strong>Equipment quantity:</strong> {{PackageEquipmentQuantity}}<br>
-                <strong>Scope of work:</strong><br>{{PackageScope}}<br>
-                <strong>Labor hours:</strong> {{PackageLaborHours}}<br>
-                <strong>Mechanic cost rate:</strong> {{PackageMechanicRate}}<br>
-                <strong>Labor cost:</strong> {{PackageLaborCost}}<br>
-                <strong>Material before tax / freight:</strong> {{PackageMaterialCost}}<br>
-                <strong>KONE amount before markup / final:</strong> {{PackageKoneBeforeMarkup}} / {{PackageKoneFinalAmount}}<br>
-                <strong>Applicable tax / freight:</strong> {{PackageTaxPercent}} / {{PackageFreightPercent}}<br>
-                <strong>Package estimated cost (preview):</strong> {{PackageEstimatedCost}}
-              </div>
-              <!-- END repeat package -->
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Labor details</h2>
-              <!-- BEGIN repeat labor -->
-              <div style="margin-bottom:10px;padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
-                <strong>Package / equipment:</strong> {{LaborPackage}} / {{LaborEquipmentNumber}}<br>
-                <strong>Role / time category:</strong> {{LaborRole}} / {{LaborTimeCategory}}<br>
-                <strong>Hours:</strong> {{LaborHours}}<br>
-                <strong>Saved cost rate:</strong> {{LaborRate}}<br>
-                <strong>Line cost:</strong> {{LaborLineCost}}
-              </div>
-              <!-- END repeat labor -->
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Material details</h2>
-              <!-- BEGIN repeat material -->
-              <div style="margin-bottom:10px;padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
-                <strong>Package / equipment:</strong> {{MaterialPackage}} / {{MaterialEquipmentNumber}}<br>
-                <strong>Description:</strong> {{MaterialDescription}}<br>
-                <strong>Vendor:</strong> {{MaterialVendor}}<br>
-                <strong>Part manufacturer:</strong> {{MaterialPartType}}<br>
-                <strong>Part number:</strong> {{MaterialPartNumber}}<br>
-                <strong>Pricing source:</strong> {{MaterialPricingSource}}<br>
-                <strong>Quantity / unit:</strong> {{MaterialQuantity}} / {{MaterialUom}}<br>
-                <strong>Unit cost:</strong> {{MaterialUnitCost}}<br>
-                <strong>VK13 unit price (catalog):</strong> {{MaterialVk13UnitPrice}}<br>
-                <strong>Effective unit selling price:</strong> {{MaterialSellingPrice}}<br>
-                <strong>KONE markup:</strong> {{MaterialMarkupPercent}}<br>
-                <strong>Line cost (before tax / freight):</strong> {{MaterialLineCost}}
-              </div>
-              <!-- END repeat material -->
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Cost &amp; pricing inputs</h2>
-              <div style="padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
-                <strong>Labor time category:</strong> {{TimeCategory}}<br>
-                <strong>Additional labor hours:</strong> {{AdditionalLaborHours}}<br>
-                <strong>Additional material:</strong> {{AdditionalMaterial}}<br>
-                <strong>Additional miscellaneous:</strong> {{AdditionalMiscellaneous}}<br>
-                <strong>Use tax / freight:</strong> {{UseTaxPercent}} / {{FreightPercent}}<br>
-                <strong>Subcontractor cost (captured only):</strong> {{SubcontractorCost}}<br>
-                <strong>Stated labor billing rate:</strong> {{StatedLaborRate}}<br>
-                <strong>Aggregate KONE spares sales price (custom only):</strong> {{KoneSparesSalesPrice}}<br>
-                <strong>Additional scope:</strong><br>{{AdditionalScope}}
-              </div>
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Saved pricing &amp; cost breakdown</h2>
-              <div style="padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
-                <strong>Pricing state:</strong> {{PricingState}}<br>
-                <strong>Package estimated cost:</strong> {{PackageCostTotal}}<br>
-                <strong>Custom labor cost:</strong> {{CustomLaborCost}}<br>
-                <strong>Custom material cost:</strong> {{CustomMaterialCost}}<br>
-                <strong>Total additional cost:</strong> {{TotalAdditionalCost}}<br>
-                <strong>Use tax amount:</strong> {{UseTaxAmount}}<br>
-                <strong>Freight amount:</strong> {{FreightAmount}}<br>
-                <strong>Total true cost:</strong> {{TotalTrueCost}}<br>
-                <strong>Suggested selling price:</strong> {{SuggestedSellingPrice}}<br>
-                <strong>Suggested price with KONE material:</strong> {{SuggestedPriceWithKoneMaterial}}<br>
-                <strong>Base target CMII:</strong> {{BaseTargetCmii}}<br>
-                <strong>Recommended CMII:</strong> {{RecommendedCmii}}<br>
-                <strong>Actual CMII:</strong> {{ActualCmii}}<br>
-                <strong>CMII variance:</strong> {{CmiiVariance}}<br>
-                <strong>AM incentive:</strong> {{AmIncentive}}<br>
-                <strong>BD incentive:</strong> {{BdIncentive}}<br>
-                <strong>Calculation version / time:</strong> {{CalculationVersion}} / {{CalculatedOn}}
-              </div>
-              <p style="margin:8px 0 0;font-size:12px;line-height:18px;color:#526477;">Saved server results, not an email-side recalculation. Tax and freight are already included in their saved cost components; do not add them again. Package previews and captured-only subcontractor inputs are not additional saved totals.</p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
-                <tr>
-                  <td bgcolor="#eaf3ff" style="padding:18px;border-left:4px solid #0065df;">
-                    <p style="margin:0 0 6px;font-size:13px;line-height:20px;color:#435567;">Total selling price</p>
-                    <p style="margin:0;font-size:26px;line-height:34px;font-weight:bold;color:#004ba8;word-wrap:break-word;overflow-wrap:anywhere;">{{TotalSellingPrice}} <span style="font-size:14px;">{{CurrencyCode}}</span></p>
+                  <td class="email-column" width="50%" valign="top" style="padding:0 6px 0 0;">
+                    <div style="padding:16px;background-color:#aae1c8;border:1px solid #8cc7ac;border-radius:6px;word-wrap:break-word;overflow-wrap:anywhere;">
+                      <p style="margin:0 0 5px;color:#315a9a;font-size:12px;line-height:18px;">CUSTOMER</p>
+                      <p style="margin:0;color:#183d60;font-size:16px;line-height:24px;font-weight:bold;">{{CustomerName}}</p>
+                    </div>
+                  </td>
+                  <td class="email-column" width="50%" valign="top" style="padding:0 0 0 6px;">
+                    <div style="padding:16px;background-color:#ffcdd7;border:1px solid #e6b3bd;border-radius:6px;word-wrap:break-word;overflow-wrap:anywhere;">
+                      <p style="margin:0 0 5px;color:#315a9a;font-size:12px;line-height:18px;">SITE / LOCATION</p>
+                      <p style="margin:0;color:#183d60;font-size:16px;line-height:24px;font-weight:bold;">{{SiteDescription}}</p>
+                    </div>
                   </td>
                 </tr>
               </table>
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Billing, partners &amp; review notes</h2>
+              <p style="margin:28px 0 4px;color:#315a9a;font-size:12px;line-height:18px;letter-spacing:1px;font-weight:bold;">02 &nbsp; SAVED PRICING</p>
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Pricing at a glance</h2>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                <tr>
+                  <td class="email-column" width="50%" valign="top" bgcolor="#0c42d9" style="background-color:#0c42d9;padding:22px;border-left:5px solid #ffe141;word-wrap:break-word;overflow-wrap:anywhere;">
+                    <p style="margin:0 0 6px;font-size:13px;line-height:20px;color:#ffffff;">Entered total selling price</p>
+                    <p style="margin:0;font-size:28px;line-height:36px;font-weight:bold;color:#ffffff;">{{TotalSellingPrice}} <span style="font-size:14px;">{{CurrencyCode}}</span></p>
+                  </td>
+                  <td class="email-column" width="50%" valign="top" bgcolor="#f4f7fb" style="padding:18px;word-wrap:break-word;overflow-wrap:anywhere;">
+                    <p style="margin:0 0 5px;color:#315a9a;font-size:12px;line-height:18px;">SUGGESTED SELLING PRICE</p>
+                    <p style="margin:0 0 12px;color:#183d60;font-size:20px;line-height:26px;font-weight:bold;">{{SuggestedSellingPrice}}</p>
+                    <p style="margin:0 0 3px;color:#315a9a;font-size:12px;line-height:18px;">TOTAL TRUE COST</p>
+                    <p style="margin:0 0 10px;color:#081b52;font-size:15px;line-height:22px;font-weight:bold;">{{TotalTrueCost}}</p>
+                    <p style="margin:0 0 3px;color:#315a9a;font-size:12px;line-height:18px;">PRICING STATE</p>
+                    <p style="margin:0;color:#081b52;font-size:15px;line-height:22px;font-weight:bold;">{{PricingState}}</p>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:8px 0 0;font-size:12px;line-height:18px;color:#526477;">These are saved server values, not an email-side recalculation. The entered price is not an approval or customer quotation.</p>
+              <p style="margin:28px 0 4px;color:#315a9a;font-size:12px;line-height:18px;letter-spacing:1px;font-weight:bold;">03 &nbsp; CUSTOMER &amp; REQUEST</p>
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Customer &amp; request details</h2>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr>
+              <td class="email-column" width="50%" valign="top" style="padding:0 6px 12px 0;">
+              <div style="padding:16px;background-color:#f2f6ff;border:1px solid #c8d9fa;border-radius:6px;font-size:14px;line-height:26px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <p style="margin:0 0 8px;color:#174a78;font-size:16px;font-weight:bold;">Customer contact</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Account number</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{AccountNumber}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Contact name</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{ContactName}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Contact email</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{ContactEmail}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Contact phone</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{ContactPhone}}</strong></td></tr></table>
+              </div></td>
+              <td class="email-column" width="50%" valign="top" style="padding:0 0 12px 6px;">
+              <div style="padding:16px;background-color:#f2f6ff;border:1px solid #c8d9fa;border-radius:6px;font-size:14px;line-height:26px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <p style="margin:0 0 8px;color:#174a78;font-size:16px;font-weight:bold;">Request context</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Market / branch</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{Market}} / {{Branch}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">State / province</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{StateProvince}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Equipment type</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{EquipmentType}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Job type</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{JobType}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Estimate status</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{EstimateStatus}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Proposal language</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{ProposalLanguage}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Salesperson</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{Salesperson}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Supervisor</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{Supervisor}}</strong></td></tr></table>
+              </div></td></tr></table>
+              <h3 style="margin:18px 0 8px;font-size:14px;line-height:22px;color:#435567;">Request conditions</h3>
               <div style="padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
-                <strong>Billing plan:</strong> {{BillingPlan}}<br>
-                <strong>Down payment:</strong> {{DownPayment}}<br>
-                <strong>Final payment:</strong> {{FinalPayment}}<br>
-                <strong>Prospect account number:</strong> {{ProspectAccountNumber}}<br>
-                <strong>Sold-to:</strong> {{SoldTo}}<br>
-                <strong>Bill-to:</strong> {{BillTo}}<br>
-                <strong>Payer:</strong> {{Payer}}<br>
-                <strong>Margin comments:</strong><br>{{MarginComments}}<br>
-                <strong>Notes for CTT team:</strong><br>{{NotesForCttTeam}}
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Work-centre request</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{WorkCentreRequest}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Number of technicians</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{NumberOfTechnicians}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Already approved? (request input)</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{HasBeenApproved}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">National Account</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{NationalAccount}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Emergency / unit shutdown</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{Emergency}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Customer budgeted for repair</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{CustomerBudgeted}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Paper type</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PaperType}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Consultant involved</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{ConsultantInvolved}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Competing bids</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{CompetingBids}}</strong></td><td class="email-column" width="50%"></td></tr></table>
               </div>
-              <h2 style="margin:24px 0 8px;font-size:16px;line-height:24px;">Estimator / salesperson</h2>
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Equipment</h2>
+              <p style="margin:0 0 10px;font-size:13px;line-height:20px;color:#526477;">Each card identifies one saved equipment item.</p>
+              <!-- BEGIN repeat equipment -->
+              <div style="margin-bottom:12px;padding:16px;background-color:#f2f6ff;border:1px solid #c8d9fa;border-radius:6px;border-left:5px solid #1450f5;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <p style="margin:0;color:#315a9a;font-size:12px;line-height:18px;">EQUIPMENT &middot; {{EquipmentNumber}}</p>
+                <p style="margin:4px 0 10px;color:#183d60;font-size:17px;line-height:24px;font-weight:bold;">{{EquipmentName}}</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Location</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{EquipmentLocation}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Customer</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{EquipmentCustomer}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">OEM / age</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{EquipmentOem}} / {{EquipmentAge}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Master match</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{EquipmentMatched}}</strong></td></tr></table>
+              </div>
+              <!-- END repeat equipment -->
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Packages &amp; scope of work</h2>
+              <p style="margin:0 0 10px;font-size:13px;line-height:20px;color:#526477;">Package costs below are previews, not additional saved totals.</p>
+              <!-- BEGIN repeat package -->
+              <div style="margin-bottom:12px;padding:16px;background-color:#ffffff;border:1px solid #dce4ec;border-left:5px solid #1450f5;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <p style="margin:0;color:#315a9a;font-size:12px;line-height:18px;">PACKAGE &middot; {{PackageNumber}}</p>
+                <p style="margin:4px 0 10px;color:#183d60;font-size:17px;line-height:24px;font-weight:bold;">{{PackageName}}</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Package type</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageType}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Assigned equipment</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageEquipment}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Equipment quantity</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageEquipmentQuantity}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Scope of work</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageScope}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Labor hours</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageLaborHours}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Mechanic cost rate</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageMechanicRate}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Labor cost</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageLaborCost}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Material before tax / freight</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageMaterialCost}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">KONE amount before markup / final</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageKoneBeforeMarkup}} / {{PackageKoneFinalAmount}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Applicable tax / freight</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageTaxPercent}} / {{PackageFreightPercent}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Package estimated cost (preview)</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageEstimatedCost}}</strong></td><td class="email-column" width="50%"></td></tr></table>
+              </div>
+              <!-- END repeat package -->
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Labor details</h2>
+              <!-- BEGIN repeat labor -->
+              <div style="margin-bottom:12px;padding:16px;background-color:#f2f6ff;border:1px solid #dce4ec;border-left:5px solid #1450f5;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <p style="margin:0 0 8px;color:#183d60;font-size:16px;line-height:24px;font-weight:bold;">{{LaborRole}} &middot; {{LaborTimeCategory}}</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Package / equipment</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{LaborPackage}} / {{LaborEquipmentNumber}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Hours</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{LaborHours}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Saved cost rate</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{LaborRate}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Line cost</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{LaborLineCost}}</strong></td></tr></table>
+              </div>
+              <!-- END repeat labor -->
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Material details</h2>
+              <!-- BEGIN repeat material -->
+              <div style="margin-bottom:12px;padding:16px;background-color:#f2f6ff;border:1px solid #dce4ec;border-left:5px solid #1450f5;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <p style="margin:0 0 8px;color:#183d60;font-size:16px;line-height:24px;font-weight:bold;">{{MaterialDescription}}</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Package / equipment</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialPackage}} / {{MaterialEquipmentNumber}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Vendor</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialVendor}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Part manufacturer</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialPartType}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Part number</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialPartNumber}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Pricing source</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialPricingSource}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Quantity / unit</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialQuantity}} / {{MaterialUom}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Unit cost</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialUnitCost}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">VK13 unit price (catalog)</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialVk13UnitPrice}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Effective unit selling price</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialSellingPrice}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">KONE markup</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialMarkupPercent}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Line cost (before tax / freight)</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MaterialLineCost}}</strong></td><td class="email-column" width="50%"></td></tr></table>
+              </div>
+              <!-- END repeat material -->
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Cost &amp; pricing inputs</h2>
+              <div style="padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Labor time category</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{TimeCategory}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Additional labor hours</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{AdditionalLaborHours}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Additional material</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{AdditionalMaterial}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Additional miscellaneous</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{AdditionalMiscellaneous}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Use tax / freight</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{UseTaxPercent}} / {{FreightPercent}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Subcontractor cost (captured only)</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{SubcontractorCost}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Stated labor billing rate</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{StatedLaborRate}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Aggregate KONE spares sales price (custom only)</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{KoneSparesSalesPrice}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Additional scope</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{AdditionalScope}}</strong></td><td class="email-column" width="50%"></td></tr></table>
+              </div>
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Saved pricing &amp; cost breakdown</h2>
+              <div style="padding:14px;border:1px solid #dce4ec;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Pricing state</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PricingState}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Package estimated cost</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{PackageCostTotal}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Custom labor cost</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{CustomLaborCost}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Custom material cost</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{CustomMaterialCost}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Total additional cost</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{TotalAdditionalCost}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Use tax amount</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{UseTaxAmount}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Freight amount</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{FreightAmount}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Total true cost</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{TotalTrueCost}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Suggested selling price</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{SuggestedSellingPrice}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Suggested price with KONE material</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{SuggestedPriceWithKoneMaterial}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Base target CMII</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{BaseTargetCmii}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Recommended CMII</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{RecommendedCmii}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Actual CMII</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{ActualCmii}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">CMII variance</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{CmiiVariance}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">AM incentive</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{AmIncentive}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">BD incentive</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{BdIncentive}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Calculation version / time</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{CalculationVersion}} / {{CalculatedOn}}</strong></td><td class="email-column" width="50%"></td></tr></table>
+              </div>
+              <p style="margin:8px 0 0;font-size:12px;line-height:18px;color:#526477;">Saved server results, not an email-side recalculation. Tax and freight are already included in their saved cost components; do not add them again. Package previews and captured-only subcontractor inputs are not additional saved totals.</p>
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Billing, partners &amp; review notes</h2>
+              <div style="padding:14px;background-color:#f4f7fb;font-size:14px;line-height:24px;word-wrap:break-word;overflow-wrap:anywhere;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Billing plan</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{BillingPlan}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Down payment</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{DownPayment}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Final payment</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{FinalPayment}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Prospect account number</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{ProspectAccountNumber}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Sold-to</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{SoldTo}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Bill-to</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{BillTo}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Payer</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{Payer}}</strong></td><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Margin comments</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{MarginComments}}</strong></td></tr>
+<tr><td class="email-column" width="50%" valign="top" style="padding:10px;border-bottom:1px solid #c8d9fa;word-wrap:break-word;overflow-wrap:anywhere;"><span style="font-size:12px;line-height:18px;color:#527596;">Notes for CTT team</span><br><strong style="font-size:15px;line-height:22px;color:#183d60;">{{NotesForCttTeam}}</strong></td><td class="email-column" width="50%"></td></tr></table>
+              </div>
+              <h2 style="margin:26px 0 12px;padding:12px 16px;background-color:#e7f0ff;border-left:5px solid #1450f5;color:#081b52;font-size:19px;line-height:26px;">Estimator / salesperson</h2>
               <p style="margin:0;font-size:14px;line-height:22px;word-wrap:break-word;overflow-wrap:anywhere;"><strong>{{EstimatorName}}</strong><br>{{EstimatorEmail}}<br>{{EstimatorBranch}}</p>
               <p style="margin:24px 0 0;padding-top:18px;border-top:1px solid #dce4ec;font-size:14px;line-height:22px;color:#435567;">Please include the estimate number in any review feedback. This summary does not record an approval decision.</p>
             </td>
@@ -186,7 +192,6 @@
             <td bgcolor="#f4f7fb" style="padding:16px 24px;border-top:1px solid #dce4ec;font-size:12px;line-height:18px;color:#526477;">Repair Estimator &middot; Internal Central Tendering review<br>For internal use only. Not a customer quotation.</td>
           </tr>
         </table>
-        <!--[if mso]></td></tr></table><![endif]-->
       </td>
     </tr>
   </table>

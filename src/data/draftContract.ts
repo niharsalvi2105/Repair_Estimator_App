@@ -2,6 +2,7 @@ import type { RequestInputs } from '../RequestFields'
 import type { Market } from './estimateQuery'
 import { validPackageEquipment } from './packageEquipment.ts'
 import { parseContactMasterOptions, type ContactMasterOption } from './customerMasterContract.ts'
+import { parseCatalogDetails, type CatalogDetails } from './partCatalogContract.ts'
 
 export type DraftEquipment = {
   id: string; number: string; name: string; location: string; customer: string
@@ -19,6 +20,7 @@ export type DraftLabor = { id: string; packageId?: string | null; equipmentNumbe
 export type DraftMaterial = {
   id: string; packageId?: string | null; equipmentNumber?: string | null; description: string; vendor: string; part: string; quantity: number; unitCost: number
   partType?: 'kone' | 'non-kone' | null; catalogPartId?: string | null; markupPercent?: number | null
+  catalogDetails?: CatalogDetails | null
   unitPrice?: number | null; sellingPrice?: number | null; uom?: string | null; refreshPart?: boolean
   pricingSource?: 'package' | 'manual' | null
 }
@@ -122,6 +124,16 @@ export function parseDraft(value: unknown): DraftRecord {
     ![126110000, 126110001].includes(line.time) || !Number.isFinite(line.hours) || line.hours < 0 ||
     line.hours > 100000 || !Number.isFinite(line.rate) || (line.rate ?? -1) < 0)))
     throw new Error('Invalid draft labor snapshot.')
+  if (record.materialLines != null) {
+    if (!Array.isArray(record.materialLines)) throw new Error('Invalid draft material snapshots.')
+    for (const line of record.materialLines) {
+      if (line?.catalogDetails != null) {
+        parseCatalogDetails(line.catalogDetails)
+        if (!line.catalogPartId || line.catalogDetails.number !== line.part)
+          throw new Error('Invalid draft material catalog identity.')
+      }
+    }
+  }
   if (record.materialLines != null && (!Array.isArray(record.materialLines) || record.materialLines.some((line) =>
     !line || typeof line.id !== 'string' || !nullableString(line.packageId) || !validLineEquipment(line) || typeof line.description !== 'string' ||
     !nullableString(line.vendor) || !nullableString(line.part) ||
@@ -135,16 +147,21 @@ export function parseDraft(value: unknown): DraftRecord {
     !nullableString(line.catalogPartId) || !nullableString(line.uom) ||
     (line.catalogPartId != null && (!line.partType ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(line.catalogPartId) ||
-      !line.uom?.trim() || line.unitCost <= 0)) ||
+      !line.uom?.trim() || line.uom.length > 20 || line.unitCost <= 0 ||
+      line.unitCost > 1000000000 || Number(line.unitCost.toFixed(10)) !== line.unitCost)) ||
     (line.refreshPart != null && typeof line.refreshPart !== 'boolean') ||
     (line.markupPercent != null && (line.partType !== 'kone' || !Number.isFinite(line.markupPercent) ||
       line.markupPercent < 0 || line.markupPercent > 100 || Math.round(line.markupPercent * 100) / 100 !== line.markupPercent)) ||
-    (line.unitPrice != null && (!Number.isFinite(line.unitPrice) || line.unitPrice < 0)) ||
-    (line.sellingPrice != null && (!line.catalogPartId || !(line.unitPrice != null && line.unitPrice > 0) ||
+    (line.catalogPartId != null && line.catalogDetails != null &&
+      ((line.partType === 'kone' ? line.markupPercent !== 10 : line.markupPercent != null) ||
+       !line.description.trim() || !((line.sellingPrice ?? line.unitPrice ?? 0) > 0))) ||
+    (line.unitPrice != null && (!Number.isFinite(line.unitPrice) || line.unitPrice < 0 || line.unitPrice > 1000000000)) ||
+    (line.sellingPrice != null && (!line.catalogPartId ||
       !Number.isFinite(line.sellingPrice) || line.sellingPrice <= 0 || line.sellingPrice > 1000000000 ||
       Number(line.sellingPrice.toFixed(10)) !== line.sellingPrice)) ||
     (line.partType === 'kone' && line.pricingSource !== 'package' &&
-      (!line.catalogPartId || line.markupPercent == null || !(line.unitPrice != null && line.unitPrice > 0))))))
+      (!line.catalogPartId || line.markupPercent == null ||
+        (line.catalogDetails == null && !(line.unitPrice != null && line.unitPrice > 0)))))))
     throw new Error('Invalid draft material snapshot.')
 
   function validLineEquipment(line: { equipmentNumber?: string | null; packageId?: string | null }): boolean {

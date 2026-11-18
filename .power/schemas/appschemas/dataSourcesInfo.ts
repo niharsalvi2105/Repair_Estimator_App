@@ -26,6 +26,48 @@ export const dataSourcesInfo = {
     "dataSourceType": "Dataverse",
     "apis": {}
   },
+  "re_choicemetadata": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "",
+    "dataSourceType": "Dataverse",
+    "apis": {
+      "StringMaps": {
+        "path": "/api/data/v9.2/stringmaps?$select=attributename,attributevalue,value,langid,displayorder&$filter={filter}",
+        "method": "GET",
+        "parameters": [
+          {
+            "name": "filter",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseInfo": {
+          "200": {
+            "type": "object"
+          }
+        }
+      },
+      "GlobalOptionSet": {
+        "path": "/api/data/v9.2/GlobalOptionSetDefinitions(Name='{name}')",
+        "method": "GET",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responseInfo": {
+          "200": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
   "re_countries": {
     "tableId": "",
     "version": "",
@@ -146,6 +188,13 @@ export const dataSourcesInfo = {
     "tableId": "",
     "version": "",
     "primaryKey": "re_packagecategoryid",
+    "dataSourceType": "Dataverse",
+    "apis": {}
+  },
+  "re_plannergroups": {
+    "tableId": "",
+    "version": "",
+    "primaryKey": "re_plannergroupid",
     "dataSourceType": "Dataverse",
     "apis": {}
   },
@@ -308,47 +357,5 @@ export const dataSourcesInfo = {
     "primaryKey": "transactioncurrencyid",
     "dataSourceType": "Dataverse",
     "apis": {}
-  },
-  "re_choicemetadata": {
-    "tableId": "",
-    "version": "",
-    "primaryKey": "",
-    "dataSourceType": "Dataverse",
-    "apis": {
-      "StringMaps": {
-        "path": "/api/data/v9.2/stringmaps?$select=attributename,attributevalue,value,langid,displayorder&$filter={filter}",
-        "method": "GET",
-        "parameters": [
-          {
-            "name": "filter",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          }
-        ],
-        "responseInfo": {
-          "200": {
-            "type": "object"
-          }
-        }
-      },
-      "GlobalOptionSet": {
-        "path": "/api/data/v9.2/GlobalOptionSetDefinitions(Name='{name}')",
-        "method": "GET",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          }
-        ],
-        "responseInfo": {
-          "200": {
-            "type": "object"
-          }
-        }
-      }
-    }
   }
 };

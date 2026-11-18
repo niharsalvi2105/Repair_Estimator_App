@@ -10,7 +10,7 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.10";
+        public const string Version = "2026.11";
 
         public static PricingResult Calculate(EstimateInput i)
         {

@@ -846,7 +846,7 @@ export default function EstimatorWorkspace({
                 <div className="selected-list">
                   {selectedPackages.slice(currentPackagePage * pageSize, (currentPackagePage + 1) * pageSize).map((repairPackage) => (
                     <div className="selected-package-group" key={repairPackage.re_repairpackageid}>
-                    <details className="package-equipment-selection">
+                    {!repairPackage.re_iscustompackage ? <details className="package-equipment-selection">
                       <summary>{repairPackage.re_packagenumber} — {language === 'fr' ? 'Personnaliser les équipements' : 'Customize equipment'} — {quantityFor(repairPackage)} / {selectedEquipment.length}</summary>
                       <button type="button" className="button secondary" onClick={() => setSelectedPackages((current) =>
                         current.map((p) => p.re_repairpackageid === repairPackage.re_repairpackageid ? { ...p, equipmentNumbers: undefined } : p))}>
@@ -866,7 +866,13 @@ export default function EstimatorWorkspace({
                       {!validPackageEquipment(repairPackage, selectedEquipment) && <p role="alert" className="error-box">
                         {language === 'fr' ? 'Sélectionnez au moins un équipement et corrigez les équipements retirés.' : 'Select at least one equipment unit and resolve any removed equipment.'}
                       </p>}
-                    </details>
+                    </details> : <p className="field-help">
+                      {submitted || exportDelivery
+                        ? language === 'fr' ? `Équipements enregistrés : ${quantityFor(repairPackage)} / ${selectedEquipment.length}`
+                          : `Saved equipment: ${quantityFor(repairPackage)} / ${selectedEquipment.length}`
+                        : language === 'fr' ? 'CSTM s’applique à tous les équipements sélectionnés.'
+                          : 'CSTM applies to all selected equipment.'}
+                    </p>}
                     <EquipmentPackageCosts equipment={selectedEquipment.filter((unit) => packageEquipmentNumbers(repairPackage, selectedEquipment).includes(unit.number))}
                       repairPackage={repairPackage} {...costInputs} />
                     <article className="equipment-card selected-package-card">

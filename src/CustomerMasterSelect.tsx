@@ -153,20 +153,6 @@ export function CustomerMasterSelect({
       </div>}
     </div>
 
-    {account && <div className="customer-defaults-state">
-      {!branchId && <p className="field-help">{fr ? 'Sélectionnez une succursale pour charger les valeurs liées.' : 'Select a Branch to fetch linked defaults.'}</p>}
-      {branchId && !defaults && !defaultsError && <p role="status">{fr ? 'Chargement des données liées…' : 'Fetching linked customer data…'}</p>}
-      {defaultsError && <div className="error-box" role="alert">{defaultsError}
-        <button className="button secondary" type="button" disabled={disabled}
-          onClick={() => { setDefaultsError(''); setDefaultsAttempt(value => value + 1) }}>
-          {fr ? 'Réessayer' : 'Retry'}
-        </button>
-      </div>}
-      {defaults && !contact && <p className="field-help" role="status">{defaults.contacts.length
-        ? fr ? 'Choisissez un contact ci-dessous ; aucune sélection unique ne peut être déduite.' : 'Choose a linked Contact below; there is no unambiguous default.'
-        : fr ? 'Aucun contact actif disponible. Saisissez les coordonnées manquantes pour ce devis.' : 'No eligible active Contact is available. Enter the missing contact details for this estimate.'}</p>}
-      {defaults?.contactsTruncated && <p className="field-help">{fr ? 'Affichage limité : recherchez le contact par nom ou courriel.' : 'More Contacts exist: search by name or email to refine the list.'}</p>}
-    </div>}
     <div className="customer-master-field" onBlur={event => {
       if (!event.currentTarget.contains(event.relatedTarget)) setContactOptionsOpen(false)
     }} onKeyDown={event => { if (event.key === 'Escape') setContactOptionsOpen(false) }}>
@@ -282,5 +268,19 @@ export function CustomerMasterSelect({
       </p>}
       {defaults?.locationsTruncated && <p className="field-help">{fr ? 'Seuls les 20 premiers numéros d’emplacements sont affichés.' : 'Only the first 20 functional location numbers are shown.'}</p>}
     </div>
+    {account && <div className="customer-defaults-state">
+      {!branchId && <p className="field-help">{fr ? 'Sélectionnez une succursale pour charger les valeurs liées.' : 'Select a Branch to fetch linked defaults.'}</p>}
+      {branchId && !defaults && !defaultsError && <p role="status">{fr ? 'Chargement des données liées…' : 'Fetching linked customer data…'}</p>}
+      {defaultsError && <div className="error-box" role="alert">{defaultsError}
+        <button className="button secondary" type="button" disabled={disabled}
+          onClick={() => { setDefaultsError(''); setDefaultsAttempt(value => value + 1) }}>
+          {fr ? 'Réessayer' : 'Retry'}
+        </button>
+      </div>}
+      {defaults && !contact && <p className="field-help" role="status">{defaults.contacts.length
+        ? fr ? 'Choisissez un contact ci-dessous ; aucune sélection unique ne peut être déduite.' : 'Choose a linked Contact below; there is no unambiguous default.'
+        : fr ? 'Aucun contact actif disponible. Saisissez les coordonnées manquantes pour ce devis.' : 'No eligible active Contact is available. Enter the missing contact details for this estimate.'}</p>}
+      {defaults?.contactsTruncated && <p className="field-help">{fr ? 'Affichage limité : recherchez le contact par nom ou courriel.' : 'More Contacts exist: search by name or email to refine the list.'}</p>}
+    </div>}
   </div>
 }

@@ -269,8 +269,13 @@ namespace RepairEstimator.Plugins.Data
                     throw new PricingException("RE-114", "MATERIAL_CLASSIFICATION_INVALID");
                 var overridePrice = Query.Dec(row, "re_sellingprice");
                 var catalogPrice = Query.Dec(row, "re_unitpriceprecise");
-                var pricedCatalog = row.GetAttributeValue<EntityReference>("re_sparepart") != null && catalogPrice > 0;
-                if (overridePrice.HasValue && (!pricedCatalog || overridePrice <= 0 ||
+                var hasCatalog = row.GetAttributeValue<EntityReference>("re_sparepart") != null;
+                var pricedCatalog = hasCatalog && (overridePrice ?? catalogPrice) > 0;
+                if (!string.IsNullOrEmpty(row.GetAttributeValue<string>("re_catalogdetailsjson")) &&
+                    (!pricedCatalog || !(Query.Dec(row, "re_unitcostprecise") > 0) ||
+                     (partType == 126110000 && Query.Dec(row, "re_markuppct") != 10m)))
+                    throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
+                if (overridePrice.HasValue && (!hasCatalog || overridePrice <= 0 ||
                     overridePrice > 1000000000m || decimal.Round(overridePrice.Value, 10) != overridePrice))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 loaded.Input.MaterialLines.Add(new MaterialLineInput {

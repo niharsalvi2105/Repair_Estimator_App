@@ -97,7 +97,7 @@ function evaluate(node, context) {
 
 function execute(definition, fixture) {
   const context = { outputs: {}, items: {}, variables: {}, header: fixture.header,
-    parameters: { ReviewRecipient: 'review@example.invalid' }, sent: [] }
+    parameters: { ReviewRecipient: 'review@example.invalid' }, sent: [], executed: [] }
   const resolve = value => {
     if (typeof value === 'string') return value.startsWith('@') && !value.startsWith('@{')
       ? evaluate(parse(value.slice(1)), context) : value
@@ -107,6 +107,7 @@ function execute(definition, fixture) {
   }
   const run = actions => {
     for (const [name, action] of Object.entries(actions)) {
+      context.executed.push(name)
       switch (action.type) {
         case 'OpenApiConnection':
           if (name === 'Get_estimate') context.outputs[name] = { body: fixture.header }
@@ -118,6 +119,7 @@ function execute(definition, fixture) {
           for (const variable of action.inputs.variables) context.variables[variable.name] = variable.value
           break
         case 'AppendToStringVariable': context.variables[action.inputs.name] += resolve(action.inputs.value); break
+        case 'SetVariable': context.variables[action.inputs.name] = resolve(action.inputs.value); break
         case 'Foreach':
           for (const row of resolve(action.foreach)) {
             context.items[name] = row
@@ -181,6 +183,49 @@ test('all template tokens compile, exact account numbers and saved pricing survi
   assert.ok(!html.includes('{{'))
   assert.equal(result.outputs.Header_values.DownPayment, '50.01')
   assert.equal(result.outputs.Header_values.FinalPayment, '50.00')
+})
+
+test('English and French emails put saved pricing before detailed sections without losing values', () => {
+  for (const [language, heading, customerHeading, equipmentHeading, suggestedLabel] of [
+    [126110000, 'Pricing at a glance', 'Customer &amp; request details', 'Equipment</h2>', 'SUGGESTED SELLING PRICE'],
+    [126110001, 'Aper&ccedil;u des prix', 'Client et renseignements de la demande', '&Eacute;quipement</h2>', 'PRIX DE VENTE SUGG&Eacute;R&Eacute;'],
+  ]) {
+    const data = fixture()
+    data.header.re_proposallanguage = language
+    const result = execute(make(), data)
+    const html = result.sent[0]['emailMessage/Body']
+    const pricing = html.indexOf(heading)
+    const customer = html.indexOf(customerHeading)
+    const equipment = html.indexOf(equipmentHeading)
+    assert.ok(pricing > 0 && pricing < customer && customer < equipment)
+    const summary = html.slice(pricing, customer)
+    assert.ok(summary.includes(result.outputs.Header_values.TotalSellingPrice))
+    assert.ok(summary.includes(result.outputs.Header_values.SuggestedSellingPrice))
+    assert.ok(summary.includes(result.outputs.Header_values.TotalTrueCost))
+    assert.ok(summary.includes(result.outputs.Header_values.PricingState))
+    assert.ok(summary.includes(suggestedLabel))
+    assert.ok(html.slice(equipment).includes('00009'))
+    assert.ok(!html.includes('{{'))
+  }
+})
+
+test('only the selected language renders email segments and repeated rows', () => {
+  for (const [language, selected, skipped] of [[126110000, 'en', 'fr'], [126110001, 'fr', 'en']]) {
+    const data = fixture()
+    data.header.re_proposallanguage = language
+    data.List_labor = { value: [{ re_hours: 1, re_hourlycost: 2, re_totalcost: 2, _re_estimatepackage_value: 'package1' }] }
+    data.List_materials = { value: [{ re_entereddescription: 'Part', re_quantity: 1, re_unitcost: 2,
+      re_extendedcost: 2, re_totalcost: 2, _re_estimatepackage_value: 'package1' }] }
+    const result = execute(make(), data)
+    for (const type of ['equipment', 'package', 'labor', 'material']) {
+      assert.ok(result.executed.includes(`${type}_${selected}`))
+      assert.ok(!result.executed.includes(`${type}_${skipped}`))
+    }
+    assert.ok(result.executed.includes(`Email_${selected}_1`))
+    assert.ok(!result.executed.some(name => name.startsWith(`Email_${skipped}_`)))
+    assert.ok(result.executed.includes(`Set_email_${selected}`))
+    assert.equal(result.sent.length, 1)
+  }
 })
 
 test('French clears, localized description, zero rates and untrusted multiline HTML are preserved safely', () => {

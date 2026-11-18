@@ -1,6 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { packageEquipmentNumbers, validPackageEquipment, validCustomCostEquipment } from '../src/data/packageEquipment.ts'
+import { allEquipmentForCustomPackage, packageEquipmentNumbers, validPackageEquipment, validCustomCostEquipment } from '../src/data/packageEquipment.ts'
+
+test('editable CSTM package assignments expand to all equipment without changing standard packages', () => {
+  const cstm = { re_iscustompackage: true, equipmentNumbers: ['E1'] }
+  const standard = { re_iscustompackage: false, equipmentNumbers: ['E1'] }
+  const normalized = allEquipmentForCustomPackage(cstm)
+  assert.equal(normalized.equipmentNumbers, undefined)
+  assert.deepEqual(cstm.equipmentNumbers, ['E1'])
+  assert.deepEqual(packageEquipmentNumbers(normalized, [{ number: 'E1' }, { number: 'E2' }]), ['E1', 'E2'])
+  assert.strictEqual(allEquipmentForCustomPackage(standard), standard)
+  assert.deepEqual(standard.equipmentNumbers, ['E1'])
+})
 import { calculatePackageCost } from '../src/data/packageCosts.ts'
 
 const equipment = Array.from({ length: 5 }, (_, i) => ({ number: `E${i + 1}` }))
