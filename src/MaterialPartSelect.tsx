@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { DraftMaterial } from './data/draftContract'
 import type { Market } from './data/estimateQuery'
 import { getPartCatalog, type CatalogDetails, type CatalogIssue, type CatalogPart, type CatalogResult } from './data/partCatalogRepository'
+import { FieldError } from './FieldError'
 
 const issueLabels: Record<CatalogIssue, [string, string]> = {
   inactive: ['Inactive source record', 'Enregistrement source inactif'],
@@ -108,10 +109,10 @@ function CatalogSourceDetails({ details, language, currency }: {
   </>
 }
 
-export function MaterialPartSelect({ line, update, market, language, capability, readOnly, field }: {
+export function MaterialPartSelect({ line, update, market, language, capability, readOnly, field, showValidationErrors = false }: {
   line: DraftMaterial; update: (change: Partial<DraftMaterial>) => void; market: Market
   language: 'en' | 'fr'; capability?: CatalogResult; readOnly: boolean
-  field?: 'type' | 'part' | 'details'
+  field?: 'type' | 'part' | 'details'; showValidationErrors?: boolean
 }) {
   const fr = language === 'fr'
   const [query, setQuery] = useState<string>()
@@ -140,6 +141,10 @@ export function MaterialPartSelect({ line, update, market, language, capability,
   const current = search?.key === key ? search : undefined
   const parts = capability?.available && current?.result?.available ? current.result.parts : []
   const activePart = parts[Math.min(activeIndex, Math.max(0, parts.length - 1))]
+  const partErrorId = `${listId}-part`
+  const catalogErrorId = `${listId}-catalog`
+  const partError = showValidationErrors && !line.part.trim()
+  const needsKoneCatalog = line.partType === 'kone' && line.pricingSource !== 'package' && !line.catalogPartId
   useEffect(() => {
     if (open) list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [activeIndex, open])
@@ -202,6 +207,9 @@ export function MaterialPartSelect({ line, update, market, language, capability,
           <input ref={input} id={`${listId}-input`} className="text-input" required role="combobox" maxLength={100}
             value={query ?? line.part} disabled={readOnly} autoComplete="off" aria-expanded={open} aria-controls={listId}
             aria-autocomplete="list" aria-activedescendant={open && activePart ? `${listId}-${activePart.id}` : undefined}
+            aria-invalid={showValidationErrors && (!!partError || needsKoneCatalog)}
+            aria-describedby={showValidationErrors && partError ? `${partErrorId}-error`
+              : showValidationErrors && needsKoneCatalog ? `${catalogErrorId}-error` : undefined}
             placeholder={fr ? 'Rechercher ou parcourir les pièces' : 'Search or browse parts'}
             onClick={() => { setActiveIndex(0); setOpen(true) }}
             onChange={event => {
@@ -260,13 +268,20 @@ export function MaterialPartSelect({ line, update, market, language, capability,
         </div>}
       </div>
     </div>}
+    {(!field || field === 'part') && <FieldError id={partErrorId} message={partError
+      ? fr ? 'Saisissez un numéro de pièce.' : 'Enter a part number.'
+      : undefined} />}
+    {(!field || field === 'part') && line.partType === 'non-kone' && !line.catalogPartId &&
+      <p className="field-help">{fr
+        ? 'Les numéros de pièce non-KONE hors catalogue sont permis. Saisissez une description et un coût unitaire.'
+        : 'Unlisted Non-KONE part numbers are allowed. Enter a description and unit cost.'}</p>}
     {(!field || field === 'part') && !readOnly && line.partType === 'non-kone' && line.catalogPartId &&
       <button type="button" className="button tertiary" onClick={() => {
         setQuery(undefined); setOpen(false)
         update({ catalogPartId: undefined, catalogDetails: undefined, unitPrice: undefined, sellingPrice: undefined,
           uom: undefined, unitCost: 0, part: '', description: '', refreshPart: false, pricingSource: undefined })
       }}>{fr ? 'Retirer la sélection du catalogue' : 'Remove catalog selection'}</button>}
-    {(!field || field === 'part') && line.partType === 'kone' && !line.catalogPartId && <p className="error-box" role="alert">
+    {(!field || field === 'part') && needsKoneCatalog && <p id={`${catalogErrorId}-error`} className="error-box" role="alert">
       {fr ? 'Choisissez une pièce KONE du catalogue avant d’enregistrer.' : 'Select a KONE catalog part before saving.'}</p>}
     {(!field || field === 'part') && !readOnly && line.partType === 'non-kone' && !line.catalogPartId &&
       !capability?.available && <button type="button" className="button tertiary"

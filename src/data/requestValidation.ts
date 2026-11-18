@@ -37,15 +37,17 @@ export function customCostsError(packageIds: string[], labor: DraftLabor[], mate
     (line.partType === 'non-kone' && line.markupPercent != null)))
     return language === 'fr' ? 'Vérifiez la source des prix. Les montants KONE du forfait ne permettent aucun coût par pièce ni majoration supplémentaire. La majoration KONE du catalogue est fixée à 10 %.'
       : 'Check the pricing source. Package KONE amounts cannot carry per-part charges or extra markup. Catalog KONE markup is fixed at 10%.'
-  const valid = packageIds.every((id) =>
-    labor.some((line) => line.packageId === id) && materials.some((line) => line.packageId === id))
-    && labor.every((line) => packageIds.includes(line.packageId ?? '') && Number.isFinite(line.hours) && line.hours > 0)
+  if (packageIds.some((id) => !labor.some((line) => line.packageId === id) && !materials.some((line) => line.packageId === id)))
+    return language === 'fr'
+      ? 'Saisissez une main-d’œuvre ou un matériau. Au moins un est requis.'
+      : 'Please enter either Labor or Material. At least one is required.'
+  const valid = labor.every((line) => packageIds.includes(line.packageId ?? '') && Number.isFinite(line.hours) && line.hours > 0)
     && materials.every((line) => packageIds.includes(line.packageId ?? '') && line.description.trim()
       && Number.isFinite(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitCost)
       && (line.pricingSource === 'package' ? line.unitCost === 0 : line.unitCost > 0))
   return valid ? undefined : language === 'fr'
-    ? 'Chaque forfait CSTM exige une main-d’œuvre avec des heures positives et un matériau avec description et quantité positive. Le coût unitaire doit être positif, sauf pour les références KONE utilisant les montants du forfait. Affectez chaque ligne à un forfait CSTM.'
-    : 'Each CSTM package requires labor with positive hours and material with a description and positive quantity. Unit cost must be positive except for KONE references using package amounts. Assign every custom line to a CSTM package.'
+    ? 'Les lignes de main-d’œuvre CSTM exigent des heures positives. Chaque ligne de matériau exige une description, une quantité positive et un coût unitaire positif, sauf les références KONE utilisant les montants du forfait. Affectez chaque ligne personnalisée à un forfait CSTM.'
+    : 'CSTM labor lines need positive hours. Each material line needs a description, positive quantity and positive unit cost, except for KONE references using package amounts. Assign every custom line to a CSTM package.'
 }
 
 export function statedRateError(value: string | undefined, language: 'en' | 'fr'): string | undefined {

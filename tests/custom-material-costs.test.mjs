@@ -22,6 +22,16 @@ test('material total uses exact unit cost times quantity, never selling price or
     assert.equal(calculatePackageCost(p, equipmentCount, rates, 126110000, 5, 14, labor, [material, manual]).material, 45.46356)
 })
 
+test('unlisted Non-KONE part numbers remain valid manual material input', () => {
+  const manual = { ...material, id: 'manual', part: 'unlisted-77', partType: 'non-kone',
+    catalogPartId: undefined, catalogDetails: undefined, markupPercent: undefined,
+    unitPrice: undefined, unitCost: 10, pricingSource: 'manual' }
+  assert.equal(materialEntryError(manual, 'en'), undefined)
+  assert.equal(customCostsError(['custom'], [], [manual], 'en'), undefined)
+  assert.match(customCostsError(['custom'], [], [{ ...manual, description: '', unitCost: 0 }], 'en') ?? '',
+    /Each material line needs a description, positive quantity and positive unit cost/)
+})
+
 test('catalog selling override is bounded and does not change cost totals', () => {
   for (const language of ['en', 'fr']) {
     for (const sellingPrice of [0.0000000001, 55.25, 1000000000]) {
