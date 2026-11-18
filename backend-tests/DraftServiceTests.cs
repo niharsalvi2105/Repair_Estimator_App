@@ -323,6 +323,7 @@ static class DraftServiceTests
         TestFlexibleEquipment();
         TestCustomLines();
         TestRequiredCustomPackages();
+        TestSingleTypeCustomPackages();
         TestAllLaborCombinations();
         TestCatalogParts();
         Console.WriteLine("Draft service cases passed: snapshots, totals, roundtrip, updates, stale version, dependent lines, duplicate create, French, currency, number, dates, status, 125 packages, custom lines, all six labor combinations and rate-query caching.");
@@ -822,8 +823,7 @@ static class DraftServiceTests
 
     static void TestRequiredCustomPackages()
         {
-            var service = Setup(); var input = Input();
-            service.Rows[MasterPackage]["re_iscustompackage"] = true;
+            var service = SetupCustomPackageFixture(out var input);
             Reject(() => Run(service, input), "Please enter either Labor or Material");
             foreach (var laborOnly in new[] { true, false })
             {
@@ -933,6 +933,88 @@ static class DraftServiceTests
             Assert(Load(service, input).laborLines.All(l => l.packageId == second.Id.ToString()),
                 "Reassign lines before deleting the old package with Restrict Delete");
         }
+
+    static FakeService SetupCustomPackageFixture(out Draft input)
+    {
+        var service = Setup();
+        var accountId = Guid.NewGuid();
+        service.Add(new Entity("account", accountId) {
+            ["re_salesforceaccountid"] = "custom-account", ["re_salesorganizations"] = "MKOF",
+            ["accountnumber"] = "A1", ["name"] = "Custom account", ["statecode"] = new OptionSetValue(0)
+        });
+        input = Input();
+        input.accountId = accountId.ToString();
+        service.Rows[MasterPackage]["re_iscustompackage"] = true;
+        return service;
+    }
+
+    static void TestSingleTypeCustomPackages()
+    {
+        TestSingleTypeCustomPackage(true);
+        TestSingleTypeCustomPackage(false);
+    }
+
+    static void TestSingleTypeCustomPackage(bool laborOnly)
+    {
+        var service = SetupCustomPackageFixture(out var input);
+        service.Add(new Entity("re_laborrate", Guid.NewGuid()) {
+            ["re_branch"] = new EntityReference("re_branch", Branch), ["re_laborrole"] = new OptionSetValue(126110000),
+            ["re_timecategory"] = new OptionSetValue(126110000), ["re_hourlycost"] = 100m,
+            ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
+        });
+        input.laborLines = laborOnly
+            ? new List<LaborInput> { new LaborInput { role = 126110000, time = 126110000, hours = 2 } }
+            : new List<LaborInput>();
+        input.materialLines = laborOnly
+            ? new List<MaterialInput>()
+            : new List<MaterialInput> {
+                new MaterialInput { description = "Material", part = "MANUAL-1", quantity = 1, unitCost = 10 }
+            };
+
+        Run(service, input);
+        var loaded = Load(service, input);
+        AssertCustomLineState(service, loaded, laborOnly ? 1 : 0, laborOnly ? 0 : 1);
+
+        input.version = loaded.version;
+        input.laborLines = loaded.laborLines;
+        input.materialLines = loaded.materialLines;
+        if (laborOnly)
+            input.materialLines.Add(new MaterialInput {
+                description = "Material", part = "MANUAL-2", quantity = 1, unitCost = 20
+            });
+        else
+            input.laborLines.Add(new LaborInput { role = 126110000, time = 126110000, hours = 3 });
+        Run(service, input);
+        loaded = Load(service, input);
+        AssertCustomLineState(service, loaded, 1, 1);
+
+        input.version = loaded.version;
+        input.laborLines = loaded.laborLines;
+        input.materialLines = loaded.materialLines;
+        if (laborOnly)
+            input.laborLines = new List<LaborInput>();
+        else
+            input.materialLines = new List<MaterialInput>();
+        Run(service, input);
+        loaded = Load(service, input);
+        AssertCustomLineState(service, loaded, laborOnly ? 0 : 1, laborOnly ? 1 : 0);
+    }
+
+    static void AssertCustomLineState(FakeService service, Draft loaded, int laborCount, int materialCount)
+    {
+        Assert(loaded.laborLines.Count == laborCount && loaded.materialLines.Count == materialCount,
+            "Single-type custom package line counts must roundtrip");
+        var laborRows = service.Rows.Values.Where(row => row.LogicalName == "re_estimatelaborline").ToList();
+        var materialRows = service.Rows.Values.Where(row => row.LogicalName == "re_estimatematerialline").ToList();
+        Assert(laborRows.Count == laborCount && materialRows.Count == materialCount,
+            "Only the expected custom child rows must persist");
+        var packageRow = service.Rows.Values.Single(row => row.LogicalName == "re_estimatepackage");
+        Assert(loaded.laborLines.All(line => line.packageId == MasterPackage.ToString()) &&
+            loaded.materialLines.All(line => line.packageId == MasterPackage.ToString()) &&
+            laborRows.Concat(materialRows).All(row =>
+                row.GetAttributeValue<EntityReference>("re_estimatepackage")?.Id == packageRow.Id),
+            "Remaining custom lines must retain their package association");
+    }
     static void TestPresets()
     {
         var method = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.OpportunityPresets")
