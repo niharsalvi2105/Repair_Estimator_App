@@ -82,6 +82,7 @@ namespace RepairEstimator.Drafts
         [DataMember(EmitDefaultValue = false)] public string uom;
         [DataMember(EmitDefaultValue = false)] public bool refreshPart;
         [DataMember(EmitDefaultValue = false)] public string pricingSource;
+        [DataMember(EmitDefaultValue = false)] public CatalogDetails catalogDetails;
     }
 
     [DataContract]
@@ -165,6 +166,8 @@ namespace RepairEstimator.Drafts
         [DataMember] public string mode;
         [DataMember(EmitDefaultValue = false)] public string search;
         [DataMember(EmitDefaultValue = false)] public string partType;
+        [DataMember(EmitDefaultValue = false)] public int partPage;
+        [DataMember(EmitDefaultValue = false)] public string catalogCursor;
         [DataMember(EmitDefaultValue = false)] public string presetName;
         [DataMember(EmitDefaultValue = false)] public string nextToken;
         [DataMember(EmitDefaultValue = false)] public string accountId;
@@ -375,12 +378,13 @@ namespace RepairEstimator.Drafts
             if (input.materialLines.Any(m => m.pricingSource != null))
                 PackageMaterialPricing.RequireSchema(service);
             var branch = service.Retrieve("re_branch", Guid.Parse(input.branchId),
-                new ColumnSet("re_country", "re_currency", "re_market", "statecode"));
+                new ColumnSet("re_country", "re_currency", "re_market", "re_branchnumber", "statecode"));
             Active(branch);
             if (branch.GetAttributeValue<OptionSetValue>("re_market")?.Value != input.market) Fail("Branch does not belong to the selected market.");
             var country = branch.GetAttributeValue<EntityReference>("re_country");
             var currency = branch.GetAttributeValue<EntityReference>("re_currency");
             if (country == null || currency == null) Fail("Branch requires country and currency configuration.");
+            var equipmentScope = ResolveEquipmentScope(service, branch);
             var province = service.Retrieve("re_stateprovince", Guid.Parse(input.stateId), new ColumnSet("re_country", "re_frenchrequired", "statecode"));
             Active(province);
             if (province.GetAttributeValue<EntityReference>("re_country")?.Id != country.Id) Fail("Building province/state does not belong to the branch country.");
@@ -462,10 +466,12 @@ namespace RepairEstimator.Drafts
                 else if (item.matched)
                 {
                     var master = service.Retrieve("re_equipment", Guid.Parse(item.id),
-                        new ColumnSet("re_equipment", "re_equipmentname", "re_branch", "re_functionallocation",
-                            "re_soldtoname", "re_soldtonumber", "re_verticalcode", "re_oem", "re_equipmentage", "statecode"));
+                        new ColumnSet("re_equipment", "re_equipmentname", "re_branch", "re_plannergroup",
+                            "re_functionallocation", "re_soldtoname", "re_soldtonumber", "re_verticalcode",
+                            "re_oem", "re_equipmentage", "statecode"));
                     Active(master);
-                    if (master.GetAttributeValue<EntityReference>("re_branch")?.Id != branch.Id) Fail("Equipment is outside the selected branch.");
+                    if (!equipmentScope.Allows(master))
+                        Fail("Equipment is outside the selected branch or its Planner Group.");
                     if (master.GetAttributeValue<string>("re_equipment") != item.number) Fail("Equipment number does not match its lookup.");
                     row["re_equipment"] = master.ToEntityReference();
                     row["re_equipmentnamesnapshot"] = master.GetAttributeValue<string>("re_equipmentname");
@@ -647,13 +653,81 @@ namespace RepairEstimator.Drafts
             var path = new UpdateRequest { Target = new Entity(Estimate, id) {
                 ["re_estimatepath"] = new OptionSetValue(custom ? 126110001 : 126110000)
             }};
-            if (!custom)
-            {
-                path.Target["re_usetax"] = 0.05m;
-                path.Target["re_freight"] = 0.14m;
-            }
             path["tag"] = "RepairEstimator.DraftBatch:" + id.ToString("D");
             service.Execute(path);
+        }
+
+        sealed class EquipmentScope
+        {
+            public readonly HashSet<Guid> BranchIds = new HashSet<Guid>();
+            public readonly HashSet<Guid> PlannerGroupIds = new HashSet<Guid>();
+            public bool Allows(Entity equipment) =>
+                (equipment.GetAttributeValue<EntityReference>("re_branch") is EntityReference branch &&
+                    BranchIds.Contains(branch.Id)) ||
+                (equipment.GetAttributeValue<EntityReference>("re_plannergroup") is EntityReference group &&
+                    PlannerGroupIds.Contains(group.Id));
+        }
+
+        static EquipmentScope ResolveEquipmentScope(IOrganizationService service, Entity branch)
+        {
+            var branchNumber = branch.GetAttributeValue<string>("re_branchnumber")?.Trim();
+            if (string.IsNullOrEmpty(branchNumber))
+                Fail("Selected branch has no branch number for Planner Group matching.");
+
+            var matchingGroups = PlannerGroups(service, branchNumber, null);
+            var subBranchGroups = matchingGroups.Where(group =>
+                !group.GetAttributeValue<bool>("re_ismainbranch") &&
+                string.Equals(group.GetAttributeValue<string>("re_subbranchcode"), branchNumber,
+                    StringComparison.OrdinalIgnoreCase)).ToList();
+            var scope = new EquipmentScope();
+            scope.BranchIds.Add(branch.Id);
+            if (subBranchGroups.Count == 0) return scope;
+
+            var parentIds = subBranchGroups.Select(group =>
+                group.GetAttributeValue<EntityReference>("re_mainbranch")?.Id).Distinct().ToList();
+            if (parentIds.Count != 1 || !parentIds[0].HasValue)
+                Fail("Planner Group mapping is ambiguous for the selected branch.");
+
+            var parentId = parentIds[0].Value;
+            var groupsForParent = PlannerGroups(service, null, parentId);
+            foreach (var group in groupsForParent)
+            {
+                if (!group.GetAttributeValue<bool>("re_ismainbranch") &&
+                    group.GetAttributeValue<EntityReference>("re_mainbranch")?.Id == parentId)
+                    scope.PlannerGroupIds.Add(group.Id);
+            }
+            if (subBranchGroups.Any(group => !scope.PlannerGroupIds.Contains(group.Id)))
+                Fail("Planner Group records changed while resolving the selected branch.");
+            scope.BranchIds.Add(parentId);
+            return scope;
+        }
+
+        static List<Entity> PlannerGroups(IOrganizationService service, string branchNumber, Guid? parentId)
+        {
+            var query = new QueryExpression("re_plannergroup")
+            {
+                ColumnSet = new ColumnSet("re_plannergroupid", "re_subbranchcode", "re_ismainbranch", "re_mainbranch"),
+                PageInfo = new PagingInfo { Count = 100, PageNumber = 1 }
+            };
+            query.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
+            query.Criteria.AddCondition("re_ismainbranch", ConditionOperator.Equal, false);
+            if (parentId.HasValue)
+                query.Criteria.AddCondition("re_mainbranch", ConditionOperator.Equal,
+                    new EntityReference("re_branch", parentId.Value));
+            else
+                query.Criteria.AddCondition("re_subbranchcode", ConditionOperator.Equal, branchNumber);
+            query.AddOrder("re_plannergroupid", OrderType.Ascending);
+            var rows = new List<Entity>();
+            do
+            {
+                var records = service.RetrieveMultiple(query);
+                rows.AddRange(records.Entities);
+                if (rows.Count > MaxChildOperations) Fail("Planner Group scope exceeds the technical processing budget.");
+                if (!records.MoreRecords) return rows;
+                if (records.Entities.Count == 0) Fail("Invalid Planner Group paging response.");
+                query.PageInfo.PageNumber++;
+                query.PageInfo.PagingCookie = records.PagingCookie;
+            } while (true);
         }
 
         static void Submit(IOrganizationService service, Guid id)
@@ -781,7 +855,8 @@ namespace RepairEstimator.Drafts
             {
                 if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
                 var previous = priorMaterial.FirstOrDefault(r => r.Id.ToString() == line.id);
-                if (line.pricingSource == null && PackageMaterialPricing.Source(previous ?? new Entity(Material)) != null)
+                if (line.pricingSource == null && string.IsNullOrEmpty(line.catalogPartId) &&
+                    PackageMaterialPricing.Source(previous ?? new Entity(Material)) != null)
                     Fail("Reload the current app before editing package/manual material.");
                 if (line.quantity <= 0 || line.quantity > 100000 || decimal.Truncate(line.quantity) != line.quantity)
                     Fail("Material quantity must be a whole number from 1 to 100000.");
@@ -790,6 +865,7 @@ namespace RepairEstimator.Drafts
                         (line.unitCost <= 0 || line.unitCost > 1000000000 || decimal.Round(line.unitCost, 2) != line.unitCost)))
                     Fail("Invalid material quantity or unit cost (two decimals required).");
                 var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
+                if (!string.IsNullOrEmpty(line.catalogPartId)) row[PackageMaterialPricing.Mode] = null;
                 row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
                 SetLineEquipment(row, previous, line.equipmentNumber, line.packageId, input, equipment);
                 row["re_name"] = "Custom material";
@@ -1219,6 +1295,7 @@ namespace RepairEstimator.Drafts
                 markupPercent = e.GetAttributeValue<decimal?>("re_markuppct"),
                 unitPrice = e.GetAttributeValue<decimal?>("re_unitpriceprecise"),
                 sellingPrice = e.GetAttributeValue<decimal?>("re_sellingprice"),
+                catalogDetails = PartCatalog.ReadDetails(e),
                 uom = e.GetAttributeValue<string>("re_uom")
             }).ToList();
             foreach (var p in packageRows.OrderBy(p => p.GetAttributeValue<int?>("re_sequence") ??

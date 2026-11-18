@@ -2,6 +2,126 @@
 
 ## 1. Scope and evidence
 
+### Transparent catalog version 2 (2026-11-17, local source, not deployed)
+
+`partcapabilities`/`partcatalog` retain their existing dispatch but now identify
+`catalogVersion: 2`. Part search no longer filters master classification, state
+or effectivity. Empty search is supported; number/description/name matching,
+part-number/GUID ordering and 20-row paging use `partPage`/`catalogCursor` and
+return `more`/`nextPage`/`nextCursor`. Invalid continuation/wildcards fail
+explicitly. Effective, enabled, compatible market currency/conversion
+configuration remains required; no exchange-rate default is invented.
+
+Catalog results include nullable raw/converted values, server-generated source
+details and diagnostic codes, rather than failing an entire search on an
+incomplete row. Native GUID selection identifies the chosen record even when
+source keys overlap. User-selected estimate KONE/Non-KONE no longer has to match
+the master's classification. KONE markup is exactly 10% of effective selling
+price; Non-KONE rejects markup. Existing package-priced/legacy aggregate
+isolation, whole quantities, permissions and estimate locks remain.
+
+Save permits estimate-only completion of unusable cost, missing description/UOM
+and unusable selling price; completed pricing must be positive, bounded and
+within precision. Trusted usable costs/descriptions/UOM still override client
+values. Original zero/missing VK13 is retained separately from `re_sellingprice`.
+Incoming `catalogDetails` is ignored; the server snapshots its own source
+observations in new optional `re_catalogdetailsjson` Memo (capacity 20000).
+Ordinary saves retain source evidence; reselection/clone explicitly refreshes.
+Selected classification changes do not rewrite the Spare Parts master. Explicit
+manual-to-catalog transitions clear the old material pricing mode.
+
+Pricing 2026.11 accepts a positive completed catalog selling price even when
+saved VK13 is zero/null and uses it for the selected KONE or Non-KONE selling
+contribution. Internal costs are unchanged by markup. New diagnostic snapshots
+require completed prices and fixed KONE markup; historical snapshots without
+the Memo retain their existing calculation interpretation until explicitly saved.
+Frozen exports capture the Memo through existing all-column snapshot capture;
+no registration/images, API registration, privilege, lock or delivery change.
+
+Rollout prerequisite: publish `backend/catalog-transparency-schema.json` and
+release coordinated Drafts/pricing/frontend. The current Dev capability has no
+version-2 marker and Dev lacks the Memo; the new client correctly refuses the
+older API. No deployment, historical migration or master activation occurred.
+Focused local Drafts catalog cases and three pricing integration cases passed;
+the latter cover zero source VK13, completed price, cost isolation and frozen
+diagnostic export. These are synthetic checks, not tenant acceptance.
+
+### Planner Group equipment scope (local source, not deployed)
+
+Draft Save now resolves the selected Branch's `re_branchnumber` against active
+`re_plannergroup.re_subbranchcode` rows. A single `re_mainbranch` parent expands
+the allowed matched-equipment scope to that parent Branch and all active
+subbranch Planner Group IDs under that parent; equipment lookup validation
+accepts either an in-scope `re_branch` or `re_plannergroup` lookup and still
+checks active status and exact equipment number. No active subbranch mapping
+keeps the existing selected-Branch-only rule. Missing branch number, multiple
+parents, missing/inconsistent group rows or an out-of-scope Equipment record
+fail explicitly. Existing labor-rate reads remain filtered to the estimate's
+selected Branch.
+
+Affected existing columns are `re_branch.re_branchnumber`,
+`re_equipment.re_branch`, `re_equipment.re_plannergroup`, and
+`re_plannergroup.re_subbranchcode`, `re_ismainbranch`, `re_mainbranch`.
+`re_plannergroup` is a read-only scope source, not an estimate snapshot or
+master-data write target. Draft API dispatch/payload, formulas, registration,
+images, estimate locks, persisted schema and export lifecycle are unchanged.
+The app user and Draft API caller need Read access to Planner Group and
+Equipment; non-admin privilege coverage is not verified.
+
+The live table/schema was read-only verified in BLA- America CNO Dev, and the
+table is now included as a local app data source. Local tests cover parent and
+sibling acceptance, unrelated equipment rejection, ambiguous mapping and
+branch-only fallback. The user reported the Equipment Data load flow was
+running; it was not inspected, modified or restarted, and no live equipment
+selection was validated. No app publication or plugin deployment is claimed.
+See the app and Dataverse references for the user-facing contract and exact
+table mapping.
+
+The local pricing integration-test fixture now seeds its synthetic Branch
+with `re_branchnumber = SYNTHETIC`, satisfying the resolver's documented scope
+prerequisite so unrelated integration assertions can run. This is test data
+only; plugin runtime behavior and production Dataverse records/schema are
+unchanged. The pricing VSTest project passed 157/157 tests, and the DraftTests
+console harness passed. No plugin deployment or live scope verification is
+claimed.
+
+### Review-email design update (Dev flow saved, OFF)
+
+The existing submitted-estimate flow now contains the redesigned bilingual HTML and renders only the selected language's template segments and repeated-row templates. This changes neither plugin code nor the Submit, pricing, snapshot, locking, registration or export contracts. The flow remains Stopped; actual run duration, email delivery and mail-client rendering have not been verified. See the app and Dataverse references for deployment and acceptance details.
+
+### Material row identity and selling-price verification
+
+Local Drafts `BuildLines` preserves existing material row IDs but generates a new GUID for each new row; `Load` returns that server ID and `re_sellingprice`. The former frontend ID-only response check could therefore report a missing selling price even when a new row retained it. Local frontend verification now accounts for server-assigned IDs and still rejects mismatched prices. This identifies a source-level cause of false alarms, not the actual persistence result or deployed assembly revision for the reported live draft. No plugin code, registration, schema or assembly was changed for this correction; read-only capability availability does not prove saved prices or calculation behavior. See the app and Dataverse references for local tests, unknown frontend publication status and live acceptance gaps.
+
+### Catalog prerequisite resolved in Dev; CSTM client change
+
+The deployed catalog capability requires compatible `re_sparepart`, `re_partpricingconfiguration` and `re_estimatematerialline` schema, including the optional precision-10 Decimal `re_sellingprice`, plus an enabled market pricing configuration. The missing column caused the generic configuration-unavailable result. It has been published in Dev with the approved bounds; subsequent deployed `re_DraftEstimate` `partcapabilities` reads returned available for all three markets. This supersedes earlier statements below that the Dev column is missing. Search, material save and caller-specific access still need live acceptance.
+
+No plugin implementation, formulas, registration/images, permissions, locks or API dispatch were changed or deployed for this fix. The CSTM package-level selector and normalization are frontend source changes using the existing all-equipment draft contract; historical submitted/export-locked assignments are not migrated. See the app and Dataverse references for expected behavior and deployment status.
+
+For merged-code regression coverage, old synthetic backend fixtures were updated to supply a valid Account and to expect explicit zero tax/freight and the current missing-email error rather than obsolete defaults/messages. The existing required-Account validation was not bypassed. All 156 xUnit pricing/integration cases and the Draft service executable passed locally after those fixture corrections. Mocked tests do not establish which source revision is deployed or prove tenant calculations, and no existing estimates were recalculated.
+
+### Submitted-estimate HTML review automation (Dev definition saved, OFF)
+
+The existing solution flow `Send an Email Estimate` (`dcae3756-54d7-f111-a05d-00224809bc74`) now builds a complete EN/FR inline HTML email from saved estimate header/child snapshots, without workbook/file actions or attachments. It is saved but deliberately Stopped, with a requester-selected test mailbox configured outside source templates. No backend assemblies, API dispatch, formulas, loaders, locking, registration/images, permissions or schema were changed for this integration.
+
+The existing Drafts submit contract is unchanged: Save persists header/children, Calculate stores pricing, and direct `Submit` validates the saved Draft and updates `re_estimatestatus=126110002` plus `re_submittedon`. The export configuration was read as disabled; it was not enabled or modified. The flow therefore subscribes to **Modified = 3**, status-column filtering and Submitted status, rather than assuming app submission inserts a new header. A later change to the export-enabled lifecycle requires separate trigger/duplication acceptance; this flow does not replace or activate export delivery.
+
+Saved header prices/costs/CMII remain authoritative, even if an older deployed pricing assembly produced them. Package cards are saved-component previews with standard 5%/14% package isolation, current CSTM rates and KONE package-cost/final-price separation; billing uses cents/remainder. Missing pricing/incomplete child snapshots/retrieval/token failures terminate without sending. No error-contract or idempotency column was added. Status rewrites, redelivery and manual run resubmission can duplicate delivery; disabling automatic Outlook send retries is mitigation only.
+
+Nine local synthetic renderer/contract cases passed, including all 111 tokens and EN/FR escaping/clears, exact identifiers, six labor combinations/25 materials, package/billing math, guards and unique action names. Offline validation and Connected Dataverse/Outlook preflight passed. Live save rejected an initially duplicated nested action name that offline validation missed; this is now guarded. Generic-writer reference-format failures were resolved with a validated, ETag-conditional clientdata-only update using the existing solution storage shape. Readback verified the saved definition, unchanged owner/solution membership and Stopped management state. No business estimates were submitted, email sent, app/plugin published or runtime delivery/client rendering established. Missing optional Selling Price schema and pending pricing 2026.10 deployment remain separate prerequisites, not resolved by this flow. See the app and Dataverse references for mappings, source commands and acceptance gaps.
+
+### Standalone mailbox notification automation (Dev, trigger corrected)
+
+The requested Inbox-to-Teams test flow was created in Dev and its membership in `RepairEstimatorApp` verified. Flow `c38153e4-bff7-472e-85d8-bee3dd650f71` uses Outlook V3 plus a Teams Flow bot chat, with new dedicated solution connection references. After the user's recurrence validation error, live connector metadata confirmed a notification-based trigger; a surgical edit replaced the incorrect scaffolded polling type and removed recurrence settings. Corrected validation/live save/readback passed and the flow was already Started by the user; no runtime email/delivery test was performed. Full behavior and deployment evidence are in the Dataverse reference. No plugin binaries, dispatch, registrations/images, permissions, pricing, locks or estimator export lifecycle were changed; existing export automation was not enabled.
+
+### Standard-estimate additional tax/freight edits (local source, not deployed)
+
+Draft Save no longer replaces standard-estimate `re_usetax`/`re_freight` with 0.05/0.14 after writing packages. Existing validation still converts entered 0-100 percentage values to stored fractions and preserves explicit zero. The loader now resolves existing estimate/province/branch/parameter rates on both paths instead of forcing standard rates globally. Pricing 2026.10 uses those rates for additional material and miscellaneous costs; additional labor remains untaxed. Standard package tax/freight continue using the explicit fixed constants (5%/14%) in cost and stated-rate formulas, leaving their package subtotal unchanged. CSTM rate-sharing and KONE selling behavior are unchanged.
+
+Affected outputs include additional costs, aggregate tax/freight amounts, true cost and consequent suggested pricing/CMII; package estimated cost for standard packages remains unchanged. CalculationWriter continues saving resolved rates in existing header fields/aliases. No schema, API dispatch, registration/images, permissions, lock or export lifecycle changes. Existing frozen snapshots capture the saved header rates/results without new export mappings. No historical recalculation or tenant deployment performed; coordinated Drafts/pricing/frontend rollout is required.
+
+Local evidence: 58 focused pricing-engine/integration cases passed. The new fake-pipeline case Save/Loads 8%/20% and then zero through the real Drafts/loader/writer: standard package cost remains 319; with additional material 100 and miscellaneous 50, total true cost is 511 at 8%/20% and 469 at zero. A new engine case also verifies unchanged package/additional labor costs, changed additional totals and correct tax/freight deltas. An initial assertion held the fake pipeline's replaced header object; reading the current saved row corrected the test. Local mocked evidence does not establish deployed behavior.
 ### Manual customer phone validation (local source only)
 
 `ResolveCustomerSelection` validates the manual phone fallback before writing
@@ -19,7 +139,6 @@ whitespace-only rejection before Create, plus formatted-number persistence.
 The local test used `SignAssembly=false` because the private key is absent; the
 full legacy harness remains blocked earlier by its Account-less `TestChoices`
 fixture. No signed build, deployment or tenant verification occurred.
-
 ### Catalog selling-price overrides, pricing 2026.9 (local source, not deployed)
 
 Draft material input/output adds optional decimal `sellingPrice`, stored only in optional estimate material `re_sellingprice`. Trusted `re_unitpriceprecise` remains the read-only converted VK13 snapshot; source cost/price, currency, conversion and master classification ownership are unchanged. Only a selected catalog line with a positive trusted VK13 snapshot may receive an override, positive through 1000000000 with at most ten decimals. Legacy/unclassified, manual and package-priced lines reject supplied selling prices. An omitted/null value on the same saved catalog line preserves its existing override; a new/reselected line without an override defaults to its trusted VK13. Explicit override refresh/clone uses current catalog validation while keeping the entered override. Catalog schema capability checks now require the new Decimal at precision ten.

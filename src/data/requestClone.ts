@@ -88,6 +88,7 @@ export function cloneRequest(source: DraftRecord | OpportunityValues, sections: 
     materialLines: sections.custom ? (full?.materialLines ?? []).map(row => ({
       ...row, equipmentNumber: sections.equipment ? row.equipmentNumber : undefined,
       id: crypto.randomUUID(), refreshPart: !!row.catalogPartId,
+      markupPercent: row.catalogPartId && row.partType === 'kone' ? 10 : row.markupPercent,
     })) : [],
   }
 }

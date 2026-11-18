@@ -25,6 +25,7 @@ class Program
         if (args.Length == 1 && args[0] == "--catalog")
         {
             DraftServiceTests.TestCatalogParts();
+            DraftServiceTests.TestCatalogTransparency();
             return;
         }
         if (args.Length == 1 && args[0] == "--customer-defaults")
@@ -43,6 +44,12 @@ class Program
         {
             DraftServiceTests.TestPackageEquipment();
             Console.WriteLine("Package equipment persistence and validation cases passed.");
+            return;
+        }
+        if (args.Length == 1 && args[0] == "--planner-group-equipment")
+        {
+            DraftServiceTests.TestPlannerGroupEquipmentScope();
+            Console.WriteLine("Planner Group equipment scope cases passed.");
             return;
         }
         if (args.Length != 0) throw new ArgumentException("Unknown test selector.");

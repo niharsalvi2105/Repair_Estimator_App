@@ -1,11 +1,24 @@
 import type { DraftMaterial } from './draftContract'
 
 export function materialEntryError(line: DraftMaterial, language: 'en' | 'fr'): string | undefined {
-  if (line.sellingPrice != null && (!line.catalogPartId || !(line.unitPrice != null && line.unitPrice > 0) ||
-    !Number.isFinite(line.sellingPrice) || line.sellingPrice <= 0 || line.sellingPrice > 1000000000 ||
-    Number(line.sellingPrice.toFixed(10)) !== line.sellingPrice))
-    return language === 'fr' ? 'Le prix de vente exige une pièce du catalogue avec un prix VK13 et un montant positif au maximum de 1000000000.'
-      : 'Selling price requires a catalog part with a VK13 price and a positive amount no greater than 1000000000.'
+  if (line.catalogPartId) {
+    const effectivePrice = line.sellingPrice ?? (line.catalogDetails?.requiresSellingPrice ? undefined : line.unitPrice)
+    if (line.catalogDetails?.requiresCost && (!Number.isFinite(line.unitCost) || line.unitCost <= 0 ||
+      line.unitCost > 1000000000 || Number(line.unitCost.toFixed(10)) !== line.unitCost))
+      return language === 'fr' ? 'Saisissez un coût unitaire positif, jusqu’à 1000000000 et 10 décimales.'
+        : 'Enter a positive unit cost up to 1000000000 with at most 10 decimal places.'
+    if (line.catalogDetails?.requiresDescription && !line.description.trim())
+      return language === 'fr' ? 'La description de la pièce est requise.' : 'Part description is required.'
+    if (line.catalogDetails?.requiresUom && (!line.uom?.trim() || line.uom.length > 20))
+      return language === 'fr' ? 'L’unité de mesure est requise et limitée à 20 caractères.'
+        : 'Unit of measure is required and limited to 20 characters.'
+    if (effectivePrice == null || !Number.isFinite(effectivePrice) || effectivePrice <= 0 ||
+      effectivePrice > 1000000000 || Number(effectivePrice.toFixed(10)) !== effectivePrice)
+      return language === 'fr' ? 'Saisissez un prix de vente positif, jusqu’à 1000000000 et 10 décimales.'
+        : 'Enter a positive selling price up to 1000000000 with at most 10 decimal places.'
+  } else if (line.sellingPrice != null)
+    return language === 'fr' ? 'Un prix de vente personnalisé exige une pièce du catalogue.'
+      : 'A manual selling price requires a catalog part.'
   if (!line.part?.trim())
     return language === 'fr' ? 'Le numéro de pièce est obligatoire.' : 'Part number is required.'
   if (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 100000)

@@ -10,7 +10,7 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.9";
+        public const string Version = "2026.11";
 
         public static PricingResult Calculate(EstimateInput i)
         {
@@ -179,8 +179,8 @@ namespace RepairEstimator.Plugins.Pricing
         private static void CalculateCost(EstimateInput i, PricingResult r)
         {
             decimal rate = i.MechanicLaborRate;
-            decimal tax = i.IsCustomPath ? i.UseTaxPct : EstimateInput.StandardUseTax;
-            decimal freight = i.IsCustomPath ? i.FreightPct : EstimateInput.StandardFreight;
+            decimal tax = i.UseTaxPct;
+            decimal freight = i.FreightPct;
             decimal markup = 1m + tax + freight;
 
             // Package costs scale by equipment; custom lines and additions are estimate-level.

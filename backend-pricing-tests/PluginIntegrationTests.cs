@@ -17,12 +17,42 @@ namespace RepairEstimator.Tests
 {
     public class PluginIntegrationTests
     {
+        [Fact]
+        public void Standard_additional_rates_roundtrip_without_changing_package_subtotal()
+        {
+            var db = new Pipeline();
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            request.fields.Single(f => f.key == "re_usetax").value = "8";
+            request.fields.Single(f => f.key == "re_freight").value = "20";
+            request.fields.Add(new Field { key = "re_additionalmaterial", value = "100" });
+            request.fields.Add(new Field { key = "re_additionalmiscellaneous", value = "50" });
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save(ExportSnapshot.Serialize(request)));
+            var header = db.Rows[db.EstimateId];
+            Assert.Equal(.08m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
+            Assert.Equal(.20m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
+            Assert.Equal(319m, header.GetAttributeValue<Money>(Names.Estimate.PackageEstimatedCost).Value);
+            Assert.Equal(192m, header.GetAttributeValue<Money>(Names.Estimate.TotalAdditionalCost).Value);
+            Assert.Equal(511m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            loaded.mode = "save";
+            loaded.fields.Single(f => f.key == "re_usetax").value = "0";
+            loaded.fields.Single(f => f.key == "re_freight").value = "0";
+            db.Save(ExportSnapshot.Serialize(loaded));
+            header = db.Rows[db.EstimateId];
+            Assert.Equal(0m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
+            Assert.Equal(0m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
+            Assert.Equal(319m, header.GetAttributeValue<Money>(Names.Estimate.PackageEstimatedCost).Value);
+            Assert.Equal(469m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+        }
+
         [Theory]
         [InlineData(true)]
         [InlineData(false)]
         public void Catalog_selling_override_reaches_saved_pricing_and_frozen_exports(bool kone)
         {
             var db = new Pipeline();
+            db.Rows[db.BranchId]["re_branchnumber"] = "SYNTHETIC";
             db.Rows[db.PackageId]["re_iscustompackage"] = true;
             var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
             request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
@@ -55,6 +85,51 @@ namespace RepairEstimator.Tests
             db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
             Assert.Equal(firstPrice - (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
                 db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
+        }
+
+        [Fact]
+        public void Completed_catalog_price_with_zero_source_VK13_reaches_pricing_and_frozen_export()
+        {
+            foreach (var kone in new[] { true, false })
+            {
+                var db = new Pipeline();
+                db.Rows[db.BranchId]["re_branchnumber"] = "SYNTHETIC";
+                db.Rows[db.PackageId]["re_iscustompackage"] = true;
+                var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+                request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                    ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+                AddCustomDescriptionLines(request);
+                db.Save(ExportSnapshot.Serialize(request));
+                var line = db.Rows.Values.Single(e => e.LogicalName == "re_estimatematerialline");
+                line.Attributes.Remove("re_materialpricingmode");
+                line["re_parttype"] = new OptionSetValue(kone ? 126110000 : 126110001);
+                line["re_sparepart"] = new EntityReference("re_sparepart", Guid.NewGuid());
+                line["re_unitcostprecise"] = line.GetAttributeValue<Money>("re_unitcost").Value;
+                line["re_unitpriceprecise"] = 0m;
+                line["re_sellingprice"] = 30m;
+                line["re_catalogdetailsjson"] = ExportSnapshot.Serialize(new CatalogDetails {
+                    number = "SYNTHETIC", sourcePrice = 0m, unitPrice = 0m, requiresSellingPrice = true,
+                    issues = new List<string> { "inactive", "invalid-price" }
+                });
+                if (kone) line["re_markuppct"] = 10m;
+                var column = kone ? Names.Estimate.SuggestedPriceKoneMaterial : Names.Estimate.SuggestedPrice;
+                db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+                var firstPrice = db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value;
+                var firstCost = db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value;
+                line["re_sellingprice"] = 40m;
+                db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+                Assert.Equal(firstCost, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+                Assert.Equal(firstPrice + (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
+                    db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
+                var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+                Assert.Equal(0m, loaded.materialLines.Single().unitPrice);
+                Assert.Equal(40m, loaded.materialLines.Single().sellingPrice);
+                Assert.Equal(0m, loaded.materialLines.Single().catalogDetails.sourcePrice);
+                Assert.Contains("invalid-price", loaded.materialLines.Single().catalogDetails.issues);
+                var frozen = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
+                Assert.Equal(line.GetAttributeValue<string>("re_catalogdetailsjson"),
+                    frozen.materials.Single().cells.Single(c => c.key == "re_catalogdetailsjson").text);
+            }
         }
 
         [Fact]
@@ -682,8 +757,8 @@ namespace RepairEstimator.Tests
             var header = db.Rows[db.EstimateId];
             Assert.Equal(319m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
             Assert.Equal(638m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPrice).Value);
-            Assert.Equal(0.05m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
-            Assert.Equal(0.14m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
+            Assert.Equal(0m, header.GetAttributeValue<decimal>(Names.Estimate.UseTax));
+            Assert.Equal(0m, header.GetAttributeValue<decimal>(Names.Estimate.Freight));
             db.Rows[db.PackageId]["re_mechanichours"] = 999m;
             db.Rows[db.PackageId]["re_materialmisctaxcost"] = new Money(999m);
             var version = header.RowVersion;
@@ -980,7 +1055,7 @@ namespace RepairEstimator.Tests
             public readonly List<string> Traces = new List<string>(), ConfigReads = new List<string>();
             public readonly Guid EstimateId = Guid.NewGuid(), BranchId = Guid.NewGuid(), StateId = Guid.NewGuid(),
                 CountryId = Guid.NewGuid(), CurrencyId = Guid.NewGuid(), TypeId = Guid.NewGuid(),
-                PackageId = Guid.NewGuid(), EquipmentId = Guid.NewGuid(), UserId = Guid.NewGuid();
+                PackageId = Guid.NewGuid(), EquipmentId = Guid.NewGuid(), UserId = Guid.NewGuid(), AccountId = Guid.NewGuid();
             public IOrganizationService Caller { get; }
             readonly IOrganizationService config;
             IPluginExecutionContext current;
@@ -1211,7 +1286,8 @@ namespace RepairEstimator.Tests
             }
             void Seed() {
                 var group = Guid.NewGuid();
-                Fixed(BranchId, Names.Branch.Entity, ("re_country", new EntityReference("re_country", CountryId)),
+                Fixed(BranchId, Names.Branch.Entity, ("re_branchnumber", "SYNTHETIC"),
+                    ("re_country", new EntityReference("re_country", CountryId)),
                     ("re_currency", new EntityReference("transactioncurrency", CurrencyId)),
                     ("re_market", new OptionSetValue(126110000)), ("re_margingroup", new EntityReference("re_margingroup", group)));
                 Fixed(StateId, Names.StateProvince.Entity, ("re_country", new EntityReference("re_country", CountryId)));
@@ -1243,9 +1319,13 @@ namespace RepairEstimator.Tests
                 Add(Names.RedundancyBand.Entity, ("re_minimumequipment", 1), ("re_redundancyband", new OptionSetValue(126110000)));
             }
             public string DraftJson(string rowVersion = null) {
+                if (!Rows.ContainsKey(AccountId))
+                    Fixed(AccountId, "account", ("re_salesforceaccountid", "integration-fixture-account"),
+                        ("re_salesorganizations", "MKOF"), ("accountnumber", "00001"), ("name", "Fixture Account"));
                 return "{\"mode\":\"save\",\"id\":\"" + EstimateId + "\",\"version\":" +
                     (rowVersion == null ? "null" : "\"" + rowVersion + "\"") +
-                    ",\"title\":\"Draft\",\"building\":\"Building\",\"customer\":\"Customer\",\"email\":\"customer@example.invalid\",\"branchId\":\"" +
+                    ",\"title\":\"Draft\",\"building\":\"Building\",\"customer\":\"Customer\",\"email\":\"customer@example.invalid\",\"accountId\":\"" +
+                    AccountId + "\",\"branchId\":\"" +
                     BranchId + "\",\"stateId\":\"" + StateId + "\",\"equipmentTypeId\":\"" + TypeId +
                     "\",\"market\":126110000,\"fields\":[{\"key\":\"re_proposallanguage\",\"value\":\"126110000\"}," +
                     "{\"key\":\"re_timecategory\",\"value\":\"126110000\"},{\"key\":\"re_usetax\",\"value\":\"0\"}," +

@@ -161,7 +161,6 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
         const label = language === 'fr' ? field.fr : field.en
         const rateField = key === 're_statedlaborrate'
         const taxOrFreight = key === 're_usetax' || key === 're_freight'
-        const fixedRate = taxOrFreight && !custom
         const error = errors[id] ?? (rateField ? statedRateError(value[key], language) : undefined)
         const required = ['re_proposallanguage', 're_timecategory', 're_usetax', 're_freight', 're_billingplan'].includes(key)
         return (
@@ -183,7 +182,7 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
                 max={field.percent ? 100 : field.max}
                 step={field.type === 'number' ? field.integer ? 1 : 'any' : undefined}
                 maxLength={field.maxLength ?? (field.type ? undefined : 100)}
-                readOnly={readOnly || fixedRate}
+                readOnly={readOnly}
                 value={field.type === 'number' && !field.integer && focusedKey !== key
                   ? decimalInputDisplay(value[key] ?? '') : value[key] ?? ''}
                 onFocus={() => setFocusedKey(key)} onBlur={() => setFocusedKey(undefined)}
@@ -194,8 +193,8 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
               {custom
                 ? (fr ? 'Taux modifiable pour CSTM et les coûts supplémentaires uniquement. Forfaits standard : taxe 5 %, fret 14 % (fixes).'
                   : 'Editable for CSTM and additional costs only. Standard packages: fixed 5% tax and 14% freight.')
-                : (fr ? 'Forfaits standard : taxe 5 %, fret 14 % (fixes).'
-                  : 'Standard packages: fixed 5% tax and 14% freight.')}
+                : (fr ? 'Taux modifiable pour les coûts supplémentaires uniquement. Le sous-total des forfaits standard conserve une taxe de 5 % et un fret de 14 %.'
+                  : 'Editable for additional costs only. Standard package subtotal keeps 5% tax and 14% freight.')}
             </p>}
             {rateField && <p className="field-help" id={`${id}-help`}>{language === 'fr'
               ? 'Facultatif. Taux horaire de vente négocié, et non le prix total du devis. Laissez vide (ou zéro) pour le calcul standard du CMII. Un taux faible peut empêcher le calcul des prix; le serveur valide la marge lors de l’enregistrement.'

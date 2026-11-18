@@ -13,7 +13,7 @@ import {
   type ReferenceOption,
 } from './data/repairEstimatorRepository'
 import './App.css'
-import { validPackageEquipment, packageEquipmentNumbers, validCustomCostEquipment } from './data/packageEquipment'
+import { allEquipmentForCustomPackage, validPackageEquipment, packageEquipmentNumbers, validCustomCostEquipment } from './data/packageEquipment'
 import { EstimateList } from './EstimateList'
 import { LazyWorkspace } from './LazyWorkspace'
 import { DashboardMetrics } from './DashboardMetrics'
@@ -37,6 +37,7 @@ import { CloneRequestDialog } from './CloneRequestDialog'
 import type { AccountMasterOption, ContactMasterOption } from './data/customerMasterRepository'
 import { requestReuseErrorMessage } from './data/dataverseOperation'
 import { measureOperation } from './data/performance'
+import { missingMaterialSellingPrices } from './data/materialSaveVerification'
 
 const loadEstimator = () => import('./EstimatorWorkspace')
 const loadMaster = () => import('./MasterDataWorkspace').then((module) => ({ default: module.MasterDataWorkspace }))
@@ -158,15 +159,15 @@ const copy = {
     chooseBranch: 'Choose a branch',
     equipment: 'Equipment',
     equipmentHint:
-      'Search by equipment number or name. Results are limited to the selected branch.',
+      'Search by equipment number or name. For a subbranch, results include its parent branch and all subbranches in the same Planner Group.',
     equipmentSearch: 'Browse or search equipment by number or name',
     addEquipmentList: 'Add equipment list',
-    equipmentListHelp: 'Select Add equipment list or press Enter to check these numbers in this branch.',
-    searchHelp: 'Open the list to browse equipment for this branch, or type to filter. Paste several numbers separated by commas, semicolons, spaces or new lines to add them at once. Select as many units as needed.',
+    equipmentListHelp: 'Select Add equipment list or press Enter to check these numbers for this branch and its Planner Group.',
+    searchHelp: 'Open the list to browse equipment available to this branch, or type to filter. Subbranches include parent and sibling equipment. Paste several numbers separated by commas, semicolons, spaces or new lines to add them at once. Select as many units as needed.',
     searching: 'Searching Dataverse...',
     refineSearch: 'Showing the first 20 matches. Type to narrow the list.',
     pasteAdded: 'Equipment added from pasted list',
-    pasteNotFound: 'Not found in this branch',
+    pasteNotFound: 'Not found in this branch or its Planner Group',
     pasteAlreadySelected: 'Already selected',
     pasteOverLimit: 'Not added (processing limit reached)',
     pasteChecking: 'Checking equipment numbers...',
@@ -312,15 +313,15 @@ const copy = {
     chooseBranch: 'Choisir une succursale',
     equipment: 'Équipement',
     equipmentHint:
-      'Recherchez par numéro ou nom d’équipement. Les résultats sont limités à la succursale choisie.',
+      'Recherchez par numéro ou nom d’équipement. Pour une sous-succursale, les résultats incluent la succursale principale et toutes les sous-succursales du même groupe de planification.',
     equipmentSearch: 'Parcourir ou rechercher par numéro ou nom',
     addEquipmentList: 'Ajouter la liste des équipements',
-    equipmentListHelp: 'Sélectionnez Ajouter la liste des équipements ou appuyez sur Entrée pour vérifier ces numéros dans cette succursale.',
-    searchHelp: 'Ouvrez la liste pour parcourir les équipements de cette succursale, ou saisissez pour filtrer. Collez plusieurs numéros séparés par des virgules, points-virgules, espaces ou retours à la ligne pour les ajouter en une fois. Sélectionnez autant d’unités que nécessaire.',
+    equipmentListHelp: 'Sélectionnez Ajouter la liste des équipements ou appuyez sur Entrée pour vérifier ces numéros dans cette succursale et son groupe de planification.',
+    searchHelp: 'Ouvrez la liste pour parcourir les équipements disponibles pour cette succursale, ou saisissez pour filtrer. Les sous-succursales incluent les équipements de la succursale principale et des sous-succursales associées. Collez plusieurs numéros séparés par des virgules, points-virgules, espaces ou retours à la ligne pour les ajouter en une fois. Sélectionnez autant d’unités que nécessaire.',
     searching: 'Recherche dans Dataverse…',
     refineSearch: 'Affichage des 20 premiers résultats. Saisissez pour affiner.',
     pasteAdded: 'Équipements ajoutés depuis la liste collée',
-    pasteNotFound: 'Introuvables dans cette succursale',
+    pasteNotFound: 'Introuvables dans cette succursale ou son groupe de planification',
     pasteAlreadySelected: 'Déjà sélectionnés',
     pasteOverLimit: 'Non ajoutés (limite de traitement atteinte)',
     pasteChecking: 'Vérification des numéros d’équipement…',
@@ -469,7 +470,8 @@ function App() {
   const customRatesInitialized = useRef(false)
   const requestInputs = useMemo<RequestInputs>(() => selectedPackages.some((p) => p.re_iscustompackage)
     ? editableRequestInputs
-    : { ...editableRequestInputs, re_usetax: '5', re_freight: '14' }, [editableRequestInputs, selectedPackages])
+    : { ...editableRequestInputs, re_usetax: editableRequestInputs.re_usetax ?? '5',
+      re_freight: editableRequestInputs.re_freight ?? '14' }, [editableRequestInputs, selectedPackages])
   const [draftReferences, setDraftReferences] = useState<DraftReferences>()
   const [draftReferenceError, setDraftReferenceError] = useState('')
   const [stateId, setStateId] = useState('')
@@ -802,8 +804,8 @@ function App() {
     const province = draftReferences?.states.find((s) => s.id === branch?._re_stateprovince_value)
     setRequestInputs((current) => ({
       ...current,
-      re_usetax: typeof branch?.re_defaultusetax !== 'number' ? '' : String(branch.re_defaultusetax * 100),
-      re_freight: typeof branch?.re_defaultfreight !== 'number' ? '' : String(branch.re_defaultfreight * 100),
+      re_usetax: '5',
+      re_freight: '14',
       re_timecategory: current.re_timecategory || '126110000',
       re_proposallanguage: province?.frenchRequired ? '126110001' : current.re_proposallanguage || (language === 'fr' ? '126110001' : '126110000'),
     }))
@@ -850,7 +852,7 @@ function App() {
       customRatesInitialized.current = true
       setRequestInputs((current) => ({ ...current, re_usetax: '5', re_freight: '10' }))
     }
-    setSelectedPackages((current) => [...current, repairPackage])
+    setSelectedPackages((current) => [...current, allEquipmentForCustomPackage(repairPackage)])
   }
 
   const dt = language === 'fr' ? {
@@ -900,7 +902,7 @@ function App() {
       name: item.name ?? '', location: item.location ?? '', customer: item.customer ?? '',
       oem: item.oem ?? '', age: item.age ?? undefined,
     }))
-    const packages = record.packages.map((item) => ({
+    const savedPackages = record.packages.map((item) => ({
       re_repairpackageid: item.id, re_packagenumber: item.number, re_packagenameen: item.nameEn,
       re_packagenamefr: item.nameFr ?? undefined, re_proposalscopeen: item.scopeEn,
       re_proposalscopefr: item.scopeFr ?? undefined, re_mechanichours: item.hours, re_materialmisctaxcost: item.material,
@@ -908,15 +910,15 @@ function App() {
       re_iscustompackage: item.isCustom ?? false, re_istimematerial: item.isTimeMaterial ?? false,
       equipmentNumbers: item.equipmentNumbers,
     }))
+    const packages = record.status === 126110002 || record.exportDelivery
+      ? savedPackages : savedPackages.map(allEquipmentForCustomPackage)
     const customIds = packages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid)
-    if (!customIds.length) {
-      inputs.re_usetax = '5'
-      inputs.re_freight = '14'
-    }
     const labor = (record.laborLines ?? []).map((line) => ({ ...line,
       packageId: line.packageId || (customIds.length === 1 ? customIds[0] : undefined) }))
-    const materials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '',
+    const savedMaterials = (record.materialLines ?? []).map((line) => ({ ...line, vendor: line.vendor ?? '', part: line.part ?? '',
       packageId: line.packageId || (customIds.length === 1 ? customIds[0] : undefined) }))
+    const materials = record.status === 126110002 || record.exportDelivery ? savedMaterials
+      : savedMaterials.map(line => line.catalogPartId && line.partType === 'kone' ? { ...line, markupPercent: 10 } : line)
     setLaborLines(labor); setMaterialLines(materials)
     setDraftId(record.id); setDraftVersion(record.version); setDraftNumber(record.number ?? '')
     setSavedSalesperson(record.salesperson ?? '')
@@ -940,8 +942,8 @@ function App() {
       buildingName: record.building, customerName: record.customer, customerEmail: record.email ?? '',
       customerPhone: record.phone ?? '', accountId: record.accountId ?? '', contactId: record.contactId ?? '',
       equipmentTypeId: record.equipmentTypeId, jobTypeId: record.jobTypeId ?? '',
-      market: record.market, requestInputs: inputs, selectedEquipment: equipment, selectedPackages: packages,
-      laborLines: labor, materialLines: materials,
+      market: record.market, requestInputs: inputs, selectedEquipment: equipment, selectedPackages: savedPackages,
+      laborLines: labor, materialLines: savedMaterials,
     }))
   }
 
@@ -951,7 +953,18 @@ function App() {
     setDraftBusy(true); setDraftError(''); setDraftNotice('')
     try {
       const record = await draftOperation({ mode: 'load', id })
-      applyDraft(record); setReferencesNeeded(true); setStep(record.status === 126110002 ? 5 : 1); setView('new')
+      applyDraft(record)
+      if (record.status !== 126110002 && !record.exportDelivery &&
+        record.materialLines?.some(line => line.catalogPartId && line.partType === 'kone' && line.markupPercent !== 10))
+        setDraftNotice(language === 'fr'
+          ? 'La majoration KONE est maintenant fixée à 10 % du prix de vente. Enregistrez et recalculez pour appliquer ce changement.'
+          : 'KONE markup is now fixed at 10% of the selling price. Save and recalculate to apply this change.')
+      if (record.status !== 126110002 && !record.exportDelivery &&
+        record.packages.some(item => item.isCustom && item.equipmentNumbers != null))
+        setDraftNotice(language === 'fr'
+          ? 'Les forfaits CSTM utilisent maintenant tous les équipements sélectionnés. Enregistrez et recalculez pour appliquer ce changement.'
+          : 'CSTM packages now use all selected equipment. Save and recalculate to apply this change.')
+      setReferencesNeeded(true); setStep(record.status === 126110002 ? 5 : 1); setView('new')
     } catch (reason) { setDraftError(`${dt.error} ${message(reason)}`) }
     finally { draftInFlight.current = false; setDraftBusy(false) }
   }
@@ -970,7 +983,9 @@ function App() {
         nameFr: item.re_packagenamefr, scopeFr: item.re_proposalscopefr,
         hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial,
         equipmentNumbers: item.equipmentNumbers ?? null, allEquipment: item.equipmentNumbers == null })),
-      laborLines: labor, materialLines: materials,
+      laborLines: labor, materialLines: materials.map(line => line.catalogPartId
+        ? { ...line, markupPercent: line.partType === 'kone' ? 10 : undefined }
+        : line),
     }
   }
   function validateCostImport(labor: DraftLabor[], materials: DraftMaterial[]) {
@@ -1052,15 +1067,16 @@ function App() {
         return JSON.stringify(sent.map(costLinkSignature).sort()) !==
           JSON.stringify((received ?? []).map(costLinkSignature).sort())
       })
-      const missingSellingPrices = (input.materialLines ?? []).some(line => line.sellingPrice != null &&
-        record.materialLines?.find(saved => saved.id === line.id)?.sellingPrice !== line.sellingPrice)
+      const previousMaterials: DraftMaterial[] = savedSnapshot ? JSON.parse(savedSnapshot).materialLines ?? [] : []
+      const missingSellingPrices = missingMaterialSellingPrices(
+        input.materialLines ?? [], record.materialLines ?? [], previousMaterials)
       if (missingDetails || missingAssignments || missingCustomDescriptions || missingCostEquipment || missingSellingPrices) {
         setDraftVersion(record.version); setDraftNumber(record.number || '')
         setSubmitted(record.status === 126110002)
         setExportDelivery(record.exportDelivery ?? undefined)
         if (missingSellingPrices) throw new Error(language === 'fr'
-          ? 'Le serveur n’a pas conservé les prix de vente. Vos modifications restent à l’écran; déployez le schéma et les deux plug-ins mis à jour avant de recalculer.'
-          : 'The server did not retain selling prices. Your edits remain on screen; deploy the updated schema and both plugins before recalculating.')
+          ? 'Impossible de confirmer les prix de vente enregistrés. L’enregistrement a peut-être réussi et vos modifications restent à l’écran. Ne réessayez pas et ne rechargez pas; contactez votre administrateur.'
+          : 'Could not verify the saved selling prices. The save may have completed and your edits remain on screen. Do not retry or reload; contact your administrator.')
         if (missingCostEquipment) throw new Error(language === 'fr'
           ? 'Le serveur n’a pas conservé les équipements des coûts personnalisés. Vos lignes restent à l’écran. Déployez le schéma et le plug-in de brouillon mis à jour.'
           : 'The server did not retain custom-cost equipment assignments. Your rows remain on screen. Deploy the updated schema and draft plugin.')

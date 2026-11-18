@@ -9,6 +9,7 @@ import {
   Re_stateprovincesService,
   TransactioncurrenciesService,
   Re_laborratesService,
+  Re_plannergroupsService,
 } from '../generated'
 import { unwrap, withTimeout } from './dataverseOperation'
 import { createCustomerNameLoader } from './customerNames'
@@ -20,8 +21,60 @@ import type { Re_repairpackages } from '../generated/models/Re_repairpackagesMod
 import type { IGetAllOptions } from '../generated/models/CommonModels'
 import type { EquipmentSourceDetails } from './equipmentDisplay'
 import { measureOperation } from './performance'
+import { buildEquipmentScope, buildEquipmentScopeFilter, type EquipmentScope } from './equipmentScope'
 
 export const getBranchCustomerNames = createCustomerNameLoader(Re_equipmentsService)
+const equipmentScopeRequests = new Map<string, Promise<EquipmentScope>>()
+
+async function getPlannerGroups(filter: string) {
+  const records = []
+  const seenTokens = new Set<string>()
+  let skipToken: string | undefined
+  do {
+    const result = await withTimeout(Re_plannergroupsService.getAll({
+      select: ['re_plannergroupid', 're_subbranchcode', 're_ismainbranch', '_re_mainbranch_value'],
+      filter,
+      orderBy: ['re_plannergroupid asc'],
+      maxPageSize: 500,
+      skipToken,
+    }))
+    records.push(...unwrap(result))
+    skipToken = result.skipToken
+    if (skipToken) {
+      if (seenTokens.has(skipToken)) throw new Error('Dataverse returned a repeated Planner Group paging token.')
+      seenTokens.add(skipToken)
+    }
+  } while (skipToken)
+  return records
+}
+
+async function loadEquipmentScope(branchId: string): Promise<EquipmentScope> {
+  const branch = unwrap(await withTimeout(Re_branchsService.get(branchId, { select: ['re_branchnumber'] })))
+  if (!branch.re_branchnumber?.trim()) throw new Error('The selected branch has no branch number for Planner Group matching.')
+  const escapedBranchNumber = branch.re_branchnumber.trim().replaceAll("'", "''")
+  const matchingGroups = await getPlannerGroups(
+    `statecode eq 0 and re_ismainbranch eq false and re_subbranchcode eq '${escapedBranchNumber}'`,
+  )
+  const selectedScope = buildEquipmentScope(branchId, branch.re_branchnumber, matchingGroups, matchingGroups)
+  const parentId = selectedScope.branchIds.find((id) => id !== branchId)
+  if (!parentId) return selectedScope
+
+  const groupsForParent = await getPlannerGroups(
+    `statecode eq 0 and re_ismainbranch eq false and _re_mainbranch_value eq ${parentId}`,
+  )
+  return buildEquipmentScope(branchId, branch.re_branchnumber, matchingGroups, groupsForParent)
+}
+
+function getEquipmentScope(branchId: string): Promise<EquipmentScope> {
+  const cached = equipmentScopeRequests.get(branchId)
+  if (cached) return cached
+  const request = loadEquipmentScope(branchId)
+  equipmentScopeRequests.set(branchId, request)
+  void request.catch(() => {
+    if (equipmentScopeRequests.get(branchId) === request) equipmentScopeRequests.delete(branchId)
+  })
+  return request
+}
 
 export async function getPackageCostRates(branchId: string) {
   const today = new Date().toISOString().slice(0, 10)
@@ -146,6 +199,7 @@ export async function searchEquipment(
   searchText: string,
 ): Promise<Equipment[]> {
   return measureOperation('equipment-search', async () => {
+    const scope = await getEquipmentScope(branchId)
     const escapedSearch = searchText.replaceAll("'", "''")
     const result = await withTimeout(Re_equipmentsService.getAll({
       select: [
@@ -160,7 +214,7 @@ export async function searchEquipment(
         're_manufacturer',
         're_constructionyear',
       ],
-      filter: `statecode eq 0 and _re_branch_value eq ${branchId}${escapedSearch ? ` and (startswith(re_equipment,'${escapedSearch}') or startswith(re_equipmentname,'${escapedSearch}'))` : ''}`,
+      filter: `statecode eq 0 and ${buildEquipmentScopeFilter(scope)}${escapedSearch ? ` and (startswith(re_equipment,'${escapedSearch}') or startswith(re_equipmentname,'${escapedSearch}'))` : ''}`,
       orderBy: ['re_equipment asc'],
       top: 20,
       maxPageSize: 20,
@@ -173,6 +227,7 @@ export async function searchEquipment(
 export async function findEquipmentByNumbers(branchId: string, numbers: string[]): Promise<Equipment[]> {
   if (numbers.length === 0) return []
   return measureOperation('equipment-details', async () => {
+    const scope = await getEquipmentScope(branchId)
     const matches = numbers.map((number) => `re_equipment eq '${number.replaceAll("'", "''")}'`).join(' or ')
     const result = await withTimeout(Re_equipmentsService.getAll({
       select: [
@@ -187,7 +242,7 @@ export async function findEquipmentByNumbers(branchId: string, numbers: string[]
         're_manufacturer',
         're_constructionyear',
       ],
-      filter: `statecode eq 0 and _re_branch_value eq ${branchId} and (${matches})`,
+      filter: `statecode eq 0 and ${buildEquipmentScopeFilter(scope)} and (${matches})`,
       orderBy: ['re_equipment asc', 're_equipmentid asc'],
       maxPageSize: 500,
     }))

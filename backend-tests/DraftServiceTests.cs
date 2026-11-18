@@ -14,7 +14,7 @@ static class DraftServiceTests
     static readonly MethodInfo Read = typeof(DraftPlugin).GetMethod("Read", BindingFlags.Static | BindingFlags.NonPublic);
     static readonly Guid User = Guid.NewGuid(), Branch = Guid.NewGuid(), Country = Guid.NewGuid(),
         Currency = Guid.NewGuid(), Province = Guid.NewGuid(), Type = Guid.NewGuid(),
-        MasterEquipment = Guid.NewGuid(), MasterPackage = Guid.NewGuid();
+        MasterEquipment = Guid.NewGuid(), MasterPackage = Guid.NewGuid(), Account = Guid.NewGuid();
 
     static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
     static void Run(FakeService service, Draft input) =>
@@ -179,9 +179,14 @@ static class DraftServiceTests
     static FakeService Setup()
     {
         var service = new FakeService();
+        service.Add(new Entity("account", Account) {
+            ["re_salesforceaccountid"] = "draft-fixture-account", ["re_salesorganizations"] = "MKOF",
+            ["accountnumber"] = "00001", ["name"] = "Fixture Account"
+        });
         service.Add(new Entity("re_branch", Branch) {
             ["re_country"] = new EntityReference("re_country", Country),
             ["re_currency"] = new EntityReference("transactioncurrency", Currency),
+            ["re_branchnumber"] = "BR-1",
             ["re_market"] = new OptionSetValue(126110000)
         });
         service.Add(new Entity("re_stateprovince", Province) { ["re_country"] = new EntityReference("re_country", Country) });
@@ -203,7 +208,8 @@ static class DraftServiceTests
 
     static Draft Input() => new Draft {
         mode = "save", id = Guid.NewGuid().ToString(), title = "Draft", building = "Building",
-        customer = "Customer", email = "customer@example.invalid", branchId = Branch.ToString(), stateId = Province.ToString(),
+        customer = "Customer", email = "customer@example.invalid", accountId = Account.ToString(),
+        branchId = Branch.ToString(), stateId = Province.ToString(),
         equipmentTypeId = Type.ToString(), market = 126110000,
         fields = new List<Field> {
             new Field {key="re_proposallanguage",value="126110000"},
@@ -270,7 +276,7 @@ static class DraftServiceTests
         Assert(decimal.Parse(result.fields.Single(f => f.key == "re_usetax").value,
             System.Globalization.CultureInfo.InvariantCulture) == 5m, "Percentage roundtrip");
         Assert(decimal.Parse(result.fields.Single(f => f.key == "re_freight").value,
-            System.Globalization.CultureInfo.InvariantCulture) == 14m, "Standard freight overrides submitted zero");
+            System.Globalization.CultureInfo.InvariantCulture) == 0m, "Additional freight preserves submitted zero on standard estimates");
         Assert(service.Rows.Values.Single(e => e.LogicalName == "re_estimateequipment").GetAttributeValue<bool>("re_isprimary"),
             "First equipment must be primary");
         Assert(service.Rows.Values.Single(e => e.LogicalName == "re_estimatepackage").GetAttributeValue<int>("re_quantity") == 1,
@@ -321,6 +327,7 @@ static class DraftServiceTests
         Reject(() => Run(service, input), "Only Draft");
         TestFlexiblePackages();
         TestFlexibleEquipment();
+        TestPlannerGroupEquipmentScope();
         TestCustomLines();
         TestRequiredCustomPackages();
         TestAllLaborCombinations();
@@ -502,8 +509,10 @@ static class DraftServiceTests
         service.Rows[Currency]["isocurrencycode"] = "CAD";
         service.Rows[configId]["re_market"] = new OptionSetValue(126110001);
         service.Rows[partId]["re_pricingunit"] = 10m;
-        Reject(() => search.Invoke(null, new object[] { service,
-            new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "00" } }), "per-unit");
+        var nonUnit = (CatalogResult)search.Invoke(null, new object[] { service,
+            new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "00" } });
+        Assert(nonUnit.parts.Single().details.issues.Contains("unsupported-pricing-unit") &&
+            nonUnit.parts.Single().unitCost == null, "Unsupported pricing units remain visible with manual completion required.");
         service.Rows[partId]["re_pricingunit"] = 1m;
         service.Rows[Branch]["re_market"] = new OptionSetValue(126110001);
         service.Rows[MasterPackage]["re_iscustompackage"] = true;
@@ -571,11 +580,11 @@ static class DraftServiceTests
         Assert(loaded.materialLines.Single().unitCost == 7.73178m,
             "Saved snapshots survive source changes and unrelated saves even when catalog disabled.");
         input = loaded; input.materialLines[0].markupPercent = 20;
-        Reject(() => Run(service, input), "not enabled");
+        Reject(() => Run(service, input), "markup");
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
         service.Rows[configId]["re_isenabled"] = true;
         input.materialLines[0].partType = "non-kone";
-        Reject(() => Run(service, input), "classification");
+        Reject(() => Run(service, input), "Markup");
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
         input.materialLines[0].partType = "kone";
         input.materialLines[0].markupPercent = 101;
@@ -595,14 +604,18 @@ static class DraftServiceTests
         service.Rows[partId]["re_effectiveto"] = DateTime.UtcNow.AddDays(-1);
         var stale = (CatalogResult)search.Invoke(null, new object[] { service,
             new Draft { mode = "partcatalog", market = 126110001, partType = "kone", search = "00" } });
-        Assert(stale.parts.Count == 0, "Expired parts cannot be searched.");
+        Assert(stale.parts.Single().details.issues.Contains("expired"), "Expired parts remain searchable with their reason.");
         var replacement = new Entity("re_sparepart", Guid.NewGuid());
         foreach (var attribute in service.Rows[partId].Attributes) replacement[attribute.Key] = attribute.Value;
         replacement["re_effectiveto"] = null;
         service.Add(replacement);
         input = Load(service, loaded);
+        input.fields.Single(field => field.key == "re_konesparessalespricevk13").value = "";
         input.materialLines[0].refreshPart = true;
-        Reject(() => Run(service, input), "expired or ambiguous");
+        Run(service, input);
+        input = Load(service, input);
+        Assert(input.materialLines.Single().catalogDetails.issues.Contains("expired"),
+            "A native catalog GUID remains selectable despite expired or overlapping source-key records.");
         input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
         input.materialLines[0].partType = "non-kone";
         input.materialLines[0].catalogPartId = null;
@@ -610,8 +623,8 @@ static class DraftServiceTests
         input.materialLines[0].markupPercent = null;
         input.materialLines[0].unitCost = 25m;
         input.materialLines[0].sellingPrice = null;
-        Reject(() => Run(service, input), "classified as KONE");
-        input.version = service.Rows[Guid.Parse(input.id)].RowVersion;
+        Run(service, input);
+        input = Load(service, input);
         input.materialLines[0].part = "MANUAL-1";
         Run(service, input);
         input = Load(service, input);
@@ -624,6 +637,118 @@ static class DraftServiceTests
         input.materialLines[0].sellingPrice = 50m;
         Reject(() => Run(service, input), "Selling price");
         Console.WriteLine("Catalog cases passed: missing schema/disabled gate, CAD precision, spoof rejection, snapshots, refresh, classification, markup and legacy VK13 protection.");
+    }
+
+    public static void TestCatalogTransparency()
+    {
+        var type = typeof(DraftPlugin).Assembly.GetType("RepairEstimator.Drafts.PartCatalog");
+        var search = type.GetMethod("Search", BindingFlags.Static | BindingFlags.NonPublic);
+        var apply = type.GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic);
+        var service = Setup();
+        service.CatalogSchema = true;
+        service.Add(new Entity("transactioncurrency", Currency) { ["isocurrencycode"] = "USD" });
+        service.Add(new Entity("re_partpricingconfiguration", Guid.NewGuid()) {
+            ["re_market"] = new OptionSetValue(126110000), ["re_currency"] = new EntityReference("transactioncurrency", Currency),
+            ["re_version"] = "v1", ["re_usdtocadfactor"] = 1.4m, ["re_costonlyfactor"] = 1.23m,
+            ["re_defaultmarkuppct"] = 25m, ["re_isenabled"] = true, ["re_effectivefrom"] = DateTime.UtcNow.AddDays(-1)
+        });
+        service.CatalogDetailsCapacity = 19999;
+        Assert(!((CatalogResult)search.Invoke(null, new object[] { service,
+            new Draft { mode = "partcapabilities", market = 126110000 } })).available,
+            "The diagnostics snapshot prerequisite must be deployed before enabling catalog version 2.");
+        service.CatalogDetailsCapacity = 20000;
+        for (var index = 0; index < 43; index++)
+        {
+            var part = new Entity("re_sparepart", Guid.NewGuid()) {
+                ["re_partnumber"] = "VISIBLE-" + index.ToString("D3"),
+                ["re_parttype"] = new OptionSetValue(index % 2 == 0 ? 126110000 : 126110001),
+                ["re_usdcost"] = index == 0 ? 0m : 4m, ["re_usdprice"] = 0m, ["re_pricingunit"] = 1m,
+                ["re_sourcecurrency"] = "USD", ["re_sourcekey"] = "source-" + index,
+                ["re_effectivefrom"] = DateTime.UtcNow.AddDays(index % 3 == 0 ? 1 : -2),
+                ["re_effectiveto"] = DateTime.UtcNow.AddDays(-1)
+            };
+            service.Add(part);
+            part["statecode"] = new OptionSetValue(1);
+        }
+        foreach (var selection in new[] { "kone", "non-kone" })
+        {
+            var ids = new HashSet<string>();
+            var request = new Draft { mode = "partcatalog", market = 126110000, partType = selection, search = "" };
+            CatalogResult result;
+            do
+            {
+                result = (CatalogResult)search.Invoke(null, new object[] { service, request });
+                Assert(result.catalogVersion == 2 && result.defaultMarkupPercent == 10m, "Version 2 has fixed 10% markup.");
+                foreach (var part in result.parts)
+                {
+                    Assert(ids.Add(part.id), "Paging must not duplicate records.");
+                    Assert(part.details.issues.Contains("inactive") && part.details.issues.Contains("expired") &&
+                        part.details.requiresSellingPrice, "Inactive/expired/zero-price rows must be visible with reasons.");
+                }
+                request.partPage = result.nextPage ?? 0;
+                request.catalogCursor = result.nextCursor;
+            } while (result.more);
+            Assert(ids.Count == 43, "Every record of both master classifications must be reachable under either selected type.");
+        }
+        Reject(() => search.Invoke(null, new object[] { service,
+            new Draft { mode = "partcatalog", market = 126110000, partType = "kone", partPage = 2 } }), "continuation");
+        var selected = service.Rows.Values.First(row => row.LogicalName == "re_sparepart");
+        var originalState = selected.GetAttributeValue<OptionSetValue>("statecode").Value;
+        var currency = new EntityReference("transactioncurrency", Currency);
+        var input = new Draft { market = 126110000 };
+        var line = new MaterialInput { partType = "kone", catalogPartId = selected.Id.ToString(),
+            part = "FORGED", description = "Completed description", uom = "PC", unitCost = 8.123456789m, markupPercent = 10m,
+            catalogDetails = new CatalogDetails { requiresCost = false, sourcePrice = 999m } };
+        Entity prior = null;
+        Func<Entity> save = () => {
+            var row = new Entity("re_estimatematerialline", Guid.NewGuid());
+            apply.Invoke(null, new object[] { service, line, prior, row, input, currency, null });
+            row["transactioncurrencyid"] = currency;
+            return row;
+        };
+        Reject(() => save(), "selling price");
+        line.sellingPrice = 12.3456789012m;
+        line.uom = "";
+        Reject(() => save(), "unit of measure");
+        line.uom = new string('x', 21);
+        Reject(() => save(), "unit of measure");
+        line.uom = "PC";
+        line.unitCost = .12345678901m;
+        Reject(() => save(), "unit cost");
+        line.unitCost = 8.123456789m;
+        line.markupPercent = 20m;
+        Reject(() => save(), "exactly 10");
+        line.markupPercent = 10m;
+        prior = save();
+        var json = prior.GetAttributeValue<string>("re_catalogdetailsjson");
+        var details = (CatalogDetails)type.GetMethod("ReadDetails", BindingFlags.Static | BindingFlags.NonPublic)
+            .Invoke(null, new object[] { prior });
+        Assert(details.sourceCost == 0m && details.sourcePrice == 0m && details.description == null &&
+            details.issues.Contains("missing-description") && details.requiresCost,
+            "Saved diagnostics must come from the server source, not forged client details.");
+        Assert(prior.GetAttributeValue<decimal>("re_unitcostprecise") == 8.123456789m &&
+            prior.GetAttributeValue<decimal>("re_unitpriceprecise") == 0m &&
+            prior.GetAttributeValue<decimal>("re_sellingprice") == 12.3456789012m &&
+            prior.GetAttributeValue<string>("re_partnumber") == details.number &&
+            prior.GetAttributeValue<string>("re_entereddescription") == "Completed description",
+            "Manual completion must retain source VK13 zero, native identity and effective entered values separately.");
+        selected["re_usdcost"] = selected["re_usdprice"] = 99m;
+        line.partType = "non-kone";
+        line.markupPercent = null;
+        prior = save();
+        Assert(prior.GetAttributeValue<OptionSetValue>("re_parttype").Value == 126110001 &&
+            prior.GetAttributeValue<decimal?>("re_markuppct") == null &&
+            prior.GetAttributeValue<string>("re_catalogdetailsjson") == json,
+            "Switching selected classification must preserve the catalog identity, completions and frozen warnings.");
+        Assert(selected.GetAttributeValue<OptionSetValue>("statecode").Value == originalState &&
+            selected.GetAttributeValue<string>("re_descriptionen") == null,
+            "Estimate completion must never activate or enrich the Spare Parts master.");
+        line.refreshPart = true;
+        line.unitCost = 1m;
+        prior = save();
+        Assert(prior.GetAttributeValue<decimal>("re_unitcostprecise") == 99m,
+            "A refresh must trust a usable current source cost rather than client input.");
+        Console.WriteLine("Transparent catalog cases passed: both classifications, full paging, diagnostics, manual completion, fixed markup and frozen provenance.");
     }
 
     static void TestFlexibleEquipment()
@@ -645,6 +770,92 @@ static class DraftServiceTests
         input.equipment = Enumerable.Range(0, 1000)
             .Select(n => new EquipmentInput { number = "UNIT-" + n, matched = false }).ToList();
         Reject(() => Run(service, input), "technical processing budget");
+    }
+
+    public static void TestPlannerGroupEquipmentScope()
+    {
+        var service = Setup();
+        var input = Input();
+        var parentBranch = Guid.NewGuid();
+        var siblingBranch = Guid.NewGuid();
+        var selectedGroup = Guid.NewGuid();
+        var siblingGroup = Guid.NewGuid();
+        service.Rows[Branch]["re_branchnumber"] = "SUB-1";
+        service.Add(new Entity("re_branch", parentBranch) {
+            ["re_branchnumber"] = "MAIN", ["re_country"] = new EntityReference("re_country", Country),
+            ["re_currency"] = new EntityReference("transactioncurrency", Currency),
+            ["re_market"] = new OptionSetValue(126110000)
+        });
+        service.Rows[MasterEquipment]["re_branch"] = new EntityReference("re_branch", parentBranch);
+        service.Add(new Entity("re_plannergroup", selectedGroup) {
+            ["re_subbranchcode"] = "SUB-1", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", parentBranch)
+        });
+        service.Add(new Entity("re_plannergroup", siblingGroup) {
+            ["re_subbranchcode"] = "SUB-2", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", parentBranch)
+        });
+        var siblingEquipment = Guid.NewGuid();
+        service.Add(new Entity("re_equipment", siblingEquipment) {
+            ["re_branch"] = new EntityReference("re_branch", siblingBranch),
+            ["re_plannergroup"] = new EntityReference("re_plannergroup", siblingGroup),
+            ["re_equipment"] = "E-SIBLING", ["re_equipmentname"] = "Sibling equipment"
+        });
+        var selectedEquipment = Guid.NewGuid();
+        service.Add(new Entity("re_equipment", selectedEquipment) {
+            ["re_branch"] = new EntityReference("re_branch", Branch),
+            ["re_equipment"] = "E-SELECTED", ["re_equipmentname"] = "Selected subbranch equipment"
+        });
+        input.equipment.Add(new EquipmentInput {
+            id = selectedEquipment.ToString(), number = "E-SELECTED", matched = true
+        });
+        input.equipment.Add(new EquipmentInput {
+            id = siblingEquipment.ToString(), number = "E-SIBLING", matched = true
+        });
+        Run(service, input);
+        var savedMasterIds = new HashSet<Guid?>(service.Rows.Values
+            .Where(row => row.LogicalName == "re_estimateequipment")
+            .Select(row => row.GetAttributeValue<EntityReference>("re_equipment")?.Id));
+        Assert(savedMasterIds.SetEquals(new Guid?[] { MasterEquipment, selectedEquipment, siblingEquipment }),
+            "Selected-branch, parent-branch and sibling Planner Group equipment must all be accepted");
+
+        service = Setup();
+        input = Input();
+        service.Rows[Branch]["re_branchnumber"] = "SUB-1";
+        parentBranch = Guid.NewGuid();
+        var unrelatedParent = Guid.NewGuid();
+        service.Add(new Entity("re_plannergroup", Guid.NewGuid()) {
+            ["re_subbranchcode"] = "SUB-1", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", parentBranch)
+        });
+        var unrelatedGroup = Guid.NewGuid();
+        service.Add(new Entity("re_plannergroup", unrelatedGroup) {
+            ["re_subbranchcode"] = "OTHER", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", unrelatedParent)
+        });
+        var unrelatedEquipment = Guid.NewGuid();
+        service.Add(new Entity("re_equipment", unrelatedEquipment) {
+            ["re_branch"] = new EntityReference("re_branch", unrelatedParent),
+            ["re_plannergroup"] = new EntityReference("re_plannergroup", unrelatedGroup),
+            ["re_equipment"] = "E-OUTSIDE"
+        });
+        input.equipment[0] = new EquipmentInput {
+            id = unrelatedEquipment.ToString(), number = "E-OUTSIDE", matched = true
+        };
+        Reject(() => Run(service, input), "outside the selected branch or its Planner Group");
+
+        service = Setup();
+        input = Input();
+        service.Rows[Branch]["re_branchnumber"] = "SUB-1";
+        service.Add(new Entity("re_plannergroup", Guid.NewGuid()) {
+            ["re_subbranchcode"] = "SUB-1", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", Guid.NewGuid())
+        });
+        service.Add(new Entity("re_plannergroup", Guid.NewGuid()) {
+            ["re_subbranchcode"] = "SUB-1", ["re_ismainbranch"] = false,
+            ["re_mainbranch"] = new EntityReference("re_branch", Guid.NewGuid())
+        });
+        Reject(() => Run(service, input), "Planner Group mapping is ambiguous");
     }
 
     static void TestFlexiblePackages()
@@ -891,7 +1102,7 @@ static class DraftServiceTests
         var draft = Input();
         var values = new OpportunityValues {
             branchId = draft.branchId, stateId = draft.stateId, equipmentTypeId = draft.equipmentTypeId,
-            jobTypeId = "", building = draft.building, customer = draft.customer, email = draft.email,
+            jobTypeId = "", building = draft.building, customer = draft.customer, email = draft.email, accountId = draft.accountId,
             phone = "", market = draft.market,
             fields = new List<Field> { new Field { key = "re_proposallanguage", value = "126110000" } }
         };
@@ -913,7 +1124,7 @@ static class DraftServiceTests
         Reject(() => call(service, User, save), "Invalid Opportunity preset fields");
         values.fields.RemoveAt(1);
         values.email = "";
-        Reject(() => call(service, User, save), "Complete valid Opportunity details");
+        Reject(() => call(service, User, save), "Customer email is required");
         values.email = draft.email;
         values.fields.Add(new Field { key = "re_proposallanguage", value = "126110001" });
         Reject(() => call(service, User, save), "Duplicate");
@@ -1001,6 +1212,7 @@ static class DraftServiceTests
         public bool PresetSchema;
         public bool ContractSchema;
         public int SnapshotPrecision = 10;
+        public int CatalogDetailsCapacity = 20000;
         public readonly Dictionary<string, int[]> ChoiceValues = new Dictionary<string, int[]> {
             {"re_papertype", new[] { 126110000, 126110001, 126110002, 727000042 }},
             {"re_yesnounknowchoice", new[] { 126110000, 126110001, 126110002 }},
@@ -1131,6 +1343,7 @@ static class DraftServiceTests
                     else if (name == "re_parttype" || name == "re_materialsource" || name == "re_materialscope" || name == "re_market")
                         attribute = new PicklistAttributeMetadata { OptionSet = new OptionSetMetadata(new OptionMetadataCollection(
                             new[] { 126110000, 126110001, 126110002 }.Select(value => new OptionMetadata(new Label("", 1033), value)).ToList())) };
+                    else if (name == "re_catalogdetailsjson") attribute = new MemoAttributeMetadata { MaxLength = CatalogDetailsCapacity };
                     else if (name == "re_isenabled") attribute = new BooleanAttributeMetadata();
                     else if (name == "statecode") attribute = new StateAttributeMetadata();
                     else if (name == "re_effectivefrom" || name == "re_effectiveto" || name == "re_refreshedon") attribute = new DateTimeAttributeMetadata();

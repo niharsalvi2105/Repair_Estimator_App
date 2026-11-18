@@ -38,7 +38,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
   const locked = readOnly || !enabled
   const [capabilityState, setCapabilityState] = useState<{ market: Market; result?: CatalogResult; error?: string }>()
   const [catalogAttempt, setCatalogAttempt] = useState(0)
-  const hasCatalogLines = materials.some(line => line.pricingSource == null && line.partType != null)
+  const hasCatalogLines = materials.some(line => line.pricingSource !== 'package' && line.partType != null)
   useEffect(() => {
     if (!enabled || !hasCatalogLines) return
     let active = true
@@ -194,7 +194,10 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
           <th key={label} scope="col">{label}</th>)}</tr></thead>
         <tbody>{visibleMaterials.map((line, index) => {
           const packagePriced = line.pricingSource === 'package'
-          const catalog = line.pricingSource == null && line.partType != null
+          const catalog = !packagePriced && line.partType != null
+          const partTypeSelection = packagePriced ? 'package'
+            : line.partType === 'kone' ? 'kone'
+              : line.partType === 'non-kone' || line.pricingSource === 'manual' ? 'manual' : 'legacy'
           function update(change: Partial<DraftMaterial>) {
             setMaterials(lines => lines.map(row => row.id === line.id ? { ...row, ...change } : row))
           }
@@ -207,20 +210,21 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
                 onClick={() => setMaterials(lines => lines.filter(row => row.id !== line.id))}>
                 {fr ? 'Supprimer le matériau' : 'Remove material'} {index + 1}</button>}</td>
             <td><textarea className="text-input" aria-label="Description"
-              required maxLength={2000} value={line.description} disabled={locked} readOnly={!!line.catalogPartId}
+              required maxLength={2000} value={line.description} disabled={locked}
+              readOnly={!!line.catalogPartId && !line.catalogDetails?.requiresDescription}
               onChange={event => update({ description: event.target.value })} /></td>
             <td><input className="text-input" aria-label={fr ? 'Nom du fournisseur' : 'Vendor Name'} maxLength={100}
               value={line.vendor} disabled={locked} readOnly={!!line.catalogPartId}
               onChange={event => update({ vendor: event.target.value })} /></td>
             <td>{catalog ? partSelect('type') : <select className="text-input" aria-label={fr ? 'Type de pièce' : 'Part type'}
-              value={line.pricingSource ?? 'legacy'} disabled={locked} onChange={event => {
+              value={partTypeSelection} disabled={locked} onChange={event => {
                 if (event.target.value === 'kone') update({ partType: 'kone', pricingSource: undefined, catalogPartId: undefined,
-                  part: '', description: '', vendor: '', unitCost: 0, unitPrice: undefined, sellingPrice: undefined, markupPercent: capability?.defaultMarkupPercent,
+                  part: '', description: '', vendor: '', unitCost: 0, unitPrice: undefined, sellingPrice: undefined, markupPercent: 10,
                   uom: undefined, refreshPart: false })
                 else update({ partType: 'non-kone', pricingSource: 'manual', catalogPartId: undefined,
                   unitCost: 0, unitPrice: undefined, sellingPrice: undefined, markupPercent: undefined, uom: undefined, refreshPart: false })
               }}>
-              {line.pricingSource == null && <option value="legacy">{fr ? 'Saisie existante' : 'Existing manual entry'}</option>}
+              {line.partType == null && line.pricingSource == null && <option value="legacy">{fr ? 'Saisie existante' : 'Existing manual entry'}</option>}
               <option value="manual">Non-KONE</option><option value="kone">KONE</option>
               {packagePriced && <option value="package">{fr ? 'KONE (forfait historique)' : 'KONE (legacy package)'}</option>}
             </select>}</td>
@@ -234,18 +238,19 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             <td>{packagePriced ? <span>{fr ? 'Inclus au forfait' : 'Included in package'}</span> :
               <input className="text-input" type="number" aria-label={fr ? 'Coût unitaire' : 'Unit cost'} required
                 min={line.catalogPartId ? 0.0000000001 : 0.01} max={1000000000} step={line.catalogPartId ? 'any' : '0.01'}
-                value={line.unitCost} disabled={locked} readOnly={!!line.catalogPartId || line.partType === 'kone'}
+                value={line.unitCost || ''} disabled={locked}
+                readOnly={line.catalogPartId ? !line.catalogDetails?.requiresCost : line.partType === 'kone'}
                 onChange={event => update({ unitCost: Number(event.target.value) })} />}
               {catalog && <div className="custom-cell-pricing">
                 {partSelect('details')}
               </div>}
             </td>
             <td><input className="text-input" aria-label={fr ? 'Prix unitaire VK13' : 'VK13 Unit Price'}
-              readOnly value={line.catalogPartId && line.unitPrice != null ? money(line.unitPrice) : '-'} /></td>
-            <td>{line.catalogPartId && line.unitPrice != null && line.unitPrice > 0
+              readOnly value={line.catalogPartId ? money(line.unitPrice ?? undefined) : (fr ? 'Sans objet' : 'Not applicable')} /></td>
+            <td>{line.catalogPartId
               ? <input className="text-input" type="number" aria-label={fr ? 'Prix de vente' : 'Selling Price'}
                 required min={0.0000000001} max={1000000000} step="any" disabled={locked}
-                value={line.sellingPrice ?? line.unitPrice}
+                value={line.sellingPrice ?? (line.catalogDetails?.requiresSellingPrice ? '' : line.unitPrice != null && line.unitPrice > 0 ? line.unitPrice : '')}
                 onChange={event => update({ sellingPrice: event.target.value === '' ? 0 : Number(event.target.value) })} />
               : <span>{fr ? 'Sans objet' : 'Not applicable'}</span>}</td>
           </tr>

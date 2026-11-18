@@ -33,11 +33,10 @@ export function customCostsError(packageIds: string[], labor: DraftLabor[], mate
     line.unitPrice != null || line.refreshPart ||
     (line.pricingSource === 'package' ? line.partType !== 'kone' || line.unitCost !== 0 : line.partType !== 'non-kone'))) ||
     (line.partType === 'kone' && line.pricingSource !== 'package' && (!line.catalogPartId ||
-    line.markupPercent == null || !Number.isFinite(line.markupPercent) || line.markupPercent < 0 ||
-    line.markupPercent > 100 || Math.round(line.markupPercent * 100) / 100 !== line.markupPercent)) ||
+    line.markupPercent !== 10)) ||
     (line.partType === 'non-kone' && line.markupPercent != null)))
-    return language === 'fr' ? 'Vérifiez la source des prix. Les montants KONE du forfait ne permettent aucun coût par pièce ni majoration supplémentaire. Les pièces KONE du catalogue exigent une majoration de 0 à 100 %.'
-      : 'Check the pricing source. Package KONE amounts cannot carry per-part charges or extra markup. Catalog KONE parts require a markup from 0 to 100%.'
+    return language === 'fr' ? 'Vérifiez la source des prix. Les montants KONE du forfait ne permettent aucun coût par pièce ni majoration supplémentaire. La majoration KONE du catalogue est fixée à 10 %.'
+      : 'Check the pricing source. Package KONE amounts cannot carry per-part charges or extra markup. Catalog KONE markup is fixed at 10%.'
   if (packageIds.some((id) => !labor.some((line) => line.packageId === id) && !materials.some((line) => line.packageId === id)))
     return language === 'fr'
       ? 'Saisissez une main-d’œuvre ou un matériau. Au moins un est requis.'

@@ -10,7 +10,7 @@ const text = {
     empty: 'No accessible requests match these filters.',
     error: 'Could not load repair requests.', denied: 'Dataverse denied access to these requests.',
     retry: 'Retry', previous: 'Previous', next: 'Next', page: 'Page',
-    request: 'Request', customer: 'Customer', building: 'Building', created: 'Created',
+    request: 'Request', requestId: 'Request ID', customer: 'Customer', building: 'Building', created: 'Created',
     draft: 'Draft', pending: 'Pending', submitted: 'Submitted', complete: 'Complete', unknown: 'Unknown status',
     scope: 'Only records allowed by your Dataverse permissions are returned.',
     ownScope: 'Only your own requests are shown.',
@@ -24,7 +24,7 @@ const text = {
     empty: 'Aucune demande accessible ne correspond aux filtres.',
     error: 'Impossible de charger les demandes.', denied: 'Dataverse a refusé l’accès à ces demandes.',
     retry: 'Réessayer', previous: 'Précédent', next: 'Suivant', page: 'Page',
-    request: 'Demande', customer: 'Client', building: 'Immeuble', created: 'Création',
+    request: 'Demande', requestId: 'ID de la demande', customer: 'Client', building: 'Immeuble', created: 'Création',
     draft: 'Brouillon', pending: 'En attente', submitted: 'Envoyée', complete: 'Terminée', unknown: 'État inconnu',
     scope: 'Seules les demandes autorisées par Dataverse sont affichées.',
     ownScope: 'Seules vos propres demandes sont affichées.',
@@ -124,7 +124,9 @@ function PagedEstimateList({ language, market, ownerId, onOpen, onClone, busy = 
               {(recent ? records.slice(0, 5) : records).map((record) => (
                 <article className="request-record" key={record.re_repairestimateid}>
                   <div className="request-record-heading">
-                    <h3>{record.re_estimatename || '—'}</h3>
+                    <h3>{record.re_estimatename || '—'}
+                      <small className="request-id">{t.requestId}: {record.re_repairestimateid}</small>
+                    </h3>
                     <div className="request-record-actions">
                       <span className={`preview-badge ${statusClasses[record.re_estimatestatus] ?? ''}`}>{record.exportRequestId && record.re_estimatestatus === 126110000
                         ? t.automation : statuses[record.re_estimatestatus] ?? t.unknown}</span>
