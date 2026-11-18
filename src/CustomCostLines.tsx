@@ -9,6 +9,7 @@ import { LABOR_COLUMNS, editLaborGridHours, laborGridCost, laborGridRows } from 
 import { RequestFields, type RequestInputs } from './RequestFields'
 import { CustomCostExcelUpload } from './CustomCostExcelUpload'
 import { MAX_DRAFT_CHILD_OPERATIONS } from './data/draftContract'
+import { FieldError } from './FieldError'
 
 type Props = {
   language: 'en' | 'fr'
@@ -21,6 +22,7 @@ type Props = {
   readOnly?: boolean
   packages?: { id: string; name: string; customName?: string; scope?: string; equipmentNumbers?: string[] }[]
   childCount?: number
+  showValidationErrors?: boolean
   validateImport?: (labor: DraftLabor[], materials: DraftMaterial[]) => void
   onPackageDetails?: (id: string, field: 'name' | 'scope', value: string) => void
   activePackageId?: string
@@ -32,7 +34,7 @@ type Props = {
 }
 
 export function CustomCostLines({ language, labor, materials, setLabor, setMaterials, canAdd, enabled, readOnly = false,
-  packages = [], childCount = MAX_DRAFT_CHILD_OPERATIONS, validateImport, onPackageDetails, activePackageId,
+  packages = [], childCount = MAX_DRAFT_CHILD_OPERATIONS, showValidationErrors = false, validateImport, onPackageDetails, activePackageId,
   market, currency, rates = [], requestInputs, updateRequestInput }: Props) {
   const fr = language === 'fr'
   const locked = readOnly || !enabled
@@ -67,13 +69,20 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       {numbers.map(number => <option key={number} value={number}>{number}</option>)}
     </select>
   }
-  function packageField(packageId: string | null | undefined, update: (id: string) => void) {
+  function packageField(packageId: string | null | undefined, update: (id: string) => void, fieldId: string) {
     if (activePackageId) return null
-    return <select className="text-input" aria-label={fr ? 'Forfait CSTM' : 'CSTM package'}
-      required disabled={locked} value={packageId ?? ''} onChange={event => update(event.target.value)}>
-      <option value="">{fr ? 'Choisir un forfait' : 'Select a package'}</option>
-      {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-    </select>
+    const message = showValidationErrors && !packages.some(p => p.id === packageId)
+      ? fr ? 'Sélectionnez un forfait CSTM.' : 'Select a CSTM package.'
+      : undefined
+    return <>
+      <select className="text-input" aria-label={fr ? 'Forfait CSTM' : 'CSTM package'}
+        aria-invalid={!!message} aria-describedby={message ? `${fieldId}-error` : undefined}
+        required disabled={locked} value={packageId ?? ''} onChange={event => update(event.target.value)}>
+        <option value="">{fr ? 'Choisir un forfait' : 'Select a package'}</option>
+        {packages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      <FieldError id={fieldId} message={message} />
+    </>
   }
   function importPanel(kind: 'labor' | 'material') {
     if (locked || !activePackageId || !validateImport) return null
@@ -97,7 +106,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
       : reason instanceof Error ? reason.message : String(reason)
   }
   const roles = fr ? ['Mécanicien', 'Aide', 'Régleur'] : ['Mechanic', 'Helper', 'Adjuster']
-  return <section className="form-card custom-cost-lines">
+  return <section className={`form-card custom-cost-lines${showValidationErrors ? ' custom-cost-lines--show-errors' : ''}`}>
     <h2>{fr ? 'Coûts personnalisés (CSTM)' : 'Custom costs (CSTM)'}</h2>
     {activePackageId && <h3>{packages.find(p => p.id === activePackageId)?.name}</h3>}
     {packages.filter(p => !activePackageId || p.id === activePackageId).map(p => <div className="custom-package-details" key={p.id}>
@@ -138,23 +147,32 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         </thead>
         <tbody>{matrix.map((row, index) => {
           const ids = new Set(row.lines.map(line => line.id))
+          const packageErrorId = `labor-package-${row.lines[0].id}`
           function update(change: Partial<DraftLabor>) {
             setLabor(lines => lines.map(line => ids.has(line.id) ? { ...line, ...change } : line))
           }
           return <tr key={row.key} className="custom-labor-row" aria-label={`${fr ? 'Main-d’œuvre' : 'Labor'} ${index + 1}`}>
             <td>{equipmentField(row.lines[0], equipmentNumber => update({ equipmentNumber }))}
-              {packageField(row.lines[0].packageId, packageId => update({ packageId }))}
+              {packageField(row.lines[0].packageId, packageId => update({ packageId }), packageErrorId)}
               {!readOnly && <button type="button" className="button tertiary small" onClick={() =>
                 setLabor(lines => lines.filter(line => !ids.has(line.id)))}>
                 {fr ? 'Supprimer la main-d’œuvre' : 'Remove labor'} {index + 1}</button>}</td>
             {LABOR_COLUMNS.map((column, slot) => {
               const line = row.lines.find(line => line.role === column.role && line.time === column.time)
-              return <td key={slot}><input type="number" className="text-input" min={0} max={100000} step="0.01"
+              const invalidHours = showValidationErrors && !!line &&
+                (!Number.isFinite(line.hours) || line.hours <= 0)
+              const hoursErrorId = `labor-hours-${row.lines[0].id}-${slot}`
+              return <td key={slot}><input type="number" className="text-input" min={line ? 0.01 : 0} max={100000}
+                required={!!line} aria-invalid={!!invalidHours}
+                aria-describedby={invalidHours ? `${hoursErrorId}-error` : undefined} step="0.01"
                 aria-label={`${roles[Math.floor(slot / 2)]} ${slot % 2 ? 'DT' : 'ST'}`}
                 title={line?.rate == null ? (fr ? 'Taux de la succursale; vérifié à l’enregistrement' : 'Branch rate; verified on Save')
                   : `${fr ? 'Taux enregistré' : 'Saved rate'}: ${money(line.rate)}`}
                 value={line?.hours || ''} disabled={locked || (!line && !canAdd && !row.lines.every(line => line.hours === 0))}
-                onChange={event => setLabor(lines => editLaborGridHours(lines, row, slot, Number(event.target.value)))} /></td>
+                onChange={event => setLabor(lines => editLaborGridHours(lines, row, slot, Number(event.target.value)))} />
+                <FieldError id={hoursErrorId} message={invalidHours
+                  ? fr ? 'Saisissez des heures positives.' : 'Enter positive hours.'
+                  : undefined} /></td>
             })}
             <td className="custom-grid-number"><output>{money(laborGridCost(row.lines, rates))}</output></td>
           </tr>
@@ -196,6 +214,14 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
         <tbody>{visibleMaterials.map((line, index) => {
           const packagePriced = line.pricingSource === 'package'
           const catalog = !packagePriced && line.partType != null
+          const descriptionError = showValidationErrors && !line.description.trim()
+          const partError = showValidationErrors && !line.part.trim()
+          const quantityError = showValidationErrors &&
+            (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 100000)
+          const requiresCost = !packagePriced && (line.partType !== 'kone' || !!line.catalogPartId)
+          const unitCostError = showValidationErrors && requiresCost &&
+            (!Number.isFinite(line.unitCost) || line.unitCost <= 0 || line.unitCost > 1000000000)
+          const materialFieldError = !!(descriptionError || partError || quantityError || unitCostError)
           const partTypeSelection = packagePriced ? 'package'
             : line.partType === 'kone' ? 'kone'
               : line.partType === 'non-kone' || line.pricingSource === 'manual' ? 'manual' : 'legacy'
@@ -203,17 +229,31 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             setMaterials(lines => lines.map(row => row.id === line.id ? { ...row, ...change } : row))
           }
           const partSelect = (field: 'type' | 'part' | 'details') => <MaterialPartSelect line={line} update={update}
-            market={market} language={language} capability={capability} readOnly={locked} field={field} />
+            market={market} language={language} capability={capability} readOnly={locked} field={field}
+            showValidationErrors={showValidationErrors} />
+          const packageErrorId = `material-package-${line.id}`
+          const descriptionErrorId = `material-description-${line.id}`
+          const partErrorId = `material-part-${line.id}`
+          const quantityErrorId = `material-quantity-${line.id}`
+          const unitCostErrorId = `material-unit-cost-${line.id}`
+          const partErrorMessage = fr ? 'Saisissez un numéro de pièce.' : 'Enter a part number.'
+          const descriptionErrorMessage = fr ? 'Saisissez une description du matériau.' : 'Enter a material description.'
+          const quantityErrorMessage = fr ? 'Saisissez une quantité entière de 1 à 100000.' : 'Enter a whole quantity from 1 to 100000.'
+          const unitCostErrorMessage = fr ? 'Saisissez un coût unitaire positif.' : 'Enter a positive unit cost.'
+          const entryError = materialEntryError(line, language)
           return <tr key={line.id} className="custom-material-row" aria-label={`${fr ? 'Matériau' : 'Material'} ${index + 1}`}>
             <td>{equipmentField(line, equipmentNumber => update({ equipmentNumber }))}
-              {packageField(line.packageId, packageId => update({ packageId }))}
+              {packageField(line.packageId, packageId => update({ packageId }), packageErrorId)}
               {!readOnly && <button type="button" className="button tertiary small"
                 onClick={() => setMaterials(lines => lines.filter(row => row.id !== line.id))}>
                 {fr ? 'Supprimer le matériau' : 'Remove material'} {index + 1}</button>}</td>
             <td><textarea className="text-input" aria-label="Description"
+              aria-invalid={!!descriptionError}
+              aria-describedby={descriptionError ? `${descriptionErrorId}-error` : undefined}
               required maxLength={2000} value={line.description} disabled={locked}
               readOnly={!!line.catalogPartId && !line.catalogDetails?.requiresDescription}
-              onChange={event => update({ description: event.target.value })} /></td>
+              onChange={event => update({ description: event.target.value })} />
+              <FieldError id={descriptionErrorId} message={descriptionError ? descriptionErrorMessage : undefined} /></td>
             <td><input className="text-input" aria-label={fr ? 'Nom du fournisseur' : 'Vendor Name'} maxLength={100}
               value={line.vendor} disabled={locked} readOnly={!!line.catalogPartId}
               onChange={event => update({ vendor: event.target.value })} /></td>
@@ -231,17 +271,23 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             </select>}</td>
             <td>{catalog ? partSelect('part') : <input className="text-input" aria-label={fr ? 'Numéro de pièce' : 'Part number'}
               required maxLength={100} value={line.part} disabled={locked}
-              onChange={event => update({ part: event.target.value })} />}</td>
+              aria-invalid={!!partError} aria-describedby={partError ? `${partErrorId}-error` : undefined}
+              onChange={event => update({ part: event.target.value })} />}
+              {!catalog && <FieldError id={partErrorId} message={partError ? partErrorMessage : undefined} />}</td>
             <td><input className="text-input" type="number" aria-label={fr ? 'Quantité' : 'Quantity'}
               required min={1} max={100000} step={1} value={line.quantity || ''} disabled={locked}
+              aria-invalid={!!quantityError} aria-describedby={quantityError ? `${quantityErrorId}-error` : undefined}
               onChange={event => update({ quantity: Number(event.target.value) })} />
-              {materialEntryError(line, language) && <p className="error-box" role="alert">{materialEntryError(line, language)}</p>}</td>
+              <FieldError id={quantityErrorId} message={quantityError ? quantityErrorMessage : undefined} />
+              {entryError && !materialFieldError && <p className="error-box" role="alert">{entryError}</p>}</td>
             <td>{packagePriced ? <span>{fr ? 'Inclus au forfait' : 'Included in package'}</span> :
               <input className="text-input" type="number" aria-label={fr ? 'Coût unitaire' : 'Unit cost'} required
                 min={line.catalogPartId ? 0.0000000001 : 0.01} max={1000000000} step={line.catalogPartId ? 'any' : '0.01'}
-                value={line.unitCost || ''} disabled={locked}
+                value={line.unitCost || ''} disabled={locked} aria-invalid={!!unitCostError}
+                aria-describedby={unitCostError ? `${unitCostErrorId}-error` : undefined}
                 readOnly={line.catalogPartId ? !line.catalogDetails?.requiresCost : line.partType === 'kone'}
                 onChange={event => update({ unitCost: Number(event.target.value) })} />}
+              {!packagePriced && <FieldError id={unitCostErrorId} message={unitCostError ? unitCostErrorMessage : undefined} />}
               {catalog && <div className="custom-cell-pricing">
                 {partSelect('details')}
               </div>}

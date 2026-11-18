@@ -2,6 +2,47 @@
 
 ## 1. Scope and evidence
 
+### CSTM labor-or-material validation (local source; not deployed)
+
+Each selected CSTM package must have at least one assigned labor or material
+line; it no longer requires both. Every entered labor line still needs positive
+hours, and every entered material line still needs its required description,
+positive quantity and valid pricing. The frontend shows
+“Please enter either Labor or Material. At least one is required.” only when a
+package has neither line type. The backend enforces the same rule.
+
+Affected Dataverse tables/columns: existing estimate package, labor-line and
+material-line records only; no columns or UI-only fields changed. Local
+validation evidence: focused unit/backend tests, type-check and lint passed.
+The supplied workbook could not be inspected because Windows denied access to
+its file. No app/plugin deployment or tenant verification was performed; the
+published app may continue to show the old both-required message until updated.
+
+### Manual Non-KONE part numbers and CSTM validation feedback (local source; not deployed)
+
+Non-KONE Part # accepts a typed number even when it is absent from the catalog;
+the user must still enter a description, positive quantity and positive unit
+cost. KONE parts remain catalog-selected. The CSTM validation message now
+describes invalid entered lines without implying both line types are required,
+and the same validation is rendered only once.
+
+Affected Dataverse tables/columns: none. Local unit tests cover an unlisted
+manual Non-KONE part and incomplete material diagnostics; UI behavior remains
+local source only. The screenshot's `part-1` is acceptable as a manual
+Non-KONE number, but the blank description/unit cost shown there cause the
+validation. No app publication or live tenant verification was performed.
+
+### CSTM required-field highlighting (local source; not deployed)
+
+After Next is attempted on the CSTM step, invalid required controls are outlined
+in red and the browser focuses/reports the first invalid field. Labor hours,
+material description, part number, quantity, unit cost and package assignment
+are associated with their field-level checks; highlights clear as fields are
+corrected. No Dataverse columns or UI-only persisted fields changed.
+
+Local type-check, lint, unit tests and production build passed. No published-app
+or tenant verification was performed.
+
 ### Customer detail row alignment (local source; not deployed)
 
 The customer form keeps the documented desktop pairings: Account number with
@@ -920,7 +961,7 @@ Sources: [PackageSelect](../src/PackageSelect.tsx), [PackageCostDetails](../src/
 | Material read-only total | Browser sum of visible material unit costs × quantities, before tax/freight |
 | Remove material | Local removal; does not delete spare-part master |
 | Labor/material Previous / Next |10 rows per page; active CSTM filtering applies |
-| Complete CSTM | Requires every selected CSTM to have valid labor and material; returns to package selection |
+| Complete CSTM | Requires each selected CSTM to have at least one valid labor or material line; returns to package selection |
 | Selected package costs / combined total | Browser previews; sums selected package preview totals |
 | Branch rate / catalog Retry | Specific failed read retry, not a Save |
 

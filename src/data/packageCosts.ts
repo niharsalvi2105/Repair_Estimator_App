@@ -68,11 +68,11 @@ export function calculatePackageCost(p: CostPackage,
   const lines = labor.filter((l) => l.packageId === p.re_repairpackageid)
   const parts = materials.filter((m) => m.packageId === p.re_repairpackageid)
   const packagePriced = parts.some((m) => m.pricingSource === 'package')
-  if (!lines.length || !parts.length || lines.some((l) => !(l.hours > 0) || !Number.isFinite(l.hours))
+  if ((!lines.length && !parts.length) || lines.some((l) => !(l.hours > 0) || !Number.isFinite(l.hours))
     || parts.some((m) => materialEntryError(m, 'en') || !m.description.trim() || !(m.quantity > 0) ||
       (m.pricingSource === 'package' ? m.unitCost !== 0 || m.partType !== 'kone' : !(m.unitCost > 0))
       || !Number.isFinite(m.quantity) || !Number.isFinite(m.unitCost)))
-    throw new Error('Complete the CSTM labor and material entries.')
+    throw new Error('Complete the CSTM labor or material entries. At least one is required.')
   const laborCost = lines.reduce((sum, l) => sum + l.hours * (l.rate ?? rateFor(rates, l.role, l.time)), 0)
   if (!Number.isFinite(laborCost) || laborCost < 0) throw new Error('Custom labor cost rate is invalid.')
   const material = parts.reduce((sum, m) => sum + m.quantity * m.unitCost, 0)
