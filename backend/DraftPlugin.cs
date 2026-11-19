@@ -375,7 +375,7 @@ namespace RepairEstimator.Drafts
                     input.equipment.Select(e => e.number));
                 RepairEstimator.Shared.PackageEquipmentSnapshot.Write(package.equipmentNumbers);
             }
-            if (input.materialLines.Any(m => m.pricingSource != null))
+            if (input.materialLines.Any(m => m.pricingSource != null && !(m.pricingSource == "manual" && m.partType == "kone")))
                 PackageMaterialPricing.RequireSchema(service);
             var branch = service.Retrieve("re_branch", Guid.Parse(input.branchId),
                 new ColumnSet("re_country", "re_currency", "re_market", "re_branchnumber", "statecode"));
@@ -865,7 +865,8 @@ namespace RepairEstimator.Drafts
                         (line.unitCost <= 0 || line.unitCost > 1000000000 || decimal.Round(line.unitCost, 2) != line.unitCost)))
                     Fail("Invalid material quantity or unit cost (two decimals required).");
                 var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
-                if (!string.IsNullOrEmpty(line.catalogPartId)) row[PackageMaterialPricing.Mode] = null;
+                var manualKone = line.pricingSource == "manual" && line.partType == "kone";
+                if (!string.IsNullOrEmpty(line.catalogPartId) || manualKone) row[PackageMaterialPricing.Mode] = null;
                 row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
                 SetLineEquipment(row, previous, line.equipmentNumber, line.packageId, input, equipment);
                 row["re_name"] = "Custom material";
@@ -874,7 +875,7 @@ namespace RepairEstimator.Drafts
                 row["re_vendor"] = Optional(line.vendor, 100);
                 row["re_partnumber"] = Required(line.part, 100, "Material part number");
                 row["re_quantity"] = line.quantity;
-                var unitCost = line.pricingSource != null
+                var unitCost = line.pricingSource != null && !manualKone
                     ? PackageMaterialPricing.Apply(line, previous, row)
                     : PartCatalog.Apply(service, line, previous, row, input, currency, ref partConfiguration);
                 row["re_unitcost"] = new Money(decimal.Round(unitCost, 2, MidpointRounding.AwayFromZero));
@@ -894,7 +895,7 @@ namespace RepairEstimator.Drafts
                  rows.Any(r => r.GetAttributeValue<OptionSetValue>("re_parttype")?.Value == 126110000 ||
                     (r.LogicalName == Material && PackageMaterialPricing.Source(r) == null &&
                      !r.Contains("re_parttype") && LegacyKone(r.GetAttributeValue<string>("re_vendor"), r.GetAttributeValue<string>("re_partnumber"))))))
-                Fail("Do not mix package KONE pricing with catalog or legacy KONE pricing. Remove the other KONE prices first.");
+                Fail("Do not mix package KONE pricing with itemized or legacy KONE pricing. Remove the other KONE prices first.");
             if (rows.Any(r => r.GetAttributeValue<OptionSetValue>("re_parttype")?.Value == 126110000))
             {
                 if ((header.GetAttributeValue<Money>("re_konesparessalespricevk13")?.Value ?? 0m) > 0m)
@@ -1288,7 +1289,7 @@ namespace RepairEstimator.Drafts
                 vendor = e.GetAttributeValue<string>("re_vendor"), part = e.GetAttributeValue<string>("re_partnumber"),
                 quantity = e.GetAttributeValue<decimal>("re_quantity"),
                 unitCost = e.GetAttributeValue<decimal?>("re_unitcostprecise") ?? e.GetAttributeValue<Money>("re_unitcost").Value,
-                pricingSource = PackageMaterialPricing.Source(e),
+                pricingSource = PartCatalog.IsManualKone(e) ? "manual" : PackageMaterialPricing.Source(e),
                 partType = PackageMaterialPricing.Source(e) == "package" ? "kone" :
                     PackageMaterialPricing.Source(e) == "manual" ? "non-kone" : PartCatalog.TypeName(e.GetAttributeValue<OptionSetValue>("re_parttype")),
                 catalogPartId = e.GetAttributeValue<EntityReference>("re_sparepart")?.Id.ToString(),

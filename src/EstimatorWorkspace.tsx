@@ -397,6 +397,14 @@ export default function EstimatorWorkspace({
   }
   function finishCustomPackage() {
     setShowCustomFieldErrors(true)
+    if (!requestInputs.re_timecategory) {
+      const fieldId = 'request-re_timecategory'
+      setAttemptedFields(previous => previous.includes(fieldId) ? previous : [...previous, fieldId])
+      pendingInvalidField.current = fieldId
+      setValidationAttempt(previous => previous + 1)
+      setCustomError('')
+      return
+    }
     if (reportFirstInvalidCustomField()) return
     if (customValidation) return
     try {
@@ -976,6 +984,10 @@ export default function EstimatorWorkspace({
                 </button>
               </div>}
               <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
+            </section>}
+            {step === 3 && activeCustom && hasCustom && <section className="form-card">
+              <RequestFields stage="labortime" language={language} value={requestInputs}
+                onChange={updateRequestInput} errors={errors} />
             </section>}
             {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
               {rateResult.error}<button className="button secondary" onClick={() => setRateAttempt((n) => n + 1)}>{t.retry}</button>

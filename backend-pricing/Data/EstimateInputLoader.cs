@@ -271,11 +271,16 @@ namespace RepairEstimator.Plugins.Data
                 var catalogPrice = Query.Dec(row, "re_unitpriceprecise");
                 var hasCatalog = row.GetAttributeValue<EntityReference>("re_sparepart") != null;
                 var pricedCatalog = hasCatalog && (overridePrice ?? catalogPrice) > 0;
+                var manualKone = !mode.HasValue && !hasCatalog && partType == 126110000 &&
+                    row.GetAttributeValue<OptionSetValue>("re_materialsource")?.Value == 126110001;
+                if (manualKone && (!overridePrice.HasValue || catalogPrice.HasValue ||
+                    !(Query.Dec(row, "re_unitcostprecise") > 0) || Query.Dec(row, "re_markuppct") != 10m))
+                    throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 if (!string.IsNullOrEmpty(row.GetAttributeValue<string>("re_catalogdetailsjson")) &&
                     (!pricedCatalog || !(Query.Dec(row, "re_unitcostprecise") > 0) ||
                      (partType == 126110000 && Query.Dec(row, "re_markuppct") != 10m)))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
-                if (overridePrice.HasValue && (!hasCatalog || overridePrice <= 0 ||
+                if (overridePrice.HasValue && ((!hasCatalog && !manualKone) || overridePrice <= 0 ||
                     overridePrice > 1000000000m || decimal.Round(overridePrice.Value, 10) != overridePrice))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 loaded.Input.MaterialLines.Add(new MaterialLineInput {

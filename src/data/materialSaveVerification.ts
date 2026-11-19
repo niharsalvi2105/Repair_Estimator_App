@@ -8,6 +8,9 @@ function signature(line: DraftMaterial): string {
 }
 
 function retainsCompletion(sent: DraftMaterial, saved: DraftMaterial): boolean {
+  if (sent.pricingSource === 'manual' && sent.partType === 'kone' &&
+    (saved.pricingSource !== 'manual' || saved.partType !== 'kone' || sent.unitCost !== saved.unitCost ||
+      sent.part.trim() !== saved.part.trim() || sent.description.trim() !== saved.description.trim())) return false
   const details = sent.catalogDetails
   return (!details || !!saved.catalogDetails) &&
     (!details?.requiresCost || sent.unitCost === saved.unitCost) &&

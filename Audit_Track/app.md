@@ -2,6 +2,52 @@
 
 ## 1. Scope and evidence
 
+### Approved workbook calculation updates (pricing 2026.13, frontend consumption)
+
+The frontend continues to display only saved server pricing; it did not add a
+client-side copy of the pricing engine. With Pricing 2026.13, suggested prices
+for CSTM Non-KONE material use the material margin floor, AM/BD totals honor the
+$75 inclusive $500–$5,000 minimum for positive payouts, and stated-rate custom
+labor cost uses each saved labor-line rate. Recalculation, reopen, review, and
+export surfaces therefore display the changed server values without changing
+their controls or layouts. The frontend's indicative package/material previews
+remain cost previews and are not the authority for suggested price. Local
+pricing and integration tests passed; no frontend or plugin deployment and no
+live UAT verification was performed.
+
+### 2026-11-19 local UAT release candidate
+
+The full source verification passed for the frontend and backend release
+candidate: production Vite build and lint passed, all 221 Node unit tests
+passed, all 163 .NET pricing/integration tests passed, and the Drafts console
+harness passed its field, metadata, equipment, package/KONE, contract, catalog,
+snapshot, stale-write, customer, currency and all-six-labor-rate scenarios. The
+full Playwright run exercised 354 browser scenarios and completed 352 in the
+parallel run; the two failures were 60-second navigation/pointer timeouts. Both
+passed with the three related layout scenarios when rerun serially (5/5),
+leaving no reproducible assertion or workflow defect.
+
+Covered UAT flows include Admin/Estimator mocked role behavior, request
+creation, billing validation, package/equipment selection, CSTM labor/material
+imports, standard and custom drafts, reopen/update/stale handling, cloning,
+pricing recalculation/error retention, responsive EN/FR UI, master data,
+ownership, submission locking, and equipment spreadsheets. These are local
+source/browser checks with mocked Dataverse responses. No live tenant record
+was created, changed, submitted, cloned or emailed, and separate Admin and
+Estimator account acceptance, deployed plugin/version proof, mail/export
+delivery and original-XLSM parity remain pending.
+
+**Shared-browser live rerun:** Cold reload in the authenticated Local Play app
+completed access initialization and loaded the MKO Admin dashboard with 63
+visible estimates; the earlier "Checking your Power Apps identity and
+Dataverse access" screen was transient, not reproducible as a stuck state.
+The New Request workspace also loaded against live Dataverse at 390px and its
+Customer Details controls stacked without clipping or sidebar overlap. This
+confirms the two browser symptoms shown during the parallel test run in the
+current Admin session, but does not verify the French billing-plan save path
+with a live write. The host logged generic 403/404 resource messages during
+load; neither prevented authentication, data loading, navigation or rendering.
+
 ### CSTM labor-or-material validation (local source; not deployed)
 
 Each selected CSTM package must have at least one assigned labor or material
@@ -291,7 +337,7 @@ The material grid now adds read-only VK13 Unit Price and editable Selling Price 
 
 Draft material `sellingPrice` is an optional estimate-only override; null/omitted defaults visually to `unitPrice`. Choosing another part/type resets the override to its new catalog default. Explicit overrides survive Save/Load, clone and catalog refresh; users can enter the displayed VK13 value to reset the effective selling amount. A backend dropping a submitted override raises an explicit retention error while preserving local edits. Imports retain their existing seven-column template and default new catalog rows to VK13; no new spreadsheet selling input is introduced.
 
-Actual server pricing uses the effective selling price per unit, quantity and existing applicable tax/freight, with existing KONE markup only. Approved Non-KONE catalog selling contributions replace their cost-based margin contribution; manual Non-KONE pricing is unchanged. This affects suggested pricing, not cost totals or automatic replacement of the user-entered estimate quote Sell Price; actual CMII still uses that quote value. New optional `re_estimatematerialline.re_sellingprice` metadata and coordinated Drafts/pricing 2026.9/frontend deployment are required. No tenant schema or data writes, publication or live calculation acceptance for this feature.
+Server pricing uses the effective selling price for itemized KONE with the existing fixed markup. Pricing 2026.13 supersedes the earlier catalog-selling treatment for Non-KONE: all explicit or classified CSTM Non-KONE landed cost is repriced at `1-max(MATERIAL_MARGIN_FLOOR,recommended CMII)`, including manual Non-KONE. The Non-KONE `re_sellingprice` remains visible/persisted source data for the line but does not replace its cost-based contribution. This affects suggested pricing, not true cost or the user-entered estimate Sell Price; actual CMII still uses that quote value. No tenant publication or live calculation acceptance is claimed.
 
 Local evidence: build/type-check and changed-source/test lint passed; 45 selected material/contract/clone/workbook-source cases passed across the focused runs; six mocked browser cases passed across EN/FR at 320px/1366px and imports, verifying default price, editable override, unchanged VK13/cost, submitted Save values and page-width containment. Relevant backend formula/persistence/frozen-export evidence is recorded in the plugin reference. These are local/synthetic checks, not production acceptance.
 
@@ -328,6 +374,12 @@ Local evidence: production build/type-check, ESLint, and all 219 unit tests pass
 The existing CSTM validation already rejects missing material descriptions and invalid/unassigned CSTM package IDs. After a user attempts to continue or calculate a preview, a blank Material Description is marked `aria-invalid`, gets the existing red invalid-field outline and a field-specific message; an unassigned CSTM package selector is similarly identified when that selector is shown. The duplicate copy of the aggregate CSTM validation message is suppressed. A blank Equipment Number is intentionally valid: “Share across package” means the line is allocated across the package, and helper text now clarifies this rather than marking it invalid or making it required.
 
 No business validation rule, calculation, persistence or Dataverse mapping changed; affected tables/columns: none. Local evidence: build/type-check, ESLint and all 219 unit tests passed; ten mocked Playwright cases passed at 320px/1366px in English/French, covering section order, description highlighting/clearing, optional package-shared equipment, and existing Excel import flows. No tenant data was accessed or changed; deployment and published-app behavior remain unverified.
+
+### Estimate labor time in the CSTM editor (local source, not deployed)
+
+A reference clone without copied custom costs can leave the estimate's Labor time category blank. Previously the CSTM editor hid that field, and Calculate and return to packages could report a missing/ambiguous labor rate even with valid branch data. The CSTM editor exposes the existing estimate-level selector separately from line-level ST/DT hours. Calculate marks and focuses the required field if blank; it does not assume Straight Time or bypass rate validation. No Dataverse schema, mapping, pricing formula, or persistence changed.
+
+Read-only inspection of the local preview's live Dataverse connection confirmed six valid role/time rates for the reported branch. The mocked clone regression covers an empty category, field feedback, and successful return to packages after selection without saving the clone. The affected live draft was not changed and the fix was not deployed.
 
 ### Equipment-specific CSTM Excel imports (local source, not deployed)
 
@@ -982,6 +1034,8 @@ Sources: [PackageSelect](../src/PackageSelect.tsx), [PackageCostDetails](../src/
 The current custom UI uses fieldset/card rows, **not the requested new grid-table redesign**. Additions count once per estimate. Removing CSTM with remaining custom rows/VK13 blocks Save until explicitly resolved.
 
 ### Catalog-specific controls retained for existing/catalog rows
+
+**Manual material entry (local source):** Both KONE and Non-KONE can use unlisted part numbers. For KONE, choose **Use manual entry without catalog**, then enter the part number, description, positive unit cost (two decimals), whole quantity and positive unit selling price (up to ten decimals). VK13 is not applicable on that line; the fixed 10% KONE markup applies to the entered selling price, not to cost. Manual Non-KONE pricing and Excel import rules are unchanged. Local browser coverage verified both manual routes with an unavailable catalog, including that KONE cannot calculate without a selling price. The pricing integration test verified Save/Load, the markup, unchanged true cost when the selling price changes, and the frozen export. The frontend and both plugins must be deployed together; this change has not been published or verified against a live tenant.
 
 Part classification KONE/Non-KONE, catalog search/toggle/results/Retry, selected catalog unit-price/UOM display, manual non-KONE conversion action and KONE markup input0..100 step0.01 exist in [MaterialPartSelect](../src/MaterialPartSelect.tsx). Catalog lookup depends on valid enabled server configuration. Switching to manual clears catalog snapshot hints as wired; Save revalidates server data.
 

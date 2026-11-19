@@ -93,7 +93,7 @@ function useDraftChoices(enabled: boolean) {
 }
 
 export function RequestFields({ stage, language, value, onChange, readOnly = false, custom = false, currency, errors = {} }: {
-  stage: 'request' | 'cost' | 'pricing' | 'partner' | 'materialrates'
+  stage: 'request' | 'cost' | 'pricing' | 'partner' | 'materialrates' | 'labortime'
   language: 'en' | 'fr'
   value: RequestInputs
   onChange: (key: InputKey, value: string) => void
@@ -106,6 +106,7 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
   const fields: readonly (Omit<Field, 'key'> & { key: InputKey })[] = {
     request: requestFields, cost: costFields, pricing: pricingFields, partner: partnerFields,
     materialrates: costFields.filter((field) => field.key === 're_usetax' || field.key === 're_freight'),
+    labortime: costFields.filter((field) => field.key === 're_timecategory'),
   }[stage]
   const hasChoices = fields.some((field) => field.choice)
   const choices = useDraftChoices(hasChoices)

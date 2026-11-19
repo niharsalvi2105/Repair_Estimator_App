@@ -1,8 +1,13 @@
 import type { DraftMaterial } from './draftContract'
 
 export function materialEntryError(line: DraftMaterial, language: 'en' | 'fr'): string | undefined {
-  if (line.catalogPartId) {
-    const effectivePrice = line.sellingPrice ?? (line.catalogDetails?.requiresSellingPrice ? undefined : line.unitPrice)
+  const manualKone = line.pricingSource === 'manual' && line.partType === 'kone'
+  if (manualKone && (!Number.isFinite(line.unitCost) || line.unitCost <= 0 ||
+    line.unitCost > 1000000000 || Number(line.unitCost.toFixed(2)) !== line.unitCost))
+    return language === 'fr' ? 'Saisissez un coût unitaire positif, jusqu’à 1000000000 et 2 décimales.'
+      : 'Enter a positive unit cost up to 1000000000 with at most 2 decimal places.'
+  if (line.catalogPartId || manualKone) {
+    const effectivePrice = line.sellingPrice ?? (manualKone || line.catalogDetails?.requiresSellingPrice ? undefined : line.unitPrice)
     if (line.catalogDetails?.requiresCost && (!Number.isFinite(line.unitCost) || line.unitCost <= 0 ||
       line.unitCost > 1000000000 || Number(line.unitCost.toFixed(10)) !== line.unitCost))
       return language === 'fr' ? 'Saisissez un coût unitaire positif, jusqu’à 1000000000 et 10 décimales.'

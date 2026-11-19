@@ -2,6 +2,20 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Formula policy update (pricing 2026.13, local source)
+
+No Dataverse columns or relationships changed. Existing
+`re_minimumcmii`/`re_ampayout`/`re_bdpayout` rows now feed a documented $75
+minimum for positive AM/BD payouts when entered sell is $500 through $5,000
+inclusive. Existing material-line `re_unitcostprecise`/`re_unitcost`, tax and
+freight flags now define the Non-KONE landed cost repriced at the greater of
+`MATERIAL_MARGIN_FLOOR` and recommended CMII. Saved custom labor hours and
+`re_hourlycost` now feed stated-rate cost; package and additional labor still
+use estimate `re_mechaniclaborrate`. The `re_calculationversion` value changes
+to `2026.13` on a successful calculation. This source change is not evidence
+that Dev or any downstream environment has that assembly or recalculated
+historical records.
+
 ### Full catalog visibility and estimate-only completion (2026-11-17, source only)
 
 Approved behavior replaces catalog selection eligibility, not master import
@@ -136,7 +150,7 @@ Local frontend source now sends an all-equipment assignment for editable CSTM pa
 
 ### Submitted-estimate bilingual HTML review flow (Dev saved, OFF)
 
-Updated the existing unmanaged `Send an Email Estimate` flow/workflow `dcae3756-54d7-f111-a05d-00224809bc74` in `RepairEstimatorApp`, solution `05dd7469-373e-46ad-acd4-856e50ac3777`, BLA- America CNO Dev. No replacement flow or new connection reference was created. It is intentionally **Stopped**, with one requester-selected internal test recipient in the `ReviewRecipient` flow parameter, not in source templates or documentation. Production Central Tendering routing and actual trigger/send acceptance are not complete.
+Updated the existing unmanaged `Send an Email Estimate` flow/workflow `dcae3756-54d7-f111-a05d-00224809bc74` in `RepairEstimatorApp`, solution `05dd7469-373e-46ad-acd4-856e50ac3777`, BLA- America CNO Dev. No replacement flow or new connection reference was created. Readback confirmed that it remains **Stopped**, uses the approved service mailbox as From, five fixed internal Central Tendering recipients in To, and the saved salesperson/requestor email in Cc. The obsolete test-recipient parameter was removed. The live Outlook connection still must have Send As permission for the service mailbox; actual trigger/send acceptance is not complete.
 
 `SubscribeWebhookTrigger` remains `OpenApiConnectionWebhook`, organization scope 4, now **Modified = 3** (verified from live `callbackregistration.message` choice metadata), with filtering attributes `re_estimatestatus` and row/trigger condition `126110002` (Submitted). Added-only would miss the app's existing-header Submit update; Modified is not enum 2 (Deleted). Ordinary draft creation and unrelated header updates do not qualify. Rewriting the status to the same Submitted value, trigger redelivery or resubmitting a run may still repeat the email. No delivery/idempotency column, permission or lock changes were approved or introduced; Outlook send retries are disabled but do not guarantee exactly-once delivery.
 
@@ -148,7 +162,7 @@ No tables/columns, UI-only fields, business/master records or estimate statuses 
 
 Existing solution references `re_sharedcommondataserviceforapps_cfccb` and `re_emailnotification_outlook` are Embedded and both physical connections passed Connected preflight. Nine synthetic renderer/contract cases passed; these are not tenant business-data tests. Offline validation initially missed duplicate nested names; live rejection led to a global uniqueness guard. The generic update tool did not persist the added Outlook binding correctly and then failed on API/stored-reference formats. Final storage conversion preserves the existing clientdata wrapper and Dataverse alias, adds the Outlook alias with its existing logical reference, and uses the known working solution binding shape. The validated definition/reference payload was saved through a clientdata-only ETag-conditional workflow PATCH; owner and solution type-29 membership were verified unchanged, with 42 top-level actions and management state Stopped. Private pre-change snapshots are outside the repository. No run was triggered or email sent; mail-client clipping/rendering, live permissions/trigger behavior, central-team routing and delivery/duplicate handling still require acceptance before enabling.
 
-Source: `automation/read-estimate-email-metadata.ps1` reads choice/schema metadata only; `automation/build-estimate-email-flow.mjs` compiles both HTML designs and exports the solution-storage converter. Regeneration takes metadata JSON, one internal recipient, flat Embedded reference JSON and an output path: `node automation\build-estimate-email-flow.mjs metadata.json <recipient> references.json flow.json`. Keep generated recipient-bearing payloads outside the repository; validate/preflight before saving and preserve the existing workflow's state/owner/solution bindings. Focused local command: `node --test tests\estimate-email-flow.test.mjs`.
+Source: `automation/read-estimate-email-metadata.ps1` reads choice/schema metadata only; `automation/build-estimate-email-flow.mjs` compiles both HTML designs and exports the solution-storage converter. Regeneration takes metadata JSON, flat Embedded reference JSON and an output path: `node automation\build-estimate-email-flow.mjs metadata.json references.json flow.json`. Preserve the existing workflow's state/owner/solution bindings. Focused local command: `node --test tests\estimate-email-flow.test.mjs`.
 
 ### Standalone Inbox-to-Teams notification flow (Dev, trigger corrected)
 
@@ -239,11 +253,13 @@ values until replaced by a user selection. Focused frontend choice tests pass.
 This is local source only, not published or tenant-verified.
 ### Approved estimate-only catalog Selling Price (local schema/source, not deployed)
 
+**Manual KONE extension (local source):** The estimate material line reuses existing `re_parttype`, `re_materialsource` (manual), `re_unitcostprecise`, `re_sellingprice` (positive, up to 1000000000, precision 10), and `re_markuppct` (10). `re_sparepart`, catalog VK13, and catalog diagnostics are unset for manual KONE. No new columns, master writes, or historical recalculations. Coordinated Drafts, Pricing 2026.12 and frontend deployment is required; the catalog snapshot schema and existing selling-price field must already exist.
+
 New prerequisite `re_estimatematerialline.re_sellingprice` is an optional Decimal, precision ten, minimum 0.0000000001, maximum 1000000000, as defined in `backend/material-selling-price-schema.json`. It is an estimate-line override in the existing snapshot currency, not a Spare Parts master edit or replacement of `re_unitpriceprecise` (trusted converted VK13). Existing null values use saved VK13; no backfill or default-zero column value. No relationships, permissions or automation state changes are introduced. The user approved this column and inclusion of positive-priced Non-KONE catalog rows.
 
 UI/API `materialLines[].sellingPrice` maps to the new field; read-only `unitPrice` remains the original snapshot. New catalog defaults are UI-only until an override is entered; manual/package/unclassified lines cannot carry an override. Same-line omitted overrides preserve existing values; changing catalog/type resets the UI default, while an explicit override is preserved through clone/refresh. Inputs are positive and limited to ten decimals and the schema maximum. Backend readback retention errors preserve unsaved edits against an old server. The two added grid columns, fallback display and scroll state are UI-only. Import templates stay unchanged and new catalog imports use VK13 by default.
 
-Pricing 2026.9 reads override-or-VK13 and applies quantity plus existing tax/freight and KONE-only markup. Non-KONE catalog rows with positive VK13 explicitly switch from cost-based margin contribution to selling-price contribution; their old saved estimates are not auto-recalculated, but suggested pricing changes on subsequent Calculate. Costs and user-entered quote Sell Price/actual-CMII formulas stay unchanged. Frozen exports carry trusted VK13 and the override independently; both workbook detail paths retain the snapshot values, while fixed cost worksheet cells remain cost outputs.
+Historical Pricing 2026.9 read override-or-VK13 and substituted a positive Non-KONE catalog selling contribution. Approved Pricing 2026.13 supersedes that behavior: itemized KONE still uses effective selling price with KONE-only markup, while all explicit/classified CSTM Non-KONE landed cost is repriced by `1-max(MATERIAL_MARGIN_FLOOR,recommended CMII)`, regardless of the catalog/manual origin. Costs and user-entered quote Sell Price/actual-CMII formulas stay unchanged. Frozen exports still carry trusted VK13 and the override independently. Historical records are not automatically recalculated.
 
 Source validation includes 56 engine cases, six focused integration/formula cases, catalog Save/Load/limits/refresh checks, 45 focused frontend/contract/clone/workbook cases and six mocked EN/FR browser cases plus build/lint. These checks do not prove tenant behavior. Deploy the new column before both assemblies/frontend; scripts and estimator-role end-to-end acceptance remain pending. No schema writes, data changes or deployment were performed for this new feature.
 

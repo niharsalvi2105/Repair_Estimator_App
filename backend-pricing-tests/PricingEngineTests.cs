@@ -150,11 +150,16 @@ namespace RepairEstimator.Tests
             Assert.Equal(0.50m, result.UseTaxAmount);
             Assert.Equal(1m, result.FreightAmount);
             Assert.Equal(1496.40m, result.TotalTrueCost);
-            Assert.Equal(2222.54m, result.SuggestedPriceWithKoneMaterial);
+            var nonKoneCost = 10m * 1.15m;
+            var nonKoneSelling = nonKoneCost / (1m - Math.Max(
+                input.Parameters.Get(ParamCode.MaterialMarginFloor), result.RecommendedCmii.Value));
+            Assert.Equal(Math.Round((result.TotalTrueCost - result.KoneMaterialCost - nonKoneCost) /
+                (1m - result.RecommendedCmii.Value) + nonKoneSelling + 849.77m * 2m,
+                2, MidpointRounding.AwayFromZero), result.SuggestedPriceWithKoneMaterial);
             input.Parameters.Set(ParamCode.KoneSparesMarkup, 1m, null);
             input.Parameters.Set(ParamCode.KoneSparesTax, 1m, null);
             input.Parameters.Set(ParamCode.KoneSparesFreight, 1m, null);
-            Assert.Equal(2222.54m, PricingEngine.Calculate(input).SuggestedPriceWithKoneMaterial);
+            Assert.Equal(2232.40m, PricingEngine.Calculate(input).SuggestedPriceWithKoneMaterial);
         }
 
         [Fact]
@@ -208,9 +213,13 @@ namespace RepairEstimator.Tests
             var original = PricingEngine.Calculate(input);
             Assert.Equal(18.40m, original.KoneMaterialCost);
             Assert.Equal(25.46m, original.CustomMaterialCost);
-            var expected = Math.Round((original.TotalTrueCost - original.KoneMaterialCost) /
+            var nonKoneCost = Math.Round(10m * (1m + input.UseTaxPct + input.FreightPct), 2);
+            var nonKoneSelling = nonKoneCost / (1m - Math.Max(
+                input.Parameters.Get(ParamCode.MaterialMarginFloor), original.RecommendedCmii.Value));
+            var expected = Math.Round((original.TotalTrueCost - original.KoneMaterialCost - nonKoneCost) /
                 (1m - original.RecommendedCmii.Value) + 2m * 40.376m *
-                (1m + input.UseTaxPct + input.FreightPct + markup / 100m), 2, MidpointRounding.AwayFromZero);
+                (1m + input.UseTaxPct + input.FreightPct + markup / 100m) + nonKoneSelling,
+                2, MidpointRounding.AwayFromZero);
             Assert.Equal(expected, original.SuggestedPriceWithKoneMaterial);
             input.MaterialLines[0].MarkupPercent = 100;
             var changed = PricingEngine.Calculate(input);
@@ -227,7 +236,7 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
-        public void Catalog_selling_prices_replace_only_their_selling_contribution_not_true_cost()
+        public void Non_kone_material_is_repriced_at_the_material_margin_floor()
         {
             var input = Baseline();
             input.IsCustomPath = true;
@@ -237,18 +246,23 @@ namespace RepairEstimator.Tests
             input.MaterialLines.Add(part);
             var original = PricingEngine.Calculate(input);
             var factor = 1m + input.UseTaxPct + input.FreightPct;
-            var expected = Math.Round((original.TotalTrueCost - Math.Round(20m * factor, 2)) /
-                (1m - original.RecommendedCmii.Value) + 60m * factor, 2, MidpointRounding.AwayFromZero);
+            var nonKoneCost = Math.Round(20m * factor, 2);
+            var nonKoneMargin = Math.Max(input.Parameters.Get(ParamCode.MaterialMarginFloor),
+                original.RecommendedCmii.Value);
+            var expected = Math.Round((original.TotalTrueCost - nonKoneCost) /
+                (1m - original.RecommendedCmii.Value) + nonKoneCost / (1m - nonKoneMargin),
+                2, MidpointRounding.AwayFromZero);
             Assert.Equal(expected, original.SuggestedPrice);
             part.UnitSellingPrice = 40m;
             var changed = PricingEngine.Calculate(input);
             Assert.Equal(original.TotalTrueCost, changed.TotalTrueCost);
-            Assert.Equal(Math.Round(expected + 20m * factor, 2), changed.SuggestedPrice);
+            Assert.Equal(expected, changed.SuggestedPrice);
             input.MaterialLines.Add(new MaterialLineInput { IsKone = true, Quantity = 3,
                 UnitCost = 5, UnitSellingPrice = 50, MarkupPercent = 10 });
             var mixed = PricingEngine.Calculate(input);
-            Assert.Equal(Math.Round((mixed.TotalTrueCost - mixed.KoneMaterialCost - Math.Round(20m * factor, 2)) /
-                (1m - mixed.RecommendedCmii.Value) + 80m * factor + 150m * 1.10m,
+            Assert.Equal(Math.Round((mixed.TotalTrueCost - mixed.KoneMaterialCost - nonKoneCost) /
+                (1m - mixed.RecommendedCmii.Value) + nonKoneCost / (1m - nonKoneMargin)
+                + 150m * 1.10m,
                 2, MidpointRounding.AwayFromZero), mixed.SuggestedPriceWithKoneMaterial);
             foreach (var invalid in new decimal?[] { null, 0m, -1m, 1000000001m })
             {
@@ -413,7 +427,12 @@ namespace RepairEstimator.Tests
             input.FixedTargetCmii = .4m;
             input.SellPrice = 1000m;
             result = PricingEngine.Calculate(input);
-            Assert.Equal(964.87m, result.SuggestedPrice);
+            var nonKoneCost = Math.Round(3m * 2.25m * 1.12m + 2m * 4.55m * 1.08m, 2);
+            var expectedSelling = Math.Round((result.TotalTrueCost - nonKoneCost) /
+                (1m - result.RecommendedCmii.Value) + nonKoneCost /
+                (1m - Math.Max(input.Parameters.Get(ParamCode.MaterialMarginFloor),
+                    result.RecommendedCmii.Value)), 2, MidpointRounding.AwayFromZero);
+            Assert.Equal(expectedSelling, result.SuggestedPrice);
             Assert.Equal(.4211m, result.ActualCmii);
             Assert.Equal(.0211m, result.CmiiVariance);
         }
@@ -553,8 +572,31 @@ namespace RepairEstimator.Tests
             Assert.Equal(0.6259m, r.ActualCmii);
             Assert.Equal(0.0059m, r.CmiiVariance);
             Assert.Equal(112m, r.AmIncentive);
-            Assert.Equal(72m, r.BdIncentive);
+            Assert.Equal(75m, r.BdIncentive);
             Assert.Equal(ApprovalLevel.None, r.ApprovalLevel);
+        }
+
+        [Theory]
+        [InlineData(499, 15, 10)]
+        [InlineData(500, 75, 75)]
+        [InlineData(5000, 150, 100)]
+        [InlineData(5001, 150, 100)]
+        public void Incentive_minimum_applies_only_to_positive_payouts_in_inclusive_500_to_5000_range(
+            int sell, int expectedAm, int expectedBd)
+        {
+            var i = Baseline();
+            i.Packages[0].MechanicHoursPerUnit = 0m;
+            i.Packages[0].MaterialCostPerUnit = 0m;
+            i.SellPrice = sell;
+            i.IncentiveRates.Clear();
+            i.IncentiveRates.Add(new IncentiveRule {
+                MinimumCmii = 0m, AmPayout = .03m, BdPayout = .02m
+            });
+
+            var r = PricingEngine.Calculate(i);
+
+            Assert.Equal(expectedAm, r.AmIncentive);
+            Assert.Equal(expectedBd, r.BdIncentive);
         }
 
         [Theory]
@@ -583,6 +625,22 @@ namespace RepairEstimator.Tests
             decimal expected = (sell - (8m * 170.95m + m)) / sell;
             Assert.Equal(expected, r.StatedRateMargin.Value, 10);
             Assert.Equal(r.StatedRateMargin, r.RecommendedCmii);
+        }
+
+        [Fact]
+        public void Stated_rate_cost_uses_saved_custom_labor_rates()
+        {
+            var i = Baseline();
+            i.IsCustomPath = true;
+            i.StatedLaborRate = 220m;
+            i.LaborLines.Add(new LaborLineInput { Hours = 2m, Rate = 200m });
+
+            var r = PricingEngine.Calculate(i);
+            decimal material = 108.3648m * 1.19m;
+            decimal sell = 10m * 220m + material / .35m;
+            decimal expected = (sell - (8m * 170.95m + 2m * 200m + material)) / sell;
+
+            Assert.Equal(expected, r.StatedRateMargin.Value, 10);
         }
 
         [Fact]
@@ -735,8 +793,12 @@ namespace RepairEstimator.Tests
             Assert.Equal(100m, r.KoneMaterialCost);
             Assert.Equal(2509.50m + 119m + 100m, r.TotalTrueCost);
             Assert.NotNull(r.SuggestedPriceWithKoneMaterial);
-            Assert.Equal(Math.Round((r.TotalTrueCost - 100m) / (1m - r.RecommendedCmii.Value) +
-                150m * 1.25m, 2, MidpointRounding.AwayFromZero), r.SuggestedPriceWithKoneMaterial);
+            var nonKoneCost = 119m;
+            var expectedSelling = Math.Round((r.TotalTrueCost - 100m - nonKoneCost) /
+                (1m - r.RecommendedCmii.Value) + 150m * 1.25m + nonKoneCost /
+                (1m - Math.Max(i.Parameters.Get(ParamCode.MaterialMarginFloor),
+                    r.RecommendedCmii.Value)), 2, MidpointRounding.AwayFromZero);
+            Assert.Equal(expectedSelling, r.SuggestedPriceWithKoneMaterial);
         }
 
         [Fact]

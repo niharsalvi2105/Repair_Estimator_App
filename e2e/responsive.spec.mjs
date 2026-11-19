@@ -1595,6 +1595,40 @@ for (const width of [320, 1366]) {
   }
 }
 
+test('clone without copied costs can select the estimate labor time in CSTM and calculate without saving', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__extraPackages = [{
+      re_repairpackageid: 'custom', re_packagenumber: 'CSTM: 0', re_packagenameen: 'Custom',
+      re_iscustompackage: true, re_mechanichours: 0, re_materialmisctaxcost: 0, re_effectivefrom: '2020-01-01',
+    }]
+  })
+  await completeDraft(page)
+  await page.locator('.draft-save-action').click()
+  await expect(page.locator('.draft-saved')).toContainText('0000000042')
+  await page.locator('.main-nav .nav-item').nth(2).click()
+  await page.locator('.request-record').getByRole('button', { name: 'Clone', exact: true }).click()
+  const modal = page.getByRole('dialog')
+  await modal.getByRole('checkbox', { name: 'Equipment selection', exact: true }).check()
+  await modal.getByRole('button', { name: 'Open new copy' }).click()
+  await page.locator('#estimate-title').fill('Clone without copied costs')
+  await next(page)
+  await page.locator('#package-search').fill('CSTM: 0')
+  await page.locator('#package-options button').first().click()
+  const time = page.locator('#request-re_timecategory')
+  await expect(time).toHaveValue('')
+  await page.getByRole('button', { name: 'Add labor', exact: true }).click()
+  await page.getByRole('spinbutton', { name: 'Mechanic ST', exact: true }).fill('2')
+  const calculate = page.getByRole('button', { name: 'Calculate and return to packages', exact: true })
+  await calculate.click()
+  await expect(time).toHaveAttribute('aria-invalid', 'true')
+  await expect(time).toBeFocused()
+  await expect(page.getByRole('alert').filter({ hasText: 'Branch labor cost rate is missing or ambiguous.' })).toHaveCount(0)
+  await time.selectOption('126110000')
+  await calculate.click()
+  await expect(page.locator('#package-search')).toBeVisible()
+  expect(await page.evaluate(() => window.__draftCalls.map(row => row.mode))).toEqual(['save', 'clonesource'])
+})
+
 test('request clone selected sections use current masters, reset selling price and save as another request', async ({ page }) => {
   await completeDraft(page)
   await page.locator('.draft-save-action').click()
@@ -2156,14 +2190,21 @@ test('package preview rates query current branch mechanic cost data from Dataver
     await expect(page.locator('.draft-save-action')).toBeEnabled()
   })
 
-  test('CSTM KONE requires a catalog selection and does not fall back to package amounts', async ({ page }) => {
+  test('CSTM manual KONE requires an entered selling price even when the catalog is unavailable', async ({ page }) => {
     const material = (await openCatalogMaterial(page, false, 'en', 1366, true)).first()
     await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('kone')
+    await material.getByRole('combobox', { name: 'Part number', exact: true }).fill('MANUAL-KONE')
+    await material.getByRole('button', { name: 'Use manual entry without catalog', exact: true }).click()
     await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Motor')
-    await expect(material).toContainText('Select a KONE catalog part before saving.')
-    await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
+    await material.getByRole('spinbutton', { name: 'Unit cost', exact: true }).fill('25')
+    const calculate = page.getByRole('button', { name: 'Calculate and return to packages', exact: true })
+    await calculate.click()
     await expect(page.locator('.custom-cost-lines')).toBeVisible()
-    await expect(page.locator('.draft-save-action')).toBeEnabled()
+    await expect(material).toContainText('Enter a positive selling price')
+    await expect(material.getByRole('textbox', { name: 'VK13 Unit Price', exact: true })).toHaveValue('Not applicable')
+    await material.getByRole('spinbutton', { name: 'Selling Price', exact: true }).fill('30')
+    await calculate.click()
+    await expect(page.locator('#package-search')).toBeVisible()
     expect(await page.evaluate(() => window.__draftCalls || [])).toEqual([])
   })
 

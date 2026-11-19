@@ -161,12 +161,13 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             <th key={label} scope="col">{label}</th>)}</tr></thead>
           <tbody>{visibleMaterials.map((line, index) => {
             const packagePriced = line.pricingSource === 'package'
+            const manualKone = line.pricingSource === 'manual' && line.partType === 'kone'
             const catalog = !packagePriced && line.partType != null
             const descriptionError = showValidationErrors && !line.description.trim()
             const partError = showValidationErrors && !line.part.trim()
             const quantityError = showValidationErrors &&
               (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 100000)
-            const requiresCost = !packagePriced && (line.partType !== 'kone' || !!line.catalogPartId)
+            const requiresCost = !packagePriced && (line.partType !== 'kone' || !!line.catalogPartId || manualKone)
             const unitCostError = showValidationErrors && requiresCost &&
               (!Number.isFinite(line.unitCost) || line.unitCost <= 0 || line.unitCost > 1000000000)
             const materialFieldError = !!(descriptionError || partError || quantityError || unitCostError)
@@ -233,7 +234,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
                   min={line.catalogPartId ? 0.0000000001 : 0.01} max={1000000000} step={line.catalogPartId ? 'any' : '0.01'}
                   value={line.unitCost || ''} disabled={locked} aria-invalid={!!unitCostError}
                   aria-describedby={unitCostError ? `${unitCostErrorId}-error` : undefined}
-                  readOnly={line.catalogPartId ? !line.catalogDetails?.requiresCost : line.partType === 'kone'}
+                  readOnly={line.catalogPartId ? !line.catalogDetails?.requiresCost : line.partType === 'kone' && !manualKone}
                   onChange={event => update({ unitCost: Number(event.target.value) })} />}
                 {!packagePriced && <FieldError id={unitCostErrorId} message={unitCostError ? unitCostErrorMessage : undefined} />}
                 {catalog && <div className="custom-cell-pricing">
@@ -242,10 +243,10 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
               </td>
               <td><input className="text-input" aria-label={fr ? 'Prix unitaire VK13' : 'VK13 Unit Price'}
                 readOnly value={line.catalogPartId ? money(line.unitPrice ?? undefined) : (fr ? 'Sans objet' : 'Not applicable')} /></td>
-              <td>{line.catalogPartId
+              <td>{(line.catalogPartId || manualKone)
                 ? <input className="text-input" type="number" aria-label={fr ? 'Prix de vente' : 'Selling Price'}
                   required min={0.0000000001} max={1000000000} step="any" disabled={locked}
-                  value={line.sellingPrice ?? (line.catalogDetails?.requiresSellingPrice ? '' : line.unitPrice != null && line.unitPrice > 0 ? line.unitPrice : '')}
+                  value={line.sellingPrice ?? (manualKone || line.catalogDetails?.requiresSellingPrice ? '' : line.unitPrice != null && line.unitPrice > 0 ? line.unitPrice : '')}
                   onChange={event => update({ sellingPrice: event.target.value === '' ? 0 : Number(event.target.value) })} />
                 : <span>{fr ? 'Sans objet' : 'Not applicable'}</span>}</td>
             </tr>

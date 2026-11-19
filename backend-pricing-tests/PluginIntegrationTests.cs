@@ -73,7 +73,7 @@ namespace RepairEstimator.Tests
             line["re_sellingprice"] = 40m;
             db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
             Assert.Equal(firstCost, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
-            Assert.Equal(firstPrice + (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
+            Assert.Equal(firstPrice + (kone ? 11m : 0m) * line.GetAttributeValue<decimal>("re_quantity"),
                 db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
             var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
             Assert.Equal(20m, loaded.materialLines[0].unitPrice);
@@ -83,8 +83,49 @@ namespace RepairEstimator.Tests
             Assert.Equal(40m, frozen.materials[0].cells.Single(c => c.key == "re_sellingprice").number);
             line["re_sellingprice"] = null;
             db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
-            Assert.Equal(firstPrice - (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
+            Assert.Equal(firstPrice - (kone ? 11m : 0m) * line.GetAttributeValue<decimal>("re_quantity"),
                 db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
+        }
+
+        [Fact]
+        public void Manual_kone_selling_price_round_trips_and_uses_itemized_markup_without_vk13()
+        {
+            var db = new Pipeline();
+            db.Rows[db.BranchId]["re_branchnumber"] = "SYNTHETIC";
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            AddCustomDescriptionLines(request);
+            var material = request.materialLines.Single();
+            material.partType = "kone";
+            material.pricingSource = "manual";
+            material.unitCost = 25m;
+            material.sellingPrice = 30m;
+            material.markupPercent = 10m;
+            db.Save(ExportSnapshot.Serialize(request));
+
+            var header = db.Rows[db.EstimateId];
+            var line = db.Rows.Values.Single(e => e.LogicalName == "re_estimatematerialline");
+            var firstPrice = header.GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value;
+            var firstCost = header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value;
+            Assert.Equal(800m + 33m * material.quantity, firstPrice);
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            var saved = Assert.Single(loaded.materialLines);
+            Assert.Equal("manual", saved.pricingSource);
+            Assert.Equal("kone", saved.partType);
+            Assert.Equal(25m, saved.unitCost);
+            Assert.Equal(30m, saved.sellingPrice);
+            Assert.Null(saved.catalogPartId);
+            Assert.Null(saved.unitPrice);
+
+            line["re_sellingprice"] = 40m;
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            Assert.Equal(firstCost, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.Equal(firstPrice + 11m * material.quantity,
+                db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value);
+            var frozen = ExportSnapshot.Capture(db.Caller, db.Rows[db.EstimateId], Guid.NewGuid(), "sample");
+            Assert.Equal(40m, frozen.materials[0].cells.Single(c => c.key == "re_sellingprice").number);
         }
 
         [Fact]
@@ -119,7 +160,7 @@ namespace RepairEstimator.Tests
                 line["re_sellingprice"] = 40m;
                 db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
                 Assert.Equal(firstCost, db.Rows[db.EstimateId].GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
-                Assert.Equal(firstPrice + (kone ? 11m : 10m) * line.GetAttributeValue<decimal>("re_quantity"),
+                Assert.Equal(firstPrice + (kone ? 11m : 0m) * line.GetAttributeValue<decimal>("re_quantity"),
                     db.Rows[db.EstimateId].GetAttributeValue<Money>(column).Value);
                 var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
                 Assert.Equal(0m, loaded.materialLines.Single().unitPrice);
@@ -983,7 +1024,7 @@ namespace RepairEstimator.Tests
             Assert.Contains("\"pricingState\":\"" + PricingEngine.Version + "\"", response);
             var header = db.Rows[db.EstimateId];
             Assert.Equal(941.25m, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
-            Assert.Equal(1497.37m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value);
+            Assert.Equal(1517.77m, header.GetAttributeValue<Money>(Names.Estimate.SuggestedPriceKoneMaterial).Value);
             db.Rows[db.PackageId]["re_materialbeforemarkup"] = new Money(999m);
             db.Rows[db.PackageId]["re_materialmisctaxcost"] = new Money(1999m);
             response = db.Save(response);

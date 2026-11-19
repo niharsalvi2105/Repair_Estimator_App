@@ -144,7 +144,8 @@ export function MaterialPartSelect({ line, update, market, language, capability,
   const partErrorId = `${listId}-part`
   const catalogErrorId = `${listId}-catalog`
   const partError = showValidationErrors && !line.part.trim()
-  const needsKoneCatalog = line.partType === 'kone' && line.pricingSource !== 'package' && !line.catalogPartId
+  const manual = line.pricingSource === 'manual'
+  const needsKoneSource = line.partType === 'kone' && line.pricingSource == null && !line.catalogPartId
   useEffect(() => {
     if (open) list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [activeIndex, open])
@@ -185,7 +186,8 @@ export function MaterialPartSelect({ line, update, market, language, capability,
         onChange={event => {
           const partType = event.target.value === 'kone' ? 'kone' : event.target.value === 'non-kone' ? 'non-kone' : undefined
           update({ partType, vendor: partType === 'kone' ? 'KONE' : '', markupPercent: partType === 'kone' ? 10 : undefined,
-            pricingSource: partType === 'kone' || line.catalogPartId ? undefined : line.pricingSource })
+            pricingSource: line.catalogPartId ? undefined : line.pricingSource,
+            ...(!line.catalogPartId && partType !== line.partType ? { sellingPrice: undefined } : {}) })
         }}>
         {!line.partType && <option value="">{fr ? 'Choisir le type' : 'Select type'}</option>}
         <option value="kone">KONE</option><option value="non-kone">Non-KONE</option>
@@ -207,17 +209,18 @@ export function MaterialPartSelect({ line, update, market, language, capability,
           <input ref={input} id={`${listId}-input`} className="text-input" required role="combobox" maxLength={100}
             value={query ?? line.part} disabled={readOnly} autoComplete="off" aria-expanded={open} aria-controls={listId}
             aria-autocomplete="list" aria-activedescendant={open && activePart ? `${listId}-${activePart.id}` : undefined}
-            aria-invalid={showValidationErrors && (!!partError || needsKoneCatalog)}
+            aria-invalid={showValidationErrors && (!!partError || needsKoneSource)}
             aria-describedby={showValidationErrors && partError ? `${partErrorId}-error`
-              : showValidationErrors && needsKoneCatalog ? `${catalogErrorId}-error` : undefined}
+              : showValidationErrors && needsKoneSource ? `${catalogErrorId}-error` : undefined}
             placeholder={fr ? 'Rechercher ou parcourir les pièces' : 'Search or browse parts'}
             onClick={() => { setActiveIndex(0); setOpen(true) }}
             onChange={event => {
               const value = event.target.value
               setQuery(value); setActiveIndex(0); setOpen(true)
               update({ part: value, catalogPartId: undefined, catalogDetails: undefined, unitPrice: undefined,
-                sellingPrice: undefined, uom: undefined, refreshPart: false,
-                ...(line.catalogPartId || line.partType === 'kone' ? { unitCost: 0, description: '', vendor: '' } : {}) })
+                uom: undefined, refreshPart: false,
+                ...(!manual ? { sellingPrice: undefined } : {}),
+                ...(line.catalogPartId || needsKoneSource ? { unitCost: 0, description: '', vendor: '' } : {}) })
             }}
             onKeyDown={event => {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -275,17 +278,19 @@ export function MaterialPartSelect({ line, update, market, language, capability,
       <p className="field-help">{fr
         ? 'Les numéros de pièce non-KONE hors catalogue sont permis. Saisissez une description et un coût unitaire.'
         : 'Unlisted Non-KONE part numbers are allowed. Enter a description and unit cost.'}</p>}
-    {(!field || field === 'part') && !readOnly && line.partType === 'non-kone' && line.catalogPartId &&
+    {(!field || field === 'part') && !readOnly && line.catalogPartId &&
       <button type="button" className="button tertiary" onClick={() => {
         setQuery(undefined); setOpen(false)
         update({ catalogPartId: undefined, catalogDetails: undefined, unitPrice: undefined, sellingPrice: undefined,
           uom: undefined, unitCost: 0, part: '', description: '', refreshPart: false, pricingSource: undefined })
       }}>{fr ? 'Retirer la sélection du catalogue' : 'Remove catalog selection'}</button>}
-    {(!field || field === 'part') && needsKoneCatalog && <p id={`${catalogErrorId}-error`} className="error-box" role="alert">
-      {fr ? 'Choisissez une pièce KONE du catalogue avant d’enregistrer.' : 'Select a KONE catalog part before saving.'}</p>}
-    {(!field || field === 'part') && !readOnly && line.partType === 'non-kone' && !line.catalogPartId &&
-      !capability?.available && <button type="button" className="button tertiary"
-        onClick={() => update({ pricingSource: 'manual', refreshPart: false })}>
+    {(!field || field === 'part') && needsKoneSource && showValidationErrors && <p id={`${catalogErrorId}-error`} className="error-box" role="alert">
+      {fr ? 'Choisissez une pièce KONE du catalogue ou utilisez la saisie manuelle.' : 'Select a KONE catalog part or use manual entry.'}</p>}
+    {(!field || field === 'part') && !readOnly && line.partType && !line.catalogPartId && !manual &&
+      (line.partType === 'kone' || !capability?.available) &&
+      <button type="button" className="button tertiary" onMouseDown={event => event.preventDefault()}
+        onClick={() => { setOpen(false); update({ pricingSource: 'manual', refreshPart: false,
+          ...(line.partType === 'kone' ? { markupPercent: 10 } : {}) }) }}>
         {fr ? 'Utiliser la saisie manuelle sans catalogue' : 'Use manual entry without catalog'}
       </button>}
     {(!field || field === 'details') && line.partType === 'kone' && line.pricingSource !== 'package' &&
