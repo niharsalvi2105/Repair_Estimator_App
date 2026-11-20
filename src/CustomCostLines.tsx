@@ -40,6 +40,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
   const locked = readOnly || !enabled
   const [capabilityState, setCapabilityState] = useState<{ market: Market; result?: CatalogResult; error?: string }>()
   const [catalogAttempt, setCatalogAttempt] = useState(0)
+  const [editedMaterialAmounts, setEditedMaterialAmounts] = useState<ReadonlySet<string>>(() => new Set())
   const hasCatalogLines = materials.some(line => line.pricingSource !== 'package' && line.partType != null)
   useEffect(() => {
     if (!enabled || !hasCatalogLines) return
@@ -174,8 +175,11 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             const catalogCost = line.catalogDetails ? line.catalogDetails.unitCost : line.unitCost
             const catalogPrice = line.unitPrice
             const sellPrice = line.sellingPrice ?? catalogPrice
-            const sellPriceError = showValidationErrors && preciseCost && !validCatalogUnitAmount(sellPrice)
-            const unitCostError = showValidationErrors && requiresCost &&
+            const unitCostErrorId = `material-unit-cost-${line.id}`
+            const sellPriceErrorId = `material-sell-price-${line.id}`
+            const sellPriceError = (showValidationErrors || editedMaterialAmounts.has(sellPriceErrorId)) &&
+              preciseCost && !validCatalogUnitAmount(sellPrice)
+            const unitCostError = (showValidationErrors || editedMaterialAmounts.has(unitCostErrorId)) && requiresCost &&
               (preciseCost ? !validCatalogUnitAmount(line.unitCost)
                 : !Number.isFinite(line.unitCost) || line.unitCost <= 0 || line.unitCost > 1000000000)
             const materialFieldError = !!(descriptionError || partError || quantityError || unitCostError || sellPriceError)
@@ -185,14 +189,16 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
             function update(change: Partial<DraftMaterial>) {
               setMaterials(lines => lines.map(row => row.id === line.id ? { ...row, ...change } : row))
             }
+            function updateAmount(fieldId: string, change: Pick<Partial<DraftMaterial>, 'unitCost' | 'sellingPrice'>) {
+              setEditedMaterialAmounts(fields => fields.has(fieldId) ? fields : new Set(fields).add(fieldId))
+              update(change)
+            }
             const partSelect = (field: 'type' | 'part' | 'details') => <MaterialPartSelect line={line} update={update}
               market={market} language={language} capability={capability} readOnly={locked} field={field}
               showValidationErrors={showValidationErrors} />
             const descriptionErrorId = `material-description-${line.id}`
             const partErrorId = `material-part-${line.id}`
             const quantityErrorId = `material-quantity-${line.id}`
-            const unitCostErrorId = `material-unit-cost-${line.id}`
-            const sellPriceErrorId = `material-sell-price-${line.id}`
             const entryError = materialEntryError(line, language)
             const descriptionErrorMessage = fr ? 'La description du matériau est obligatoire.' : 'Material description is required.'
             const partErrorMessage = fr ? 'Saisissez un numéro de pièce.' : 'Enter a part number.'
@@ -253,7 +259,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
                   value={line.unitCost || ''} disabled={locked} aria-invalid={!!unitCostError}
                   aria-describedby={unitCostError ? `${unitCostErrorId}-error` : undefined}
                   readOnly={line.catalogPartId ? !line.catalogDetails : line.partType === 'kone' && !unlistedKone}
-                  onChange={event => update({ unitCost: Number(event.target.value) })} />}
+                  onChange={event => updateAmount(unitCostErrorId, { unitCost: Number(event.target.value) })} />}
                 {!packagePriced && <FieldError id={unitCostErrorId} message={unitCostError ? unitCostErrorMessage : undefined} />}
                 {!locked && line.catalogPartId && !line.catalogDetails && <p className="field-help">{fr
                   ? 'Sélectionnez de nouveau la pièce pour modifier son coût.'
@@ -271,7 +277,7 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
                   value={line.sellingPrice === undefined
                     ? (validCatalogUnitAmount(catalogPrice) ? catalogPrice : '')
                     : line.sellingPrice || ''}
-                  onChange={event => update({ sellingPrice: Number(event.target.value) })} />
+                  onChange={event => updateAmount(sellPriceErrorId, { sellingPrice: Number(event.target.value) })} />
                   {unlistedKone && <p id={`${sellPriceErrorId}-help`} className="field-help">{fr
                     ? 'Avant la majoration KONE de 10 %.' : 'Before the 10% KONE markup.'}</p>}
                   <FieldError id={sellPriceErrorId} message={sellPriceError ? sellPriceErrorMessage : undefined} /></>

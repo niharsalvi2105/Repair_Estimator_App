@@ -2085,10 +2085,31 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await expect(total).toHaveValue(fr ? '23,19534 USD' : '23.19534 USD')
       await expect(material.getByRole('textbox', { name: 'Description', exact: true })).not.toBeEditable()
       await expect(cost).toBeEditable()
-      await cost.fill('0')
+      for (const invalidAmount of ['-1', '0']) {
+        await cost.fill(invalidAmount)
+        await expect(cost).toHaveAttribute('aria-invalid', 'true')
+        await expect(selling).toHaveAttribute('aria-invalid', 'false')
+        await expect(cost).toHaveAccessibleDescription(label(
+          'Enter a positive unit cost (maximum 1,000,000,000 and 10 decimal places).',
+          'Saisissez un coût unitaire positif (maximum 1 000 000 000 et 10 décimales).',
+        ))
+        await cost.fill('8.50')
+        await selling.fill(invalidAmount)
+        await expect(selling).toHaveAttribute('aria-invalid', 'true')
+        await expect(cost).toHaveAttribute('aria-invalid', 'false')
+        await expect(selling).toHaveAccessibleDescription(label(
+          'Enter a positive unit sell price (maximum 1,000,000,000 and 10 decimal places).',
+          'Saisissez un prix de vente unitaire positif (maximum 1 000 000 000 et 10 décimales).',
+        ))
+        await selling.fill('55.25')
+      }
       await selling.fill('')
       await expect(selling).toHaveValue('')
+      await expect(selling).toHaveAttribute('aria-invalid', 'true')
+      await cost.fill('0')
       await page.getByRole('button', { name: fr ? 'Calculer et retourner aux forfaits' : 'Calculate and return to packages', exact: true }).click()
+      await page.locator('.draft-save-action').click()
+      expect(await page.evaluate(() => window.__draftCalls || [])).toEqual([])
       await expect(cost).toHaveAttribute('aria-invalid', 'true')
       await expect(selling).toHaveAttribute('aria-invalid', 'true')
       await cost.fill('8.50')
@@ -2252,6 +2273,10 @@ test('package preview rates query current branch mechanic cost data from Dataver
       const selling = material.getByRole('spinbutton', { name: label('Unit Sell Price', 'Prix de vente unitaire'), exact: true })
       await expect(material.getByRole('textbox', { name: label('VK13 Unit Price', 'Prix unitaire VK13'), exact: true })).toHaveValue(label('Not applicable', 'Sans objet'))
       await expect(material).toContainText(label('Before the 10% KONE markup.', 'Avant la majoration KONE de 10 %.'))
+      await cost.fill('-1')
+      await selling.fill('0')
+      await expect(cost).toHaveAttribute('aria-invalid', 'true')
+      await expect(selling).toHaveAttribute('aria-invalid', 'true')
       await calculate.click()
       await expect(cost).toHaveAttribute('aria-invalid', 'true')
       await expect(selling).toHaveAttribute('aria-invalid', 'true')
