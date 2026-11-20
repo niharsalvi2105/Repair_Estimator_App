@@ -46,13 +46,28 @@ namespace RepairEstimator.Drafts
             if (line.pricingSource != "package" && line.pricingSource != "manual")
                 throw new InvalidPluginExecutionException("Invalid material pricing source.");
             var package = line.pricingSource == "package";
-            if (line.partType != (package ? "kone" : "non-kone") ||
-                !string.IsNullOrEmpty(line.catalogPartId) || line.markupPercent.HasValue ||
-                line.unitPrice.HasValue || line.sellingPrice.HasValue || line.refreshPart || (package && line.unitCost != 0))
+            var unlistedKone = !package && line.partType == "kone";
+            if ((!unlistedKone && line.partType != (package ? "kone" : "non-kone")) ||
+                !string.IsNullOrEmpty(line.catalogPartId) || line.catalogDetails != null ||
+                line.unitPrice.HasValue || line.refreshPart || (package && line.unitCost != 0) ||
+                (!unlistedKone && (line.markupPercent.HasValue || line.sellingPrice.HasValue)))
                 throw new InvalidPluginExecutionException("Package/manual material must not contain catalog prices or extra markup.");
-            if (previous?.GetAttributeValue<OptionSetValue>("re_parttype") != null)
+            if (previous?.GetAttributeValue<OptionSetValue>("re_parttype") != null &&
+                (!unlistedKone || Source(previous) != "manual"))
                 throw new InvalidPluginExecutionException("Remove the catalog material line before replacing it with package/manual pricing.");
             row[Mode] = new OptionSetValue(package ? Package : Manual);
+            if (unlistedKone)
+            {
+                if (!PartCatalog.Amount(line.unitCost, 10, true) || !PartCatalog.Amount(line.sellingPrice, 10, true))
+                    throw new InvalidPluginExecutionException("Unlisted KONE unit cost and sell price must be positive, up to 1000000000 with at most ten decimals.");
+                if (line.markupPercent != 10m)
+                    throw new InvalidPluginExecutionException("KONE markup must be exactly 10 percent.");
+                row["re_parttype"] = new OptionSetValue(126110000);
+                row["re_materialsource"] = new OptionSetValue(126110001);
+                row["re_unitcostprecise"] = line.unitCost;
+                row["re_sellingprice"] = line.sellingPrice.Value;
+                row["re_markuppct"] = 10m;
+            }
             return package ? 0m : line.unitCost;
         }
     }

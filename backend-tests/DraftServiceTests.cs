@@ -749,6 +749,29 @@ static class DraftServiceTests
         prior = save();
         Assert(prior.GetAttributeValue<decimal>("re_unitcostprecise") == 99m,
             "A refresh must trust a usable current source cost rather than client input.");
+        line.refreshPart = false;
+        var refreshedJson = prior.GetAttributeValue<string>("re_catalogdetailsjson");
+        foreach (var invalid in new[] { 0m, -1m, .12345678901m, 1000000001m })
+        {
+            line.unitCostOverride = invalid;
+            Reject(() => save(), "positive unit cost");
+        }
+        line.unitCostOverride = 15.123456789m;
+        prior = save();
+        Assert(prior.GetAttributeValue<decimal>("re_unitcostprecise") == 15.123456789m &&
+            prior.GetAttributeValue<decimal>("re_unitpriceprecise") == 99m &&
+            prior.GetAttributeValue<decimal>("re_sellingprice") == 12.3456789012m &&
+            prior.GetAttributeValue<string>("re_catalogdetailsjson") == refreshedJson &&
+            selected.GetAttributeValue<decimal>("re_usdcost") == 99m,
+            "Cost override must not rewrite source cost, VK13, selling override or master.");
+        line.unitCostOverride = null;
+        prior = save();
+        Assert(prior.GetAttributeValue<decimal>("re_unitcostprecise") == 15.123456789m,
+            "An ordinary save without an override must preserve the effective cost.");
+        line.unitCostOverride = 99m;
+        prior = save();
+        Assert(prior.GetAttributeValue<decimal>("re_unitcostprecise") == 99m,
+            "Entering the catalog amount again resets the effective cost.");
         Console.WriteLine("Transparent catalog cases passed: both classifications, full paging, diagnostics, manual completion, fixed markup and frozen provenance.");
     }
 

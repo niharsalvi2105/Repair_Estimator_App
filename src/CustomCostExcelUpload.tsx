@@ -50,7 +50,8 @@ export function CustomCostExcelUpload(props: Props) {
       const rows = await readCustomCostExcel(await file.arrayBuffer(), kind, language, packageId, equipmentNumbers, maxLines)
       if (!labor) {
         const parts = rows as DraftMaterial[]
-        const resolved = new Map<string, Partial<DraftMaterial>>()
+        const resolved = new Map<string, Pick<DraftMaterial, 'catalogPartId' | 'catalogDetails' | 'unitCost' |
+          'unitPrice' | 'markupPercent' | 'uom' | 'description' | 'partType' | 'refreshPart'>>()
         for (const row of parts.filter(p => p.partType === 'kone')) {
           if (!resolved.has(row.part)) {
             let result = await getPartCatalog(market, row.part)
@@ -67,7 +68,11 @@ export function CustomCostExcelUpload(props: Props) {
               unitPrice: part.unitPrice, markupPercent: 10, uom: part.uom,
               description: part.description, partType: 'kone', refreshPart: true })
           }
-          Object.assign(row, resolved.get(row.part))
+          const catalog = resolved.get(row.part)!
+          if (row.unitCost > 0 && !catalog.catalogDetails)
+            throw new Error(fr ? `Impossible d’importer le coût unitaire de la pièce KONE ${row.part} : les détails du catalogue ne sont pas disponibles.`
+              : `Cannot import the unit cost for KONE part ${row.part}: catalog details are unavailable.`)
+          Object.assign(row, catalog, { unitCost: row.unitCost || catalog.unitCost })
         }
       }
       const latest = current.current
@@ -122,8 +127,8 @@ export function CustomCostExcelUpload(props: Props) {
       <p>{labor
         ? fr ? 'Numéro d’équipement et six colonnes : Mechanic ST/DT, Helper ST/DT, Adjuster ST/DT. Les heures vides ou nulles sont ignorées; taux et totaux calculés par le serveur.'
           : 'Equipment Number plus six hours columns: Mechanic ST/DT, Helper ST/DT, Adjuster ST/DT. Blank/zero hours are skipped; rates and totals are server-calculated.'
-        : fr ? 'Equipment Number, Material Description, Vendor Name, Part Mfg, Part #, Quantity, Unit Cost. Part Mfg : KONE ou Non-KONE. Pour KONE, laissez le coût vide : le catalogue fournit les prix et la description.'
-          : 'Equipment Number, Material Description, Vendor Name, Part Mfg, Part #, Quantity, Unit Cost. Part Mfg: KONE or Non-KONE. For KONE, leave cost blank: the catalog supplies prices and description.'}</p>
+        : fr ? 'Pour KONE, laissez Unit Cost et Unit Sell Price vides pour utiliser le catalogue, ou entrez des montants positifs dans la devise du devis. Pour Non-KONE, entrez Unit Cost et laissez Unit Sell Price vide. Les anciens modèles sont toujours acceptés.'
+          : 'For KONE, leave Unit Cost and Unit Sell Price blank to use catalog defaults, or enter positive amounts in the estimate currency. For Non-KONE, enter Unit Cost and leave Unit Sell Price blank. Older templates are still accepted.'}</p>
       <p>{fr ? 'Utilisez uniquement les équipements affectés à ce forfait. Conservez les zéros initiaux au format texte. Aucune formule ni aucun total importé.'
         : 'Use only equipment assigned to this package. Keep leading zeros using text format. No formulas or imported totals.'}</p>
     </details>

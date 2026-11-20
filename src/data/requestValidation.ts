@@ -1,5 +1,5 @@
 import type { DraftLabor, DraftMaterial } from './draftContract'
-import { materialEntryError } from './customMaterialCosts.ts'
+import { isUnlistedKone, materialEntryError } from './customMaterialCosts.ts'
 
 export function whitespaceOnlyError(value: string | undefined, language: 'en' | 'fr'): string | undefined {
   if (value == null || value.length === 0 || value.trim()) return undefined
@@ -17,6 +17,11 @@ export function phoneNumberError(value: string | undefined, language: 'en' | 'fr
 }
 
 export function konePricingConflict(materials: DraftMaterial[], legacyPrice: string | undefined, language: 'en' | 'fr'): string | undefined {
+  if (materials.some(line => line.pricingSource === 'package') &&
+    materials.some(line => line.partType === 'kone' && line.pricingSource !== 'package'))
+    return language === 'fr'
+      ? 'Les prix KONE du forfait et les pièces KONE détaillées ne peuvent pas être utilisés ensemble.'
+      : 'Package KONE pricing and itemized KONE parts cannot be used together.'
   if (Number(legacyPrice) > 0 && materials.some(line => line.partType === 'kone' || line.pricingSource === 'package'))
     return language === 'fr'
       ? 'Le prix global VK13 et les références KONE détaillées ne peuvent pas être utilisés ensemble. Effacez explicitement le prix global VK13 dans Prix et marge pour conserver les pièces détaillées, ou retirez ces pièces pour utiliser le prix global.'
@@ -29,14 +34,14 @@ export function customCostsError(packageIds: string[], labor: DraftLabor[], mate
     if (error) return error
   }
   if (materials.some((line) => (line.pricingSource != null && (
-    !['package', 'manual'].includes(line.pricingSource) || line.catalogPartId || line.markupPercent != null ||
-    line.unitPrice != null || line.refreshPart ||
-    (line.pricingSource === 'package' ? line.partType !== 'kone' || line.unitCost !== 0 : line.partType !== 'non-kone'))) ||
-    (line.partType === 'kone' && line.pricingSource !== 'package' && (!line.catalogPartId ||
+    !['package', 'manual'].includes(line.pricingSource) || line.catalogPartId || line.catalogDetails ||
+    line.unitPrice != null || line.refreshPart || (isUnlistedKone(line) ? line.markupPercent !== 10 :
+      line.markupPercent != null || (line.pricingSource === 'package' ? line.partType !== 'kone' || line.unitCost !== 0 : line.partType !== 'non-kone')))) ||
+    (line.partType === 'kone' && line.pricingSource == null && (!line.catalogPartId ||
     line.markupPercent !== 10)) ||
     (line.partType === 'non-kone' && line.markupPercent != null)))
     return language === 'fr' ? 'Vérifiez la source des prix. Les montants KONE du forfait ne permettent aucun coût par pièce ni majoration supplémentaire. La majoration KONE du catalogue est fixée à 10 %.'
-      : 'Check the pricing source. Package KONE amounts cannot carry per-part charges or extra markup. Catalog KONE markup is fixed at 10%.'
+      : 'Check the pricing source. Package KONE amounts cannot carry per-part charges or extra markup. Itemized KONE markup is fixed at 10%.'
   if (packageIds.some((id) => !labor.some((line) => line.packageId === id) && !materials.some((line) => line.packageId === id)))
     return language === 'fr'
       ? 'Saisissez une main-d’œuvre ou un matériau. Au moins un est requis.'

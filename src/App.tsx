@@ -984,7 +984,9 @@ function App() {
         hours: 0, material: 0, isCustom: item.re_iscustompackage, isTimeMaterial: item.re_istimematerial,
         equipmentNumbers: item.equipmentNumbers ?? null, allEquipment: item.equipmentNumbers == null })),
       laborLines: labor, materialLines: materials.map(line => line.catalogPartId
-        ? { ...line, markupPercent: line.partType === 'kone' ? 10 : undefined }
+        ? { ...line, markupPercent: line.partType === 'kone' ? 10 : undefined,
+          unitCostOverride: line.catalogDetails &&
+            (!line.refreshPart || line.unitCost !== (line.catalogDetails.unitCost ?? 0)) ? line.unitCost : undefined }
         : line),
     }
   }
@@ -1075,8 +1077,8 @@ function App() {
         setSubmitted(record.status === 126110002)
         setExportDelivery(record.exportDelivery ?? undefined)
         if (missingSellingPrices) throw new Error(language === 'fr'
-          ? 'Impossible de confirmer les prix de vente enregistrés. L’enregistrement a peut-être réussi et vos modifications restent à l’écran. Ne réessayez pas et ne rechargez pas; contactez votre administrateur.'
-          : 'Could not verify the saved selling prices. The save may have completed and your edits remain on screen. Do not retry or reload; contact your administrator.')
+          ? 'Impossible de confirmer les coûts unitaires et les prix de vente enregistrés. L’enregistrement a peut-être réussi et vos modifications restent à l’écran. Ne réessayez pas et ne rechargez pas; contactez votre administrateur.'
+          : 'Could not verify the saved unit costs and selling prices. The save may have completed and your edits remain on screen. Do not retry or reload; contact your administrator.')
         if (missingCostEquipment) throw new Error(language === 'fr'
           ? 'Le serveur n’a pas conservé les équipements des coûts personnalisés. Vos lignes restent à l’écran. Déployez le schéma et le plug-in de brouillon mis à jour.'
           : 'The server did not retain custom-cost equipment assignments. Your rows remain on screen. Deploy the updated schema and draft plugin.')

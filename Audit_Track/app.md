@@ -285,7 +285,32 @@ that verifies only Competing Bids is filtered and source choice data remains
 unchanged. No schema, API, backend validation, permissions, tenant data or
 published frontend changed. This is local source only; deployment and live UI
 verification remain pending.
-### Editable catalog selling price (local source, not deployed)
+### Unlisted KONE material entry (local source, not deployed)
+
+Material Breakdown shows a highlighted, non-interactive banner below Part # for confirmed unlisted KONE rows and for Non-KONE rows with a part number but no catalog selection. The banner uses the Equipment selector’s icon-and-label layout, shows the part number, and links the localized status to the input. It does not change validation, catalog lookup, saving, or pricing. This styling change is local and not deployed.
+
+The local build and lint passed, along with seven focused browser tests covering the two unlisted states and existing catalog and save workflows.
+
+Non-KONE rows without a catalog selection show localized guidance below Part # only while the part number is blank. Once an unlisted number is entered, the card replaces the guidance; clearing the number restores it. The input describes the visible guidance or card, not both. Catalog selection, manual entry and validation are unchanged. This UI change is local and not deployed.
+
+Non-KONE searches that finish without an exact match offer **Add as unlisted Non-KONE part** in the same position as the KONE action. Choosing it closes the picker and shows the card without changing the row's data or validation rules. The existing manual-entry path still works without the catalog. This UI change is local and not deployed.
+
+The KONE guidance below Part # now tells users to select a catalog part from the list or enter an unlisted KONE part if there is no exact match, and to provide the required details. The existing message area, display conditions and validation are unchanged. This copy update is local and not deployed.
+
+In Material Breakdown, select KONE and search by part number. After a successful search with no exact match (including remaining pages), **Add as unlisted KONE part** enables manual description, whole quantity, positive Unit Cost and positive Unit Sell Price in estimate currency. Vendor remains optional. MD04 and VK13 show Not applicable. Unit Sell Price is before the fixed 10% markup. The confirmed part number stays fixed until the user returns to catalog search. Catalog errors do not enable the action, and legacy package/aggregate KONE pricing cannot coexist with itemized KONE. Existing Non-KONE entry and Excel upload rules are unchanged. See the [plugin reference](./plugin.md) for calculation/persistence and [Dataverse reference](./dataverse.md) for rollout.
+
+Local checks: production build and focused lint/unit tests passed. Mocked English and French browser tests verified the exact-match guard, required-field feedback and Save; the catalog outage, lookup retry and both Excel imports passed regression checks. Live tenant acceptance remains pending.
+
+### Separate catalog and editable estimate amounts (local source, not deployed)
+
+The Material Breakdown now shows read-only **MD04 Unit Cost** and **VK13 Unit Price** separately from editable **Unit Cost** and **Unit Sell Price** for catalog-matched rows. Catalog columns use the frozen catalog amounts in estimate currency; the existing source-details panel shows the raw source amounts and currency. Usable values prefill the editable inputs; missing or unusable amounts require a positive entry. The app highlights invalid values and verifies saved overrides in the response. Older catalog lines without source-detail snapshots must be reselected before editing Unit Cost. Unlisted Non-KONE and legacy package-priced KONE are unchanged. This source update is not deployed; see the [plugin reference](./plugin.md) for the persistence contract.
+
+The Materials Excel template adds optional **Unit Sell Price** after **Unit Cost**. For KONE catalog rows, either amount may be blank for the Dataverse default or entered as a positive override in estimate currency (maximum 1000000000, up to ten decimal places). The seven-column format is still accepted, including zero as a KONE cost placeholder when **Unit Sell Price** is absent. A KONE cost override requires catalog details. Non-KONE rows still import as manual materials and require a positive cost with up to two decimals; leave **Unit Sell Price** blank. MD04 and VK13 are not upload columns. Upload validates the entire file before replacing this package’s lines on confirmation; it does not save the draft. Labor Excel is unchanged.
+
+Local browser checks cover both languages at phone and desktop widths, reopening saved overrides without changing the displayed catalog amounts, missing catalog values, Excel imports, and Save responses that omit or change submitted amounts.
+Bulk Excel checks verify legacy workbook parsing, rejection of invalid amounts without replacing rows, and saving two rows for the same catalog part with independent defaults and overrides in English and French mocked flows.
+
+#### Earlier selling-price rollout (historical)
 
 The material grid now adds read-only VK13 Unit Price and editable Selling Price columns after Unit Cost (nine columns total, superseding the seven-column layout below). A catalog line with a positive VK13 snapshot displays Selling Price defaulting to that saved price. Users can change it without changing VK13, unit cost or the Spare Parts master. Both KONE and Non-KONE catalog parts are included, as explicitly approved; manual and package-priced rows show Not applicable. Values must be positive, at most 1000000000, with up to ten decimal places; invalid values block Save with localized feedback. Inputs honor existing edit/Review locks, and mobile scrolling stays inside the grid. Existing material cost totals remain cost-based.
 
