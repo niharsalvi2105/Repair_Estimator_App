@@ -86,10 +86,11 @@ test('material template roundtrips manual rows and leaves KONE pricing to catalo
   await workbook.xlsx.load(template)
   assert.equal(workbook.worksheets[0].name, 'Materials')
   assert.deepEqual(workbook.worksheets[0].getRow(1).values.slice(1), [...CUSTOM_COST_EXCEL_HEADERS.material])
+  assert.equal(workbook.worksheets[0].getCell('H1').value, 'Unit Sell Price')
   assert.equal(workbook.worksheets[0].getCell('A2').value, null)
   assert.equal(workbook.worksheets[1].getCell('A12').value, 'EXAMPLE-ONLY-001')
   workbook.worksheets[0].addRow(['00001234', 'Pump', 'Acme', 'Non-KONE', 'PN-01', 2, 12.35])
-  workbook.worksheets[0].addRow(['UNIT-7', '', '', 'kOnE', '00042', 1, 0])
+  workbook.worksheets[0].addRow(['UNIT-7', '', '', 'kOnE', '00042', 1])
   const lines = await readCustomCostExcel(
     new Uint8Array(await workbook.xlsx.writeBuffer()).buffer, 'material', 'en', packageId, equipment, 2,
   )
@@ -106,6 +107,22 @@ test('material template roundtrips manual rows and leaves KONE pricing to catalo
   ])
 })
 
+test('KONE workbook amounts are optional independent overrides and old workbooks still accept zero cost', async () => {
+  const kone = ['UNIT-7', '', '', 'KONE', '00042', 1]
+  const bytes = await materialBook([
+    [...kone, 0.0000000001, '12.1234567890'],
+    [...kone, '', 1000000000],
+    [...kone, '3.56789', ''],
+  ])
+  const parse = (file) => readCustomCostExcel(file, 'material', 'en', packageId, equipment, 10)
+  const amounts = (rows) => rows.map(({ unitCost, sellingPrice }) => [unitCost, sellingPrice])
+  assert.deepEqual(amounts(await parse(bytes)), [[1e-10, 12.123456789], [0, 1000000000], [3.56789, undefined]])
+
+  const legacy = await workbookBytes([{ name: 'Materials', headers: CUSTOM_COST_EXCEL_HEADERS.material.slice(0, -1),
+    rows: [[...kone, 0], [...kone, '0.00'], kone] }])
+  assert.deepEqual(amounts(await parse(legacy)), [[0, undefined], [0, undefined], [0, undefined]])
+})
+
 test('materials require correct manufacturer, complete manual details and safe numeric values', async () => {
   const badRows = [
     ['UNIT-7', 'Description', 'Vendor', 'Other', 'P-1', 1, 2],
@@ -117,7 +134,8 @@ test('materials require correct manufacturer, complete manual details and safe n
     ['UNIT-7', 'Description', 'Vendor', 'Non-KONE', 'P-1', 1, '0'],
     ['UNIT-7', 'Description', 'Vendor', 'Non-KONE', 'P-1', 1, 2.345],
     ['UNIT-7', 'Description', 'Vendor', 'Non-KONE', 'P-1', 1, 1.000000001],
-    ['UNIT-7', '', '', 'KONE', 'P-1', 1, 0.01],
+    ['UNIT-7', '', '', 'KONE', 'P-1', 1, 0],
+    ['UNIT-7', '', '', 'KONE', 'P-1', 1, 0.00000000001],
     ['UNIT-7', '', '', 'KONE', 'P-1', 0, 0],
   ]
   for (const row of badRows) {
@@ -136,6 +154,19 @@ test('materials require correct manufacturer, complete manual details and safe n
     'material', 'en', packageId, equipment, 1)
   assert.equal(formattedPart[0].part, '000042')
   assert.equal(formattedPart[0].unitCost, 1.15)
+})
+
+test('rejects invalid sell prices, manual Non-KONE sell prices and untrusted catalog columns', async () => {
+  for (const price of [0, -1, 1000000001, 1.00000000001, { formula: '1+1', result: 2 }]) {
+    const bytes = await materialBook([['UNIT-7', '', '', 'KONE', 'P-1', 1, '', price]])
+    await assert.rejects(() => readCustomCostExcel(bytes, 'material', 'fr', packageId, equipment, 10), /Ligne 2/)
+  }
+  const manual = await materialBook([['UNIT-7', 'Bearing', '', 'Non-KONE', 'P-1', 1, 2, 3]])
+  await assert.rejects(() => readCustomCostExcel(manual, 'material', 'en', packageId, equipment, 10), /leave Unit Sell Price blank/)
+  for (const header of ['MD04 Unit Cost', 'VK13 Unit Price']) {
+    const bytes = await workbookBytes([{ name: 'Materials', headers: [...CUSTOM_COST_EXCEL_HEADERS.material, header] }])
+    await assert.rejects(() => readCustomCostExcel(bytes, 'material', 'en', packageId, equipment, 10), /Unexpected column/)
+  }
 })
 
 test('rejects duplicate, missing and unexpected headers and extra data worksheets', async () => {

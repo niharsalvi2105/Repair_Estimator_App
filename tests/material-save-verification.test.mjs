@@ -8,6 +8,12 @@ const line = (id, sellingPrice = 55.25, extra = {}) => ({
 })
 const missing = missingMaterialSellingPrices
 
+test('a submitted catalog cost override must be returned as the effective unit cost', () => {
+  const sent = line('client', null, { unitCostOverride: 15.123456789 })
+  assert.equal(missing([sent], [line('server', null, { unitCost: 15.123456789 })], []), false)
+  assert.equal(missing([sent], [line('server', null, { unitCost: 99 })], []), true)
+})
+
 test('new server IDs and reordering preserve exact selling prices', () => {
   const sent = [line('new-1'), line('new-2', 17.1234567891, { quantity: 3 })]
   const received = [line('server-2', 17.1234567891, { quantity: 3, catalogPartId: 'abc' }), line('server-1')]
