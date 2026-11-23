@@ -74,6 +74,7 @@ namespace RepairEstimator.Drafts
         [DataMember] public string part;
         [DataMember] public decimal quantity;
         [DataMember] public decimal unitCost;
+        [DataMember(EmitDefaultValue = false)] public decimal? unitCostOverride;
         [DataMember(EmitDefaultValue = false)] public string partType;
         [DataMember(EmitDefaultValue = false)] public string catalogPartId;
         [DataMember(EmitDefaultValue = false)] public decimal? markupPercent;
@@ -853,6 +854,9 @@ namespace RepairEstimator.Drafts
             }
             foreach (var line in input.materialLines)
             {
+                if (line.unitCostOverride.HasValue &&
+                    (string.IsNullOrEmpty(line.catalogPartId) || line.pricingSource != null))
+                    Fail("A unit cost override requires a catalog part.");
                 if (!string.IsNullOrEmpty(line.id) && !seen.Add(line.id)) Fail("Duplicate custom line ID.");
                 var previous = priorMaterial.FirstOrDefault(r => r.Id.ToString() == line.id);
                 if (line.pricingSource == null && string.IsNullOrEmpty(line.catalogPartId) &&
@@ -862,6 +866,7 @@ namespace RepairEstimator.Drafts
                     Fail("Material quantity must be a whole number from 1 to 100000.");
                 if (
                     (line.pricingSource != "package" && string.IsNullOrEmpty(line.catalogPartId) &&
+                        !(line.pricingSource == "manual" && line.partType == "kone") &&
                         (line.unitCost <= 0 || line.unitCost > 1000000000 || decimal.Round(line.unitCost, 2) != line.unitCost)))
                     Fail("Invalid material quantity or unit cost (two decimals required).");
                 var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
@@ -894,7 +899,7 @@ namespace RepairEstimator.Drafts
                  rows.Any(r => r.GetAttributeValue<OptionSetValue>("re_parttype")?.Value == 126110000 ||
                     (r.LogicalName == Material && PackageMaterialPricing.Source(r) == null &&
                      !r.Contains("re_parttype") && LegacyKone(r.GetAttributeValue<string>("re_vendor"), r.GetAttributeValue<string>("re_partnumber"))))))
-                Fail("Do not mix package KONE pricing with catalog or legacy KONE pricing. Remove the other KONE prices first.");
+                Fail("Do not mix package KONE pricing with itemized or legacy KONE pricing. Remove the other KONE prices first.");
             if (rows.Any(r => r.GetAttributeValue<OptionSetValue>("re_parttype")?.Value == 126110000))
             {
                 if ((header.GetAttributeValue<Money>("re_konesparessalespricevk13")?.Value ?? 0m) > 0m)
@@ -1290,7 +1295,8 @@ namespace RepairEstimator.Drafts
                 unitCost = e.GetAttributeValue<decimal?>("re_unitcostprecise") ?? e.GetAttributeValue<Money>("re_unitcost").Value,
                 pricingSource = PackageMaterialPricing.Source(e),
                 partType = PackageMaterialPricing.Source(e) == "package" ? "kone" :
-                    PackageMaterialPricing.Source(e) == "manual" ? "non-kone" : PartCatalog.TypeName(e.GetAttributeValue<OptionSetValue>("re_parttype")),
+                    PartCatalog.TypeName(e.GetAttributeValue<OptionSetValue>("re_parttype")) ??
+                    (PackageMaterialPricing.Source(e) == "manual" ? "non-kone" : null),
                 catalogPartId = e.GetAttributeValue<EntityReference>("re_sparepart")?.Id.ToString(),
                 markupPercent = e.GetAttributeValue<decimal?>("re_markuppct"),
                 unitPrice = e.GetAttributeValue<decimal?>("re_unitpriceprecise"),

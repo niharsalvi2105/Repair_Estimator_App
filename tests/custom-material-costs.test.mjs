@@ -45,6 +45,13 @@ test('catalog selling override is bounded and does not change cost totals', () =
   }
 })
 
+test('catalog cost overrides stay positive and drive the material total even with usable source cost', () => {
+  const line = { ...material, unitCost: 9.125, catalogDetails: { requiresCost: false, unitCost: 7.73178 } }
+  assert.equal(calculateCustomMaterialTotal([line]), 18.25)
+  for (const unitCost of [0, -1, Infinity, 1000000001, 0.12345678901])
+    assert.match(materialEntryError({ ...line, unitCost }, 'en'), /positive unit cost/)
+})
+
 test('part number and natural-number quantities are mandatory in both languages', () => {
   for (const language of ['en', 'fr']) {
     assert.equal(materialEntryError(material, language), undefined)

@@ -1,11 +1,12 @@
 import type { Cell, Worksheet } from 'exceljs'
 import type { DraftLabor, DraftMaterial } from './draftContract'
+import { validCatalogUnitAmount } from './customMaterialCosts.ts'
 
 export type CustomCostKind = 'labor' | 'material'
 
 export const CUSTOM_COST_EXCEL_HEADERS: Record<CustomCostKind, readonly string[]> = {
   labor: ['Equipment Number', 'Mechanic ST', 'Mechanic DT', 'Helper ST', 'Helper DT', 'Adjuster ST', 'Adjuster DT'],
-  material: ['Equipment Number', 'Material Description', 'Vendor Name', 'Part Mfg', 'Part #', 'Quantity', 'Unit Cost'],
+  material: ['Equipment Number', 'Material Description', 'Vendor Name', 'Part Mfg', 'Part #', 'Quantity', 'Unit Cost', 'Unit Sell Price'],
 }
 export const MAX_CUSTOM_COST_EXCEL_BYTES = 5 * 1024 * 1024
 
@@ -83,6 +84,16 @@ function quantityValue(cell: Cell, language: Language, row: number): number {
   return quantity
 }
 
+function catalogAmountOverride(cell: Cell, language: Language, row: number, label: string, legacyZero = false): number | undefined {
+  const text = cellText(cell, language, row).trim()
+  if (!text || (legacyZero && /^0+(?:\.0{1,2})?$/.test(text))) return undefined
+  const amount = typeof cell.value === 'number' ? cell.value : Number(text)
+  if (!validCatalogUnitAmount(amount) || (typeof cell.value === 'string' && !/^\d+(?:\.\d{1,10})?$/.test(text)))
+    fail(language, `Row ${row}: ${label} must be positive, up to 1000000000, with at most ten decimal places.`,
+      `Ligne ${row} : ${label} doit être positif, jusqu’à 1000000000, avec au plus dix décimales.`)
+  return amount
+}
+
 function getHeaderPositions(sheet: Worksheet, kind: CustomCostKind, language: Language): Map<string, number> {
   const positions = new Map<string, number>()
   sheet.getRow(1).eachCell((cell, column) => {
@@ -93,6 +104,7 @@ function getHeaderPositions(sheet: Worksheet, kind: CustomCostKind, language: La
   })
   const expected = CUSTOM_COST_EXCEL_HEADERS[kind]
   for (const header of expected) {
+    if (header === 'Unit Sell Price') continue
     if (!positions.has(header.toLowerCase()))
       fail(language,
         `Missing column "${header}". Use the ${kind} template.`,
@@ -169,11 +181,14 @@ function materialRows(sheet: Worksheet, positions: Map<string, number>, language
   allowedEquipment: string[], maxLines: number): DraftMaterial[] {
   const entries: DraftMaterial[] = []
   const column = (header: string) => positions.get(header.toLowerCase())!
+  const sellPriceColumn = positions.get('unit sell price')
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return
     const fields = ['material description', 'vendor name', 'part mfg', 'part #', 'quantity', 'unit cost']
     const values = fields.map((header) => cellText(row.getCell(column(header)), language, rowNumber))
-    if (values.every((value) => !value.trim())) return
+    const sellPriceCell = sellPriceColumn === undefined ? undefined : row.getCell(sellPriceColumn)
+    const hasSellPrice = sellPriceCell && cellText(sellPriceCell, language, rowNumber).trim() !== ''
+    if (!hasSellPrice && values.every((value) => !value.trim())) return
     const number = equipmentNumber(row.getCell(column('equipment number')), language, rowNumber)
     if (!number || /\s/.test(number) || number.length > 20)
       fail(language, `Row ${rowNumber}: Equipment Number is required, must contain no whitespace and allow at most 20 characters.`,
@@ -197,10 +212,16 @@ function materialRows(sheet: Worksheet, positions: Map<string, number>, language
 
     const quantity = quantityValue(row.getCell(column('quantity')), language, rowNumber)
     const isKone = manufacturer === 'kone'
-    const unitCost = decimalCellValue(row.getCell(column('unit cost')), language, rowNumber, 'Unit Cost', 1_000_000_000, !isKone)
-    if (isKone && unitCost !== 0)
-      fail(language, `Row ${rowNumber}: KONE Unit Cost must be blank or zero; catalog pricing is resolved separately.`,
-        `Ligne ${rowNumber} : Unit Cost KONE doit être vide ou égal à zéro; le prix du catalogue est résolu séparément.`)
+    const costCell = row.getCell(column('unit cost'))
+    const unitCost = isKone
+      ? catalogAmountOverride(costCell, language, rowNumber, 'Unit Cost', sellPriceColumn === undefined) ?? 0
+      : decimalCellValue(costCell, language, rowNumber, 'Unit Cost', 1_000_000_000, true)
+    if (!isKone && hasSellPrice)
+      fail(language, `Row ${rowNumber}: leave Unit Sell Price blank for manual Non-KONE materials.`,
+        `Ligne ${rowNumber} : laissez Unit Sell Price vide pour les matériaux Non-KONE saisis manuellement.`)
+    const sellingPrice = sellPriceCell && hasSellPrice
+      ? catalogAmountOverride(sellPriceCell, language, rowNumber, 'Unit Sell Price')
+      : undefined
     if (!isKone && !description)
       fail(language, `Row ${rowNumber}: Non-KONE materials require Material Description.`,
         `Ligne ${rowNumber} : les matériaux Non-KONE exigent Material Description.`)
@@ -214,6 +235,7 @@ function materialRows(sheet: Worksheet, positions: Map<string, number>, language
       part,
       quantity,
       unitCost,
+      ...(sellingPrice === undefined ? {} : { sellingPrice }),
       partType: isKone ? 'kone' : 'non-kone',
       ...(isKone ? {} : { pricingSource: 'manual' as const }),
     })
@@ -250,7 +272,8 @@ export async function customCostExcelTemplate(kind: CustomCostKind, equipmentNum
       for (let column = 2; column <= headers.length; column++) sheet.getCell(row, column).numFmt = '0.00'
     } else {
       sheet.getCell(row, 6).numFmt = '0'
-      sheet.getCell(row, 7).numFmt = '0.00'
+      sheet.getCell(row, 7).numFmt = '0.00########'
+      sheet.getCell(row, 8).numFmt = '0.00########'
       sheet.getCell(row, 4).dataValidation = { type: 'list', allowBlank: true, formulae: ['"KONE,Non-KONE"'] }
     }
   }
@@ -259,7 +282,7 @@ export async function customCostExcelTemplate(kind: CustomCostKind, equipmentNum
   instructions.columns = sheet.columns.map(column => ({ width: column.width }))
   instructions.getColumn(1).numFmt = '@'
   const title = kind === 'labor' ? 'Labor import template' : 'Material import template'
-  instructions.mergeCells('A1:G1')
+  instructions.mergeCells(1, 1, 1, headers.length)
   instructions.getCell('A1').value = title
   instructions.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF174A6E' } }
   instructions.getCell('A3').value = 'How to use'
@@ -273,19 +296,20 @@ export async function customCostExcelTemplate(kind: CustomCostKind, equipmentNum
     ]
     : [
       'Enter one material per row and select KONE or Non-KONE in Part Mfg.',
-      'Non-KONE rows require description, part number, whole-number quantity and positive unit cost; vendor is optional.',
-      'KONE rows require a part number and quantity. Leave Unit Cost blank or enter zero; catalog pricing is resolved separately.',
+      'Non-KONE rows require description, part number, whole-number quantity and positive Unit Cost (up to two decimals). Leave Unit Sell Price blank.',
+      'KONE rows require a catalog part number and whole-number quantity. Leave Unit Cost and Unit Sell Price blank to use catalog defaults.',
+      'To override a KONE amount, enter a positive value in estimate currency, up to 1000000000 and ten decimal places. MD04 and VK13 always come from Dataverse.',
       'Equipment Number must exactly match an item in the selected package; keep leading zeros.',
     ]
   guidance.forEach((text, index) => {
     const row = index + 4
     instructions.getCell(row, 1).value = `${index + 1}.`
-    instructions.mergeCells(`B${row}:G${row}`)
+    instructions.mergeCells(row, 2, row, headers.length)
     instructions.getCell(row, 2).value = text
     instructions.getCell(row, 2).alignment = { wrapText: true, vertical: 'middle' }
     instructions.getRow(row).height = 32
   })
-  instructions.mergeCells('A10:G10')
+  instructions.mergeCells(10, 1, 10, headers.length)
   instructions.getCell('A10').value = 'Illustrative example (not imported)'
   instructions.getCell('A10').font = { bold: true, size: 12 }
   const exampleHeaders = [...headers]
@@ -299,7 +323,7 @@ export async function customCostExcelTemplate(kind: CustomCostKind, equipmentNum
     : ['EXAMPLE-ONLY-001', 'Illustrative bearing', 'Example Supplier', 'Non-KONE', 'EX-100', 2, 12.5]
   instructions.getRow(12).alignment = { wrapText: true }
   instructions.getRow(12).height = 32
-  instructions.mergeCells('A14:G14')
+  instructions.mergeCells(14, 1, 14, headers.length)
   instructions.getCell('A14').value = 'Equipment in the selected package'
   instructions.getCell('A14').font = { bold: true }
   if (equipmentNumbers.length) {

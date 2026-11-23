@@ -252,10 +252,17 @@ namespace RepairEstimator.Plugins.Data
                 if (mode.HasValue && mode != 126110000 && mode != 126110001)
                     throw new PricingException("RE-114", "MATERIAL_CLASSIFICATION_INVALID");
                 var packageReference = mode == 126110001;
-                if (mode.HasValue && (partType.HasValue || row.GetAttributeValue<EntityReference>("re_sparepart") != null ||
-                    Query.Dec(row, "re_markuppct").HasValue || Query.Dec(row, "re_unitpriceprecise").HasValue ||
-                    Query.Dec(row, "re_sellingprice").HasValue ||
-                    Query.Dec(row, "re_unitcostprecise").HasValue))
+                var unlistedKone = mode == 126110000 && partType == 126110000;
+                var overridePrice = Query.Dec(row, "re_sellingprice");
+                var catalogPrice = Query.Dec(row, "re_unitpriceprecise");
+                var preciseCost = Query.Dec(row, "re_unitcostprecise");
+                var markup = Query.Dec(row, "re_markuppct");
+                var hasCatalog = row.GetAttributeValue<EntityReference>("re_sparepart") != null;
+                var hasCatalogDetails = !string.IsNullOrEmpty(row.GetAttributeValue<string>("re_catalogdetailsjson"));
+                if (mode.HasValue && (hasCatalog || hasCatalogDetails || catalogPrice.HasValue ||
+                    (unlistedKone
+                        ? markup != 10m || !ValidMaterialAmount(preciseCost) || !ValidMaterialAmount(overridePrice)
+                        : partType.HasValue || markup.HasValue || overridePrice.HasValue || preciseCost.HasValue)))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 if (packageReference)
                 {
@@ -267,34 +274,31 @@ namespace RepairEstimator.Plugins.Data
                 }
                 if (partType.HasValue && partType != 126110000 && partType != 126110001)
                     throw new PricingException("RE-114", "MATERIAL_CLASSIFICATION_INVALID");
-                var overridePrice = Query.Dec(row, "re_sellingprice");
-                var catalogPrice = Query.Dec(row, "re_unitpriceprecise");
-                var hasCatalog = row.GetAttributeValue<EntityReference>("re_sparepart") != null;
                 var pricedCatalog = hasCatalog && (overridePrice ?? catalogPrice) > 0;
-                if (!string.IsNullOrEmpty(row.GetAttributeValue<string>("re_catalogdetailsjson")) &&
-                    (!pricedCatalog || !(Query.Dec(row, "re_unitcostprecise") > 0) ||
-                     (partType == 126110000 && Query.Dec(row, "re_markuppct") != 10m)))
+                if (hasCatalogDetails && (!pricedCatalog || !(preciseCost > 0) || (partType == 126110000 && markup != 10m)))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
-                if (overridePrice.HasValue && (!hasCatalog || overridePrice <= 0 ||
-                    overridePrice > 1000000000m || decimal.Round(overridePrice.Value, 10) != overridePrice))
+                if (overridePrice.HasValue && ((!hasCatalog && !unlistedKone) || !ValidMaterialAmount(overridePrice)))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 loaded.Input.MaterialLines.Add(new MaterialLineInput {
                     IsPackageReference = packageReference,
                     Quantity = Query.Dec(row, Names.EstimateMaterialLine.Quantity).Value,
-                    UnitCost = Query.Dec(row, "re_unitcostprecise") ?? Query.Money(row, Names.EstimateMaterialLine.UnitCost).Value,
+                    UnitCost = preciseCost ?? Query.Money(row, Names.EstimateMaterialLine.UnitCost).Value,
                     TaxApplicable = row.GetAttributeValue<bool>(Names.EstimateMaterialLine.TaxApplicable),
                     FreightApplicable = row.GetAttributeValue<bool>(Names.EstimateMaterialLine.FreightApplicable),
                     Vendor = row.GetAttributeValue<string>(Names.EstimateMaterialLine.Vendor),
                     PartNumber = row.GetAttributeValue<string>(Names.EstimateMaterialLine.PartNumber),
-                    IsKone = mode.HasValue ? (bool?)packageReference : partType.HasValue ? (bool?)(partType == 126110000) : null,
+                    IsKone = mode.HasValue ? (bool?)(packageReference || unlistedKone) : partType.HasValue ? (bool?)(partType == 126110000) : null,
                     UnitSellingPrice = overridePrice ?? catalogPrice,
                     UsesCatalogSellingPrice = pricedCatalog,
-                    MarkupPercent = Query.Dec(row, "re_markuppct")
+                    MarkupPercent = markup
                 });
             }
             if (loaded.Input.Packages.Any(p => p.PackagePricedKone && !referencedPackages.Contains(p.Id)))
                 throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_MISSING");
         }
+
+        private static bool ValidMaterialAmount(decimal? amount) =>
+            amount.HasValue && amount > 0 && amount <= 1000000000m && decimal.Round(amount.Value, 10) == amount.Value;
 
         private static Entity Retrieve(IOrganizationService s, EntityReference reference, params string[] columns)
         {
