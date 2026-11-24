@@ -3,6 +3,7 @@ import type { Market } from './estimateQuery'
 import { validPackageEquipment } from './packageEquipment.ts'
 import { parseContactMasterOptions, type ContactMasterOption } from './customerMasterContract.ts'
 import { parseCatalogDetails, type CatalogDetails } from './partCatalogContract.ts'
+import { isUnlistedKone, validCatalogUnitAmount } from './customMaterialCosts.ts'
 
 export type DraftEquipment = {
   id: string; number: string; name: string; location: string; customer: string
@@ -21,7 +22,7 @@ export type DraftMaterial = {
   id: string; packageId?: string | null; equipmentNumber?: string | null; description: string; vendor: string; part: string; quantity: number; unitCost: number
   partType?: 'kone' | 'non-kone' | null; catalogPartId?: string | null; markupPercent?: number | null
   catalogDetails?: CatalogDetails | null
-  unitPrice?: number | null; sellingPrice?: number | null; uom?: string | null; refreshPart?: boolean
+  unitPrice?: number | null; sellingPrice?: number | null; unitCostOverride?: number; uom?: string | null; refreshPart?: boolean
   pricingSource?: 'package' | 'manual' | null
 }
 export const MAX_DRAFT_BYTES = 200000
@@ -141,13 +142,11 @@ export function parseDraft(value: unknown): DraftRecord {
     (line.partType != null && !['kone', 'non-kone'].includes(line.partType)) ||
     (line.pricingSource != null && !['package', 'manual'].includes(line.pricingSource)) ||
     (line.pricingSource != null && (line.catalogPartId != null || line.catalogDetails != null || line.unitPrice != null ||
-      line.refreshPart || (line.pricingSource === 'package'
-        ? line.partType !== 'kone' || line.unitCost !== 0 || line.markupPercent != null
-        : line.partType === 'kone'
-          ? line.markupPercent !== 10 || line.sellingPrice == null || !line.part?.trim() || !line.description.trim() ||
-            line.unitCost <= 0 || line.unitCost > 1000000000 || Number(line.unitCost.toFixed(2)) !== line.unitCost ||
-            !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 100000
-          : line.partType !== 'non-kone' || line.markupPercent != null))) ||
+      line.refreshPart || (isUnlistedKone(line)
+        ? line.markupPercent !== 10 || !validCatalogUnitAmount(line.unitCost) || !validCatalogUnitAmount(line.sellingPrice)
+        : line.markupPercent != null || (line.pricingSource === 'package'
+        ? line.partType !== 'kone' || line.unitCost !== 0
+        : line.partType !== 'non-kone')))) ||
     !nullableString(line.catalogPartId) || !nullableString(line.uom) ||
     (line.catalogPartId != null && (!line.partType ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(line.catalogPartId) ||
@@ -160,7 +159,7 @@ export function parseDraft(value: unknown): DraftRecord {
       ((line.partType === 'kone' ? line.markupPercent !== 10 : line.markupPercent != null) ||
        !line.description.trim() || !((line.sellingPrice ?? line.unitPrice ?? 0) > 0))) ||
     (line.unitPrice != null && (!Number.isFinite(line.unitPrice) || line.unitPrice < 0 || line.unitPrice > 1000000000)) ||
-    (line.sellingPrice != null && ((!line.catalogPartId && !(line.pricingSource === 'manual' && line.partType === 'kone')) ||
+    (line.sellingPrice != null && ((!line.catalogPartId && !isUnlistedKone(line)) ||
       !Number.isFinite(line.sellingPrice) || line.sellingPrice <= 0 || line.sellingPrice > 1000000000 ||
       Number(line.sellingPrice.toFixed(10)) !== line.sellingPrice)) ||
     (line.partType === 'kone' && line.pricingSource == null &&

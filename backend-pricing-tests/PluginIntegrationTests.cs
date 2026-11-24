@@ -174,6 +174,49 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
+        public void Unlisted_KONE_saves_reloads_and_prices_manual_amounts_at_fixed_markup()
+        {
+            var db = new Pipeline();
+            db.Rows[db.BranchId]["re_branchnumber"] = "SYNTHETIC";
+            db.Rows[db.PackageId]["re_iscustompackage"] = true;
+            var request = ExportSnapshot.Deserialize<Draft>(db.DraftJson());
+            request.accountId = db.Add("account", ("re_salesforceaccountid", "source-account"),
+                ("re_salesorganizations", "MKOF"), ("accountnumber", "A1"), ("name", "Account")).Id.ToString();
+            AddCustomDescriptionLines(request);
+            var material = request.materialLines.Single();
+            material.part = "UNLISTED-01";
+            material.partType = "kone";
+            material.pricingSource = "manual";
+            material.unitCost = 25.12345m;
+            material.sellingPrice = 30m;
+            material.markupPercent = 10m;
+            db.Save(ExportSnapshot.Serialize(request));
+            var loaded = ExportSnapshot.Deserialize<Draft>(db.Save("{\"mode\":\"load\",\"id\":\"" + db.EstimateId + "\"}"));
+            var saved = loaded.materialLines.Single();
+            Assert.Equal("kone", saved.partType);
+            Assert.Equal("manual", saved.pricingSource);
+            Assert.Equal(25.12345m, saved.unitCost);
+            Assert.Equal(30m, saved.sellingPrice);
+            Assert.Null(saved.catalogPartId);
+            Assert.Null(saved.unitPrice);
+            Assert.Null(saved.catalogDetails);
+            var header = db.Rows[db.EstimateId];
+            var column = Names.Estimate.SuggestedPriceKoneMaterial;
+            var firstPrice = header.GetAttributeValue<Money>(column).Value;
+            var firstCost = header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value;
+            loaded.mode = "save";
+            saved.sellingPrice = 40m;
+            db.Save(ExportSnapshot.Serialize(loaded));
+            header = db.Rows[db.EstimateId];
+            Assert.Equal(firstCost, header.GetAttributeValue<Money>(Names.Estimate.TotalTrueCost).Value);
+            Assert.Equal(firstPrice + 11m * material.quantity, header.GetAttributeValue<Money>(column).Value);
+            var line = db.Rows.Values.Single(e => e.LogicalName == "re_estimatematerialline");
+            line["re_unitpriceprecise"] = 20m;
+            db.Caller.Update(new Entity(Names.Estimate.Entity, db.EstimateId) { [Names.Estimate.NumberOfEquipment] = 1 });
+            Assert.Equal("unavailable", db.Rows[db.EstimateId].GetAttributeValue<string>(Names.Estimate.CalculationVersion));
+        }
+
+        [Fact]
         public void Custom_cost_equipment_links_roundtrip_clear_and_export_without_master_lookup()
         {
             var db = new Pipeline();

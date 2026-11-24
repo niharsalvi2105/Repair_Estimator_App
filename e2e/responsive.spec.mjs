@@ -1949,7 +1949,7 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await material.getByLabel(label('Unit of measure (estimate completion)', 'Unité de mesure (complément de ce devis)'), { exact: true }).fill('PC')
       await cost.fill('8.123456789')
       await expect(material.getByRole('alert').first()).toContainText(fr ? 'prix de vente positif' : 'positive selling price')
-      await material.getByRole('spinbutton', { name: label('Selling Price', 'Prix de vente'), exact: true }).fill('12.3456789012')
+      await material.getByRole('spinbutton', { name: label('Unit Sell Price', 'Prix de vente unitaire'), exact: true }).fill('12.3456789012')
       await expect(material.getByRole('alert')).toHaveCount(0)
       await type.selectOption('non-kone')
       await expect(part).toHaveValue('KM51517905V074')
@@ -1967,7 +1967,7 @@ test('package preview rates query current branch mechanic cost data from Dataver
         unitPrice:0,sellingPrice:12.3456789012,description:'Estimate-only description',uom:'PC',
         catalogDetails:{sourceCost:0,sourcePrice:0,description:null,uom:null,state:1,masterPartType:'non-kone'} })
       await page.getByRole('button', { name: label('Edit CSTM costs', 'Modifier les coûts CSTM'), exact: true }).click()
-      await expect(material.getByRole('spinbutton', { name: label('Selling Price', 'Prix de vente'), exact: true })).toHaveValue('12.3456789012')
+      await expect(material.getByRole('spinbutton', { name: label('Unit Sell Price', 'Prix de vente unitaire'), exact: true })).toHaveValue('12.3456789012')
       await material.getByRole('button', { name: label('View source details', 'Afficher les détails source'), exact: true }).click()
       await expect(evidence).toContainText(fr ? 'Expiré' : 'Expired')
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
@@ -2019,7 +2019,7 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await expect(material.getByRole('listbox').getByRole('option')).toContainText('TEST-PART-001')
       await part.press('ArrowDown')
       await part.press('Enter')
-      await material.getByRole('spinbutton', { name: 'Selling Price', exact: true }).fill('55.25')
+      await material.getByRole('spinbutton', { name: 'Unit Sell Price', exact: true }).fill('55.25')
       await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
       await next(page)
       await page.locator('.draft-save-action').click()
@@ -2039,9 +2039,9 @@ test('package preview rates query current branch mechanic cost data from Dataver
         await expect.poll(() => page.evaluate(() => window.__draftCalls.length)).toBe(beforeCalculate + 1)
         await expect(page.locator('.pricing-calculation-error')).toHaveCount(0)
       } else {
-        await expect(page.locator('body')).toContainText('Could not verify the saved selling prices')
+        await expect(page.locator('body')).toContainText('Could not verify the saved unit costs and selling prices')
         await page.getByRole('button', { name: 'Edit CSTM costs', exact: true }).click()
-        await expect(page.getByRole('spinbutton', { name: 'Selling Price', exact: true })).toHaveValue('55.25')
+        await expect(page.getByRole('spinbutton', { name: 'Unit Sell Price', exact: true })).toHaveValue('55.25')
       }
     })
   }
@@ -2099,7 +2099,12 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await expect(material.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Test catalog motor')
       await expect(material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true })).toHaveValue('7.73178')
       await expect(material.getByRole('textbox', { name: label('VK13 Unit Price', 'Prix unitaire VK13'), exact: true })).toHaveValue(fr ? '40,376 USD' : '40.376 USD')
-      const selling = material.getByRole('spinbutton', { name: label('Selling Price', 'Prix de vente'), exact: true })
+      const selling = material.getByRole('spinbutton', { name: label('Unit Sell Price', 'Prix de vente unitaire'), exact: true })
+      const md04 = material.getByRole('textbox', { name: label('MD04 Unit Cost', 'Coût unitaire MD04'), exact: true })
+      const vk13 = material.getByRole('textbox', { name: label('VK13 Unit Price', 'Prix unitaire VK13'), exact: true })
+      const cost = material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true })
+      await expect(md04).not.toBeEditable()
+      await expect(vk13).not.toBeEditable()
       await expect(selling).toHaveValue('40.376')
       await selling.fill('55.25')
       await expect(material.getByRole('textbox', { name: label('VK13 Unit Price', 'Prix unitaire VK13'), exact: true })).toHaveValue(fr ? '40,376 USD' : '40.376 USD')
@@ -2113,7 +2118,38 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await quantity.fill('3')
       await expect(total).toHaveValue(fr ? '23,19534 USD' : '23.19534 USD')
       await expect(material.getByRole('textbox', { name: 'Description', exact: true })).not.toBeEditable()
-      await expect(material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true })).not.toBeEditable()
+      await expect(cost).toBeEditable()
+      for (const invalidAmount of ['-1', '0']) {
+        await cost.fill(invalidAmount)
+        await expect(cost).toHaveAttribute('aria-invalid', 'true')
+        await expect(selling).toHaveAttribute('aria-invalid', 'false')
+        await expect(cost).toHaveAccessibleDescription(label(
+          'Enter a positive unit cost (maximum 1,000,000,000 and 10 decimal places).',
+          'Saisissez un coût unitaire positif (maximum 1 000 000 000 et 10 décimales).',
+        ))
+        await cost.fill('8.50')
+        await selling.fill(invalidAmount)
+        await expect(selling).toHaveAttribute('aria-invalid', 'true')
+        await expect(cost).toHaveAttribute('aria-invalid', 'false')
+        await expect(selling).toHaveAccessibleDescription(label(
+          'Enter a positive unit sell price (maximum 1,000,000,000 and 10 decimal places).',
+          'Saisissez un prix de vente unitaire positif (maximum 1 000 000 000 et 10 décimales).',
+        ))
+        await selling.fill('55.25')
+      }
+      await selling.fill('')
+      await expect(selling).toHaveValue('')
+      await expect(selling).toHaveAttribute('aria-invalid', 'true')
+      await cost.fill('0')
+      await page.getByRole('button', { name: fr ? 'Calculer et retourner aux forfaits' : 'Calculate and return to packages', exact: true }).click()
+      await page.locator('.draft-save-action').click()
+      expect(await page.evaluate(() => window.__draftCalls || [])).toEqual([])
+      await expect(cost).toHaveAttribute('aria-invalid', 'true')
+      await expect(selling).toHaveAttribute('aria-invalid', 'true')
+      await cost.fill('8.50')
+      await selling.fill('55.25')
+      await expect(md04).toHaveValue(fr ? '7,73178 USD' : '7.73178 USD')
+      await expect(vk13).toHaveValue(fr ? '40,376 USD' : '40.376 USD')
       await page.getByRole('button', { name: fr ? 'Ajouter un matériau' : 'Add material', exact: true }).click()
       const manual = materials.last()
       await expect(manual.getByRole('combobox', { name: type, exact: true })).toHaveValue('kone')
@@ -2124,9 +2160,9 @@ test('package preview rates query current branch mechanic cost data from Dataver
       await manual.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true }).fill('MANUAL-001')
       await manual.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true }).press('Escape')
       await manual.getByRole('spinbutton', { name: fr ? 'Coût unitaire' : 'Unit cost', exact: true }).fill('12.50')
-      await expect(total).toHaveValue(fr ? '48,19534 USD' : '48.19534 USD')
+      await expect(total).toHaveValue(fr ? '50,50 USD' : '50.50 USD')
       await manual.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true }).fill('')
-      await expect(manual.getByRole('alert')).toContainText(fr ? 'obligatoire' : 'required')
+      await expect(manual.getByRole('alert')).toHaveText(label('Enter a part number.', 'Saisissez un numéro de pièce.'))
       await expect(page.locator('.draft-save-action')).toBeEnabled()
       await manual.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true }).fill('MANUAL-001')
       await manual.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true }).press('Escape')
@@ -2145,13 +2181,17 @@ test('package preview rates query current branch mechanic cost data from Dataver
         { key: 're_usetax', value: '3' }, { key: 're_freight', value: '12' },
       ]))
       expect(lines[0]).toMatchObject({ partType: 'kone',
-        unitCost: 7.73178, part: 'TEST-PART-001', quantity: 3, packageId: 'catalog-custom',
+        unitCost: 8.5, unitCostOverride: 8.5, part: 'TEST-PART-001', quantity: 3, packageId: 'catalog-custom',
         catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', unitPrice: 40.376, sellingPrice: 55.25, markupPercent: 10 })
       expect(lines[0].pricingSource).toBeUndefined()
       expect(lines[1]).toMatchObject({ partType: 'non-kone', part: 'MANUAL-001', unitCost: 12.5, quantity: 2 })
       expect(lines[1].catalogPartId).toBeUndefined()
       expect(lines[1].markupPercent).toBeUndefined()
       expect(await page.evaluate(() => window.__catalogRequests.some(r => r.search === 'motor'))).toBe(true)
+      await page.getByRole('button', { name: label('Edit CSTM costs', 'Modifier les coûts CSTM'), exact: true }).click()
+      await expect(cost).toHaveValue('8.5')
+      await expect(selling).toHaveValue('55.25')
+      await expect(md04).toHaveValue(fr ? '7,73178 USD' : '7.73178 USD')
     })
   }
 
@@ -2160,10 +2200,29 @@ test('package preview rates query current branch mechanic cost data from Dataver
     await expect(page.locator('.custom-cost-lines')).toContainText('Catalog unavailable')
     await expect(material.getByRole('combobox', { name: 'Part type', exact: true })).toBeEnabled()
     await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('non-kone')
+    const partNumber = material.getByRole('combobox', { name: 'Part number', exact: true })
+    const guidance = 'Select a Non-KONE part from the list or enter an unlisted part number if no exact match is found. Provide a description and unit cost for unlisted parts.'
+    await expect(material.getByRole('cell').filter({
+      has: page.getByRole('combobox', { name: 'Part number', exact: true }),
+    }).locator('.error-box')).toHaveText(guidance)
+    await expect(partNumber).toHaveAccessibleDescription(guidance)
+    const banner = material.locator('.material-unlisted-banner')
+    await expect(banner).toHaveCount(0)
     await material.getByRole('button', { name: 'Use manual entry without catalog', exact: true }).click()
     await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Existing manual motor')
     await material.getByRole('combobox', { name: 'Part number', exact: true }).fill('MANUAL-1')
     await material.getByRole('combobox', { name: 'Part number', exact: true }).press('Escape')
+    await expect(banner).toBeVisible()
+    await expect(banner.getByText('Unlisted Non-KONE Part', { exact: true })).toBeVisible()
+    await expect(banner.getByText('MANUAL-1', { exact: true })).toBeVisible()
+    await expect(material.getByText(guidance, { exact: true })).toHaveCount(0)
+    await expect(partNumber).toHaveAccessibleDescription('Unlisted Non-KONE Part')
+    await partNumber.fill('')
+    await partNumber.press('Escape')
+    await expect(banner).toHaveCount(0)
+    await expect(partNumber).toHaveAccessibleDescription(guidance)
+    await partNumber.fill('MANUAL-1')
+    await partNumber.press('Escape')
     await material.getByRole('spinbutton', { name: 'Unit cost', exact: true }).fill('25')
     await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
     await expect(page.locator('#package-search')).toBeVisible()
@@ -2173,6 +2232,28 @@ test('package preview rates query current branch mechanic cost data from Dataver
     await page.locator('.draft-save-action').click()
     await expect(page.locator('.draft-saved')).toBeVisible()
     expect(await page.evaluate(() => window.__draftSaved.materialLines[0].pricingSource)).toBe('manual')
+  })
+
+  test('CSTM offers the unlisted Non-KONE action only after a search without an exact match', async ({ page }) => {
+    const material = (await openCatalogMaterial(page, true)).first()
+    await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('non-kone')
+    const part = material.getByRole('combobox', { name: 'Part number', exact: true })
+    const add = material.getByRole('button', { name: 'Add as unlisted Non-KONE part', exact: true })
+    const banner = material.locator('.material-unlisted-banner')
+    await part.fill('test-part-001')
+    await expect(material.getByRole('status')).toHaveText('1 parts found.')
+    await expect(add).toHaveCount(0)
+    await expect(banner).toHaveCount(0)
+    await part.fill('NONE-NON-KONE-001')
+    await expect(material.getByRole('status')).toHaveText('0 parts found.')
+    await expect(add).toBeVisible()
+    await expect(banner).toHaveCount(0)
+    await add.click()
+    await expect(banner).toContainText('Unlisted Non-KONE Part')
+    await expect(banner).toContainText('NONE-NON-KONE-001')
+    await expect(add).toHaveCount(0)
+    await expect(part).toBeEditable()
+    await expect(part).toHaveAttribute('aria-expanded', 'false')
   })
 
   test('CSTM switching part types preserves selected details and manual completion', async ({ page }) => {
@@ -2190,23 +2271,62 @@ test('package preview rates query current branch mechanic cost data from Dataver
     await expect(page.locator('.draft-save-action')).toBeEnabled()
   })
 
-  test('CSTM manual KONE requires an entered selling price even when the catalog is unavailable', async ({ page }) => {
+  test('CSTM KONE requires a catalog selection and does not fall back to package amounts', async ({ page }) => {
     const material = (await openCatalogMaterial(page, false, 'en', 1366, true)).first()
     await material.getByRole('combobox', { name: 'Part type', exact: true }).selectOption('kone')
-    await material.getByRole('combobox', { name: 'Part number', exact: true }).fill('MANUAL-KONE')
-    await material.getByRole('button', { name: 'Use manual entry without catalog', exact: true }).click()
     await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Motor')
-    await material.getByRole('spinbutton', { name: 'Unit cost', exact: true }).fill('25')
-    const calculate = page.getByRole('button', { name: 'Calculate and return to packages', exact: true })
-    await calculate.click()
+    await expect(material.getByRole('alert').filter({ hasText: /^Select a KONE catalog part/ })).toHaveText(
+      'Select a KONE catalog part from the list or enter an unlisted KONE part if no exact match is found. Provide the required details for any unlisted part.',
+    )
+    await expect(material.getByRole('button', { name: 'Add as unlisted KONE part' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Calculate and return to packages', exact: true }).click()
     await expect(page.locator('.custom-cost-lines')).toBeVisible()
-    await expect(material).toContainText('Enter a positive selling price')
-    await expect(material.getByRole('textbox', { name: 'VK13 Unit Price', exact: true })).toHaveValue('Not applicable')
-    await material.getByRole('spinbutton', { name: 'Selling Price', exact: true }).fill('30')
-    await calculate.click()
-    await expect(page.locator('#package-search')).toBeVisible()
+    await expect(page.locator('.draft-save-action')).toBeEnabled()
     expect(await page.evaluate(() => window.__draftCalls || [])).toEqual([])
   })
+
+  for (const language of ['en', 'fr']) {
+    test(`CSTM saves unlisted KONE with manual amounts in ${language}`, async ({ page }) => {
+      const fr = language === 'fr'
+      const label = (en, french) => fr ? french : en
+      const material = (await openCatalogMaterial(page, true, language, fr ? 390 : 1366)).first()
+      const part = material.getByRole('combobox', { name: label('Part number', 'Numéro de pièce'), exact: true })
+      const add = material.getByRole('button', { name: label('Add as unlisted KONE part', 'Ajouter comme pièce KONE non répertoriée'), exact: true })
+      await part.fill('test-part-001')
+      await expect(material.getByRole('listbox').getByRole('option')).toHaveCount(1)
+      await expect(add).toHaveCount(0)
+      await part.fill('NONE-KONE-001')
+      await expect(material.locator('.material-unlisted-banner')).toHaveCount(0)
+      await add.click()
+      await expect(material.getByRole('textbox', { name: label('Part number', 'Numéro de pièce'), exact: true })).toHaveValue('NONE-KONE-001')
+      const banner = material.locator('.material-unlisted-banner')
+      await expect(banner.getByText(label('Unlisted KONE Part', 'Pièce KONE non répertoriée'), { exact: true })).toBeVisible()
+      await expect(banner.getByText('NONE-KONE-001', { exact: true })).toBeVisible()
+      const calculate = page.getByRole('button', { name: label('Calculate and return to packages', 'Calculer et retourner aux forfaits'), exact: true })
+      const cost = material.getByRole('spinbutton', { name: label('Unit cost', 'Coût unitaire'), exact: true })
+      const selling = material.getByRole('spinbutton', { name: label('Unit Sell Price', 'Prix de vente unitaire'), exact: true })
+      await expect(material.getByRole('textbox', { name: label('VK13 Unit Price', 'Prix unitaire VK13'), exact: true })).toHaveValue(label('Not applicable', 'Sans objet'))
+      await expect(material).toContainText(label('Before the 10% KONE markup.', 'Avant la majoration KONE de 10 %.'))
+      await cost.fill('-1')
+      await selling.fill('0')
+      await expect(cost).toHaveAttribute('aria-invalid', 'true')
+      await expect(selling).toHaveAttribute('aria-invalid', 'true')
+      await calculate.click()
+      await expect(cost).toHaveAttribute('aria-invalid', 'true')
+      await expect(selling).toHaveAttribute('aria-invalid', 'true')
+      await cost.fill('12.12345')
+      await selling.fill('25')
+      await material.getByRole('textbox', { name: 'Description', exact: true }).fill('Unlisted motor')
+      await setCostRates(page)
+      await page.locator('.draft-save-action').click()
+      await expect(page.locator('.draft-saved')).toBeVisible()
+      const saved = (await page.evaluate(() => window.__draftSaved.materialLines))[0]
+      expect(saved).toMatchObject({ partType: 'kone', pricingSource: 'manual', part: 'NONE-KONE-001',
+        unitCost: 12.12345, sellingPrice: 25, markupPercent: 10 })
+      expect(saved.catalogPartId).toBeUndefined()
+      expect(saved.unitPrice).toBeUndefined()
+    })
+  }
 
 test('CSTM part lookup reports no matches and service errors then recovers after retry', async ({ page }) => {
   const material = (await openCatalogMaterial(page, true)).first()
@@ -2288,8 +2408,8 @@ for (const language of ['en', 'fr']) {
     await openCatalogMaterial(page, true, language, fr ? 390 : 1366)
     const root = page.locator('.custom-cost-lines')
     await expect(root.locator('.custom-material-grid thead th')).toHaveText(fr
-      ? ['Numéro d’équipement', 'Description du matériau', 'Nom du fournisseur', 'Fabricant de pièce', 'N° de pièce', 'Quantité', 'Coût unitaire', 'Prix unitaire VK13', 'Prix de vente']
-      : ['Equipment Number', 'Material Description', 'Vendor Name', 'Part Mfg', 'Part #', 'Quantity', 'Unit Cost', 'VK13 Unit Price', 'Selling Price'])
+      ? ['Numéro d’équipement', 'Description du matériau', 'Nom du fournisseur', 'Fabricant de pièce', 'N° de pièce', 'Quantité', 'Coût unitaire MD04', 'Prix unitaire VK13', 'Coût unitaire', 'Prix de vente unitaire']
+      : ['Equipment Number', 'Material Description', 'Vendor Name', 'Part Mfg', 'Part #', 'Quantity', 'MD04 Unit Cost', 'VK13 Unit Price', 'Unit Cost', 'Unit Sell Price'])
     await expect(root.locator('.custom-labor-grid thead tr').first().locator('th')).toHaveText(fr
       ? ['Équipement', 'Mécanicien', 'Aide', 'Régleur', 'Coût total']
       : ['Equipment', 'Mechanic', 'Helper', 'Adjuster', 'Total Cost'])
@@ -2345,13 +2465,24 @@ for (const language of ['en', 'fr']) {
     const downloaded = await materialDownload
     const materialBook = new ExcelJS.Workbook()
     await materialBook.xlsx.readFile(await downloaded.path())
-    expect(materialBook.worksheets[0].getRow(1).values.slice(1)).toEqual(materialHeaders)
+    const bulkHeaders = materialBook.worksheets[0].getRow(1).values.slice(1)
+    expect(bulkHeaders).toEqual([...materialHeaders, 'Unit Sell Price'])
+    const invalidOverride = await file(bulkHeaders, [[equipment, '', '', 'KONE', 'TEST-PART-001', 1, '', -1]], 'BadOverride.xlsx')
+    await materialPanel.locator('input[type="file"]').setInputFiles(invalidOverride)
+    await expect(materialPanel.getByRole('alert')).toContainText('Unit Sell Price')
+    await expect(materialRows).toHaveCount(1)
     page.once('dialog', dialog => dialog.accept())
-    await materialPanel.locator('input[type="file"]').setInputFiles(await file(materialHeaders,
+    await materialPanel.locator('input[type="file"]').setInputFiles(await file(bulkHeaders,
       [[equipment, 'Imported bracket', 'Synthetic vendor', 'Non-KONE', 'P1', 2, 12.5],
-        [equipment, '', '', 'KONE', 'TEST-PART-001', 3, '']], 'Materials.xlsx'))
-    await expect(materialPanel.getByRole('status')).toContainText(fr ? '2 lignes' : '2 rows')
+        [equipment, '', '', 'KONE', 'TEST-PART-001', 3, ''],
+        [equipment, '', '', 'KONE', 'TEST-PART-001', 2, 8.12345, 50.25]], 'Materials.xlsx'))
+    await expect(materialPanel.getByRole('status')).toContainText(fr ? '3 lignes' : '3 rows')
     await expect(materialRows.first().getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Imported bracket')
+    const overrideRow = materialRows.nth(2)
+    await expect(overrideRow.getByRole('spinbutton', { name: fr ? 'Coût unitaire' : 'Unit cost', exact: true })).toHaveValue('8.12345')
+    await expect(overrideRow.getByRole('spinbutton', { name: fr ? 'Prix de vente unitaire' : 'Unit Sell Price', exact: true })).toHaveValue('50.25')
+    await expect(overrideRow.getByRole('textbox', { name: fr ? 'Coût unitaire MD04' : 'MD04 Unit Cost', exact: true })).toHaveValue(fr ? '7,73178 USD' : '7.73178 USD')
+    await expect(overrideRow.getByRole('textbox', { name: fr ? 'Prix unitaire VK13' : 'VK13 Unit Price', exact: true })).toHaveValue(fr ? '40,376 USD' : '40.376 USD')
     await setCostRates(page)
     await page.locator('.draft-save-action').click()
     await expect(page.locator('.draft-saved')).toBeVisible()
@@ -2364,6 +2495,10 @@ for (const language of ['en', 'fr']) {
     expect(saved.materialLines[1]).toMatchObject({ equipmentNumber: equipment, quantity: 3,
       catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', unitCost: 7.73178, unitPrice: 40.376,
       partType: 'kone', description: 'Test catalog motor' })
+    expect(saved.materialLines[1].unitCostOverride).toBeUndefined()
+    expect(saved.materialLines[2]).toMatchObject({ equipmentNumber: equipment, quantity: 2,
+      catalogPartId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', unitCost: 8.12345, unitCostOverride: 8.12345,
+      unitPrice: 40.376, sellingPrice: 50.25 })
     await laborPanel.scrollIntoViewIfNeeded()
     await page.screenshot({ path: testInfo.outputPath('cost-import-panel.png') })
     await root.locator('.custom-labor-grid').scrollIntoViewIfNeeded()

@@ -1,4 +1,5 @@
 import type { DraftMaterial } from './draftContract'
+import { isUnlistedKone } from './customMaterialCosts.ts'
 
 function signature(line: DraftMaterial): string {
   return JSON.stringify([
@@ -12,7 +13,11 @@ function retainsCompletion(sent: DraftMaterial, saved: DraftMaterial): boolean {
     (saved.pricingSource !== 'manual' || saved.partType !== 'kone' || sent.unitCost !== saved.unitCost ||
       sent.part.trim() !== saved.part.trim() || sent.description.trim() !== saved.description.trim())) return false
   const details = sent.catalogDetails
-  return (!details || !!saved.catalogDetails) &&
+  return (!isUnlistedKone(sent) || (isUnlistedKone(saved) && !saved.catalogPartId &&
+    sent.part.trim() === saved.part.trim() && sent.description.trim() === saved.description.trim() &&
+    sent.unitCost === saved.unitCost && sent.markupPercent === saved.markupPercent)) &&
+    (!details || !!saved.catalogDetails) &&
+    (sent.unitCostOverride == null || sent.unitCostOverride === saved.unitCost) &&
     (!details?.requiresCost || sent.unitCost === saved.unitCost) &&
     (!details?.requiresDescription || sent.description.trim() === saved.description.trim()) &&
     (!details?.requiresUom || sent.uom?.trim() === saved.uom?.trim())
@@ -30,7 +35,7 @@ export function missingMaterialSellingPrices(
     const saved = byId.get(line.id.toLowerCase())
     if (saved) {
       if (!retainsCompletion(line, saved) || (line.sellingPrice != null && saved.sellingPrice !== line.sellingPrice)) return true
-    } else if (line.sellingPrice != null || line.catalogDetails != null) {
+    } else if (line.unitCostOverride != null || line.sellingPrice != null || line.catalogDetails != null) {
       if (savedIds.has(line.id.toLowerCase())) return true
       unmatchedNew.push(line)
     }

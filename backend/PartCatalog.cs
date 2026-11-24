@@ -234,7 +234,7 @@ namespace RepairEstimator.Drafts
             return result;
         }
 
-        static bool Amount(decimal? value, int precision, bool positive)
+        internal static bool Amount(decimal? value, int precision, bool positive)
         {
             return value.HasValue && (positive ? value > 0 : value >= 0) && value <= 1000000000m &&
                 decimal.Round(value.Value, precision) == value.Value;
@@ -415,9 +415,16 @@ namespace RepairEstimator.Drafts
             if (hasCatalog)
             {
                 var details = ReadDetails(row);
+                if (line.unitCostOverride.HasValue)
+                {
+                    if (details == null) Fail("Reselect the catalog part before overriding its unit cost.");
+                    if (!Amount(line.unitCostOverride, 10, true))
+                        Fail("Enter a positive unit cost in estimate currency, up to 1000000000 with at most ten decimals.");
+                    row["re_unitcostprecise"] = line.unitCostOverride.Value;
+                }
                 if (details != null)
                 {
-                    if (details.requiresCost)
+                    if (details.requiresCost && !line.unitCostOverride.HasValue)
                     {
                         if (!Amount(line.unitCost, 10, true)) Fail("Enter a positive unit cost in estimate currency, up to 1000000000 with at most ten decimals.");
                         row["re_unitcostprecise"] = line.unitCost;
@@ -435,6 +442,8 @@ namespace RepairEstimator.Drafts
                         row["re_uom"] = line.uom.Trim();
                     }
                 }
+                if (!Amount(row.GetAttributeValue<decimal?>("re_unitcostprecise"), 10, true))
+                    Fail("Complete the missing or invalid unit cost in estimate currency before saving.");
                 row["re_parttype"] = new OptionSetValue(type);
                 row["re_vendor"] = type == 126110000 ? "KONE" : "";
             }

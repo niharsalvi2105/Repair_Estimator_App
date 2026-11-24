@@ -47,6 +47,30 @@ Client-supplied diagnostic JSON is not authoritative. Existing
 fields, and positive manually completed/overridden price uses `re_sellingprice`.
 These fields affect the estimate only, never the Spare Parts master.
 
+The current local catalog cost-override feature reuses those same columns:
+`re_catalogdetailsjson` retains the trusted converted MD04 amount,
+`re_unitpriceprecise` retains VK13, `re_unitcostprecise` retains the effective
+Unit Cost (with existing `re_unitcost`/`re_extendedcost` money fields), and
+`re_sellingprice` retains the effective selling-price override when supplied.
+No new Dataverse table, column, migration, permission, or plugin step is needed
+where the catalog details schema is already installed. Deploy the updated
+Drafts plugin and frontend together. No live metadata or records were changed;
+local catalog tests verify that estimate overrides leave the master and source snapshots intact.
+
+Materials Excel bulk overrides for KONE catalog rows use the same draft
+`unitCostOverride` and `sellingPrice` inputs and estimate-material fields.
+The workbook cannot supply MD04/VK13 source values. Manual Non-KONE import
+mapping is unchanged. This frontend addition needs no further schema or plugin
+change beyond the catalog override prerequisites above; it is not deployed.
+
+Unlisted KONE UI entries reuse `re_estimatematerialline.re_materialpricingmode`
+(Manual), `re_parttype` (KONE), `re_materialsource` (Manual),
+`re_unitcostprecise`, `re_sellingprice` and `re_markuppct` (10). No
+`re_sparepart` lookup, MD04 evidence or `re_unitpriceprecise` is written.
+Amounts are estimate-only. The coordinated frontend, Drafts and Pricing release
+needs those existing columns but no new choices, migrations or registrations.
+No live fields, catalog records or estimate records were modified.
+
 Manual completion is required before Save/Calculate when source cost,
 description, UOM or selling price is unusable. Monetary values are in estimate
 currency, positive through 1000000000, precision 10; UOM allows 20 characters,
