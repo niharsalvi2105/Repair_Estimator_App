@@ -302,7 +302,12 @@ test('definition has update-only/status filtering, pagination, sequential loops,
     'drew.evans@kone.com', 'neeraj.marwaha@kone.com',
   ].join(';'))
   assert.equal(send.parameters['emailMessage/Cc'],
-    "@outputs('Get_Salesperson_Data')?['body/internalemailaddress']")
+    "@body('Get_estimate')?['re_Salesperson']?['internalemailaddress']")
+  const routingFixture = fixture()
+  routingFixture.header.re_Salesperson = { internalemailaddress: 'salesperson@example.invalid' }
+  const routingResult = execute(definition, routingFixture)
+  assert.equal(routingResult.sent.length, 1)
+  assert.equal(routingResult.sent[0]['emailMessage/Cc'], 'salesperson@example.invalid')
   for (const name of ['equipment', 'packages', 'labor', 'materials']) {
     const action = definition.actions[`List_${name}`]
     assert.ok(action.inputs.parameters.$filter.startsWith('_re_repairestimate_value eq '))
