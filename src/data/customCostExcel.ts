@@ -6,7 +6,7 @@ export type CustomCostKind = 'labor' | 'material'
 
 export const CUSTOM_COST_EXCEL_HEADERS: Record<CustomCostKind, readonly string[]> = {
   labor: ['Equipment Number', 'Mechanic ST', 'Mechanic DT', 'Helper ST', 'Helper DT', 'Adjuster ST', 'Adjuster DT'],
-  material: ['Equipment Number', 'Material Description', 'Vendor Name', 'Part Mfg', 'Part #', 'Quantity', 'Unit Cost', 'Unit Sell Price'],
+  material: ['Equipment Number', 'Material Description', 'Vendor Name', 'Part Mfg', 'Part #', 'Quantity', 'Unit Cost', 'Unit Sell Price', 'Unlisted Part'],
 }
 export const MAX_CUSTOM_COST_EXCEL_BYTES = 5 * 1024 * 1024
 
@@ -104,7 +104,7 @@ function getHeaderPositions(sheet: Worksheet, kind: CustomCostKind, language: La
   })
   const expected = CUSTOM_COST_EXCEL_HEADERS[kind]
   for (const header of expected) {
-    if (header === 'Unit Sell Price') continue
+    if (header === 'Unit Sell Price' || header === 'Unlisted Part') continue
     if (!positions.has(header.toLowerCase()))
       fail(language,
         `Missing column "${header}". Use the ${kind} template.`,
@@ -182,13 +182,19 @@ function materialRows(sheet: Worksheet, positions: Map<string, number>, language
   const entries: DraftMaterial[] = []
   const column = (header: string) => positions.get(header.toLowerCase())!
   const sellPriceColumn = positions.get('unit sell price')
+  const unlistedColumn = positions.get('unlisted part')
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return
     const fields = ['material description', 'vendor name', 'part mfg', 'part #', 'quantity', 'unit cost']
     const values = fields.map((header) => cellText(row.getCell(column(header)), language, rowNumber))
     const sellPriceCell = sellPriceColumn === undefined ? undefined : row.getCell(sellPriceColumn)
     const hasSellPrice = sellPriceCell && cellText(sellPriceCell, language, rowNumber).trim() !== ''
-    if (!hasSellPrice && values.every((value) => !value.trim())) return
+    const unlistedText = unlistedColumn === undefined ? '' : cellText(row.getCell(unlistedColumn), language, rowNumber).trim().toLowerCase()
+    if (!hasSellPrice && !unlistedText && values.every((value) => !value.trim())) return
+    if (unlistedText && unlistedText !== 'yes' && unlistedText !== 'no')
+      fail(language, `Row ${rowNumber}: Unlisted Part must be Yes, No or blank.`,
+        `Ligne ${rowNumber} : Unlisted Part doit être Yes, No ou vide.`)
+    const unlisted = unlistedText === 'yes'
     const number = equipmentNumber(row.getCell(column('equipment number')), language, rowNumber)
     if (!number || /\s/.test(number) || number.length > 20)
       fail(language, `Row ${rowNumber}: Equipment Number is required, must contain no whitespace and allow at most 20 characters.`,
@@ -212,19 +218,31 @@ function materialRows(sheet: Worksheet, positions: Map<string, number>, language
 
     const quantity = quantityValue(row.getCell(column('quantity')), language, rowNumber)
     const isKone = manufacturer === 'kone'
+    if (!isKone && unlistedText === 'no')
+      fail(language, `Row ${rowNumber}: Non-KONE materials are always entered manually. Leave Unlisted Part blank or enter Yes.`,
+        `Ligne ${rowNumber} : les matériaux Non-KONE sont toujours saisis manuellement. Laissez Unlisted Part vide ou entrez Yes.`)
+    const unlistedKone = isKone && unlisted
     const costCell = row.getCell(column('unit cost'))
-    const unitCost = isKone
-      ? catalogAmountOverride(costCell, language, rowNumber, 'Unit Cost', sellPriceColumn === undefined) ?? 0
-      : decimalCellValue(costCell, language, rowNumber, 'Unit Cost', 1_000_000_000, true)
+    const requiredAmount = (cell: Cell, label: string) => catalogAmountOverride(cell, language, rowNumber, label) ??
+      fail(language, `Row ${rowNumber}: ${label} is required for an unlisted KONE part.`,
+        `Ligne ${rowNumber} : ${label} est requis pour une pièce KONE non répertoriée.`)
+    const unitCost = unlistedKone
+      ? requiredAmount(costCell, 'Unit Cost')
+      : isKone
+        ? catalogAmountOverride(costCell, language, rowNumber, 'Unit Cost', sellPriceColumn === undefined) ?? 0
+        : decimalCellValue(costCell, language, rowNumber, 'Unit Cost', 1_000_000_000, true)
     if (!isKone && hasSellPrice)
       fail(language, `Row ${rowNumber}: leave Unit Sell Price blank for manual Non-KONE materials.`,
         `Ligne ${rowNumber} : laissez Unit Sell Price vide pour les matériaux Non-KONE saisis manuellement.`)
     const sellingPrice = sellPriceCell && hasSellPrice
       ? catalogAmountOverride(sellPriceCell, language, rowNumber, 'Unit Sell Price')
       : undefined
-    if (!isKone && !description)
-      fail(language, `Row ${rowNumber}: Non-KONE materials require Material Description.`,
-        `Ligne ${rowNumber} : les matériaux Non-KONE exigent Material Description.`)
+    if (unlistedKone && sellingPrice === undefined)
+      fail(language, `Row ${rowNumber}: Unit Sell Price is required for an unlisted KONE part.`,
+        `Ligne ${rowNumber} : Unit Sell Price est requis pour une pièce KONE non répertoriée.`)
+    if ((!isKone || unlistedKone) && !description)
+      fail(language, `Row ${rowNumber}: ${isKone ? 'Unlisted KONE' : 'Non-KONE'} materials require Material Description.`,
+        `Ligne ${rowNumber} : les matériaux ${isKone ? 'KONE non répertoriés' : 'Non-KONE'} exigent Material Description.`)
 
     entries.push({
       id: globalThis.crypto.randomUUID(),
@@ -237,7 +255,8 @@ function materialRows(sheet: Worksheet, positions: Map<string, number>, language
       unitCost,
       ...(sellingPrice === undefined ? {} : { sellingPrice }),
       partType: isKone ? 'kone' : 'non-kone',
-      ...(isKone ? {} : { pricingSource: 'manual' as const }),
+      ...(!isKone || unlistedKone ? { pricingSource: 'manual' as const } : {}),
+      ...(unlistedKone ? { markupPercent: 10 } : {}),
     })
     if (entries.length > maxLines)
       fail(language, `The workbook exceeds the remaining line limit (${maxLines}).`,
@@ -275,6 +294,7 @@ export async function customCostExcelTemplate(kind: CustomCostKind, equipmentNum
       sheet.getCell(row, 7).numFmt = '0.00########'
       sheet.getCell(row, 8).numFmt = '0.00########'
       sheet.getCell(row, 4).dataValidation = { type: 'list', allowBlank: true, formulae: ['"KONE,Non-KONE"'] }
+      sheet.getCell(row, 9).dataValidation = { type: 'list', allowBlank: true, formulae: ['"Yes,No"'] }
     }
   }
 
@@ -298,7 +318,8 @@ export async function customCostExcelTemplate(kind: CustomCostKind, equipmentNum
       'Enter one material per row and select KONE or Non-KONE in Part Mfg.',
       'Non-KONE rows require description, part number, whole-number quantity and positive Unit Cost (up to two decimals). Leave Unit Sell Price blank.',
       'KONE rows require a catalog part number and whole-number quantity. Leave Unit Cost and Unit Sell Price blank to use catalog defaults.',
-      'To override a KONE amount, enter a positive value in estimate currency, up to 1000000000 and ten decimal places. MD04 and VK13 always come from Dataverse.',
+      'To override a KONE amount, enter a positive value in estimate currency, up to 1000000000 and ten decimal places. MD04 Unit Cost and VK13 Unit Price shown in the app are read-only Dataverse catalog values; they are not template columns, so do not add them (files with extra columns are rejected).',
+      'Unlisted Part (optional): enter Yes for a part that is not in the catalog. An unlisted KONE part requires Material Description, Unit Cost and Unit Sell Price (before the fixed 10% KONE markup). Non-KONE rows are always entered manually: leave blank or enter Yes.',
       'Equipment Number must exactly match an item in the selected package; keep leading zeros.',
     ]
   guidance.forEach((text, index) => {
@@ -307,7 +328,7 @@ export async function customCostExcelTemplate(kind: CustomCostKind, equipmentNum
     instructions.mergeCells(row, 2, row, headers.length)
     instructions.getCell(row, 2).value = text
     instructions.getCell(row, 2).alignment = { wrapText: true, vertical: 'middle' }
-    instructions.getRow(row).height = 32
+    instructions.getRow(row).height = text.length > 150 ? 48 : 32
   })
   instructions.mergeCells(10, 1, 10, headers.length)
   instructions.getCell('A10').value = 'Illustrative example (not imported)'
