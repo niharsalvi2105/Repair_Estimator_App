@@ -89,6 +89,7 @@ test('material template roundtrips manual rows and leaves KONE pricing to catalo
   assert.equal(workbook.worksheets[0].getCell('H1').value, 'Unit Sell Price')
   assert.equal(workbook.worksheets[0].getCell('A2').value, null)
   assert.equal(workbook.worksheets[1].getCell('A12').value, 'EXAMPLE-ONLY-001')
+  assert.match(String(workbook.worksheets[1].getCell('B7').value), /MD04 Unit Cost and VK13 Unit Price.*not template columns/)
   workbook.worksheets[0].addRow(['00001234', 'Pump', 'Acme', 'Non-KONE', 'PN-01', 2, 12.35])
   workbook.worksheets[0].addRow(['UNIT-7', '', '', 'kOnE', '00042', 1])
   const lines = await readCustomCostExcel(
@@ -118,7 +119,7 @@ test('KONE workbook amounts are optional independent overrides and old workbooks
   const amounts = (rows) => rows.map(({ unitCost, sellingPrice }) => [unitCost, sellingPrice])
   assert.deepEqual(amounts(await parse(bytes)), [[1e-10, 12.123456789], [0, 1000000000], [3.56789, undefined]])
 
-  const legacy = await workbookBytes([{ name: 'Materials', headers: CUSTOM_COST_EXCEL_HEADERS.material.slice(0, -1),
+  const legacy = await workbookBytes([{ name: 'Materials', headers: CUSTOM_COST_EXCEL_HEADERS.material.slice(0, -2),
     rows: [[...kone, 0], [...kone, '0.00'], kone] }])
   assert.deepEqual(amounts(await parse(legacy)), [[0, undefined], [0, undefined], [0, undefined]])
 })
@@ -154,6 +155,34 @@ test('materials require correct manufacturer, complete manual details and safe n
     'material', 'en', packageId, equipment, 1)
   assert.equal(formattedPart[0].part, '000042')
   assert.equal(formattedPart[0].unitCost, 1.15)
+})
+
+test('Unlisted Part imports unlisted KONE and Non-KONE rows and rejects incomplete or ambiguous ones', async () => {
+  const parse = async (rows, headers) => readCustomCostExcel(
+    headers ? await workbookBytes([{ name: 'Materials', headers, rows }]) : await materialBook(rows),
+    'material', 'en', packageId, equipment, 10)
+  const [kone, nonKone] = await parse([
+    ['UNIT-7', 'Special gear', '', 'KONE', 'NOT-IN-CATALOG', 2, '12.5', '30', 'Yes'],
+    ['UNIT-7', 'Pump', '', 'Non-KONE', 'P-1', 1, 5, '', 'Yes'],
+  ])
+  assert.deepEqual([kone.partType, kone.pricingSource, kone.markupPercent, kone.unitCost, kone.sellingPrice, kone.catalogPartId],
+    ['kone', 'manual', 10, 12.5, 30, undefined])
+  assert.deepEqual([nonKone.partType, nonKone.pricingSource, nonKone.markupPercent], ['non-kone', 'manual', undefined])
+  const [listed] = await parse([['UNIT-7', '', '', 'KONE', '00042', 1, '', '', 'No']])
+  assert.equal(listed.pricingSource, undefined)
+  const [blank] = await parse([['UNIT-7', '', '', 'KONE', '00042', 1]])
+  assert.equal(blank.pricingSource, undefined)
+  const eightColumns = CUSTOM_COST_EXCEL_HEADERS.material.slice(0, -1)
+  assert.equal((await parse([['UNIT-7', 'Pump', '', 'Non-KONE', 'P-1', 1, 5]], eightColumns)).length, 1)
+
+  for (const [row, message] of [
+    [['UNIT-7', '', '', 'KONE', 'P-1', 1, 12, 30, 'Yes'], /Material Description/],
+    [['UNIT-7', 'Gear', '', 'KONE', 'P-1', 1, '', 30, 'Yes'], /Unit Cost is required/],
+    [['UNIT-7', 'Gear', '', 'KONE', 'P-1', 1, 12, '', 'Yes'], /Unit Sell Price is required/],
+    [['UNIT-7', 'Pump', '', 'Non-KONE', 'P-1', 1, 5, '', 'No'], /always entered manually/],
+    [['UNIT-7', 'Pump', '', 'Non-KONE', 'P-1', 1, 5, '', 'Maybe'], /Yes, No or blank/],
+    [['UNIT-7', 'Pump', '', 'Non-KONE', 'P-1', 1, 5, 6, 'Yes'], /leave Unit Sell Price blank/],
+  ]) await assert.rejects(() => parse([row]), message)
 })
 
 test('rejects invalid sell prices, manual Non-KONE sell prices and untrusted catalog columns', async () => {

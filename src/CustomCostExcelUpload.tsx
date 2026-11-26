@@ -52,7 +52,7 @@ export function CustomCostExcelUpload(props: Props) {
         const parts = rows as DraftMaterial[]
         const resolved = new Map<string, Pick<DraftMaterial, 'catalogPartId' | 'catalogDetails' | 'unitCost' |
           'unitPrice' | 'markupPercent' | 'uom' | 'description' | 'partType' | 'refreshPart'>>()
-        for (const row of parts.filter(p => p.partType === 'kone')) {
+        for (const row of parts.filter(p => p.partType === 'kone' && p.pricingSource !== 'manual')) {
           if (!resolved.has(row.part)) {
             let result = await getPartCatalog(market, row.part)
             let matches = result.parts.filter(part => part.number === row.part)
@@ -127,8 +127,8 @@ export function CustomCostExcelUpload(props: Props) {
       <p>{labor
         ? fr ? 'Numéro d’équipement et six colonnes : Mechanic ST/DT, Helper ST/DT, Adjuster ST/DT. Les heures vides ou nulles sont ignorées; taux et totaux calculés par le serveur.'
           : 'Equipment Number plus six hours columns: Mechanic ST/DT, Helper ST/DT, Adjuster ST/DT. Blank/zero hours are skipped; rates and totals are server-calculated.'
-        : fr ? 'Pour KONE, laissez Unit Cost et Unit Sell Price vides pour utiliser le catalogue, ou entrez des montants positifs dans la devise du devis. Pour Non-KONE, entrez Unit Cost et laissez Unit Sell Price vide. Les anciens modèles sont toujours acceptés.'
-          : 'For KONE, leave Unit Cost and Unit Sell Price blank to use catalog defaults, or enter positive amounts in the estimate currency. For Non-KONE, enter Unit Cost and leave Unit Sell Price blank. Older templates are still accepted.'}</p>
+        : fr ? 'Pour KONE, laissez Unit Cost et Unit Sell Price vides pour utiliser le catalogue, ou entrez des montants positifs dans la devise du devis. Pour Non-KONE, entrez Unit Cost et laissez Unit Sell Price vide. Les anciens modèles sont toujours acceptés. Unlisted Part (facultatif) : entrez Yes pour une pièce absente du catalogue ; une pièce KONE non répertoriée exige Material Description, Unit Cost et Unit Sell Price. MD04 Unit Cost et VK13 Unit Price sont des valeurs de catalogue en lecture seule : ne les ajoutez pas comme colonnes.'
+          : 'For KONE, leave Unit Cost and Unit Sell Price blank to use catalog defaults, or enter positive amounts in the estimate currency. For Non-KONE, enter Unit Cost and leave Unit Sell Price blank. Older templates are still accepted. Unlisted Part (optional): enter Yes for a part that is not in the catalog; an unlisted KONE part requires Material Description, Unit Cost and Unit Sell Price. MD04 Unit Cost and VK13 Unit Price are read-only catalog values: do not add them as columns.'}</p>
       <p>{fr ? 'Utilisez uniquement les équipements affectés à ce forfait. Conservez les zéros initiaux au format texte. Aucune formule ni aucun total importé.'
         : 'Use only equipment assigned to this package. Keep leading zeros using text format. No formulas or imported totals.'}</p>
     </details>

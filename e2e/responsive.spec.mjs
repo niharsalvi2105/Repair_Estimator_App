@@ -2432,7 +2432,7 @@ for (const language of ['en', 'fr']) {
     const materialBook = new ExcelJS.Workbook()
     await materialBook.xlsx.readFile(await downloaded.path())
     const bulkHeaders = materialBook.worksheets[0].getRow(1).values.slice(1)
-    expect(bulkHeaders).toEqual([...materialHeaders, 'Unit Sell Price'])
+    expect(bulkHeaders).toEqual([...materialHeaders, 'Unit Sell Price', 'Unlisted Part'])
     const invalidOverride = await file(bulkHeaders, [[equipment, '', '', 'KONE', 'TEST-PART-001', 1, '', -1]], 'BadOverride.xlsx')
     await materialPanel.locator('input[type="file"]').setInputFiles(invalidOverride)
     await expect(materialPanel.getByRole('alert')).toContainText('Unit Sell Price')
