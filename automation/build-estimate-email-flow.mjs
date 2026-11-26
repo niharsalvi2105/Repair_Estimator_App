@@ -414,7 +414,7 @@ export function buildEstimateEmailFlow({ metadata, connectionReferences }) {
   actions.Send_review_email = connector('SendEmailV2', {
     'emailMessage/From': ServiceAccount,
     'emailMessage/To': ReviewRecipients,
-    'emailMessage/Cc': "@outputs('Get_Salesperson_Data')?['body/internalemailaddress']",
+    'emailMessage/Cc': "@body('Get_estimate')?['re_Salesperson']?['internalemailaddress']",
     'emailMessage/Subject': `@${call('concat', local('Repair estimate review - ', 'Revision du devis - '),
       call('replace', call('replace', val('re_name'), "decodeUriComponent('%0D')", "''"), "decodeUriComponent('%0A')", "''"))}`,
     'emailMessage/Body': "@outputs('Email_HTML')",
