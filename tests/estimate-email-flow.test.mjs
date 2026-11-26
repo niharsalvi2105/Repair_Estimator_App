@@ -321,13 +321,13 @@ test('definition has update-only/status filtering, pagination, sequential loops,
   assert.throws(() => buildEstimateEmailFlow({ metadata: null, connectionReferences: {} }), /metadata/)
 })
 
-test('standard rates are isolated; package-priced KONE cost and final price are not double counted', () => {
+test('request rates apply globally; package-priced KONE cost and final price are not double counted', () => {
   const data = fixture()
   Object.assign(data.List_packages.value[0], { re_iscustompackage: false, re_totalmaterial: 100, re_totalhours: 2 })
   let result = execute(make(), data)
-  assert.equal(result.outputs.package_values.PackageEstimatedCost, '319.00')
-  assert.equal(result.outputs.package_values.PackageTaxPercent, '5.00%')
-  assert.equal(result.outputs.package_values.PackageFreightPercent, '14.00%')
+  assert.equal(result.outputs.package_values.PackageEstimatedCost, '300.00')
+  assert.equal(result.outputs.package_values.PackageTaxPercent, '0.00%')
+  assert.equal(result.outputs.package_values.PackageFreightPercent, '0.00%')
   Object.assign(data.List_packages.value[0], { re_iscustompackage: true, re_packagepricedkone: true,
     re_materialbeforemarkup: 100, re_materialcostperunit: 150 })
   result = execute(make(), data)

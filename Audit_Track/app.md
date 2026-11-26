@@ -2,6 +2,25 @@
 
 ## 1. Scope and evidence
 
+### Single optional Tax/Freight pair (pricing 2026.14, local source)
+
+Tax and Freight now appear once on Page 4, Pricing & margin, and are optional.
+Blank values are serialized as zero and therefore mean 0% rather than falling
+back to a Branch, Province or Pricing Parameter value. Page 3 Costs & scope no
+longer shows duplicate Tax/Freight inputs, and package/additional-detail cards
+show the resulting amounts without repeating editable percentage fields. The
+same request-level percentages apply once to eligible standard, CSTM and
+additional material; package-priced KONE retains its approved no-extra-tax/no-
+extra-freight route. The custom-material entry page no longer initializes
+5%/10% and a new standard estimate no longer initializes 5%/14%.
+
+The frontend, Drafts persistence and Pricing 2026.14 loader/engine use the same
+optional rate contract. Local build/lint/unit tests, 164 pricing/integration
+tests, the Drafts harness and 19 focused EN/FR browser workflows passed. No
+frontend, Drafts/Pricing deployment, historical recalculation or live tenant
+acceptance was performed; older deployed versions retain their previous
+standard 5%/14% and duplicated-field behavior until the coordinated rollout.
+
 ### Approved workbook calculation updates (pricing 2026.13, frontend consumption)
 
 The frontend continues to display only saved server pricing; it did not add a
@@ -223,7 +242,7 @@ No new UI-only or persisted fields were introduced. Existing Account/Contact, si
 
 Nine local synthetic renderer/contract cases passed, covering EN/FR, all 111 tokens, HTML/multiline escaping, exact identifiers, six labor combinations, 25 material rows without truncation, package cost isolation, billing cents, missing-data rejection, expression syntax/length, globally unique action names and stored solution aliases. Offline FlowAgent validation and both Connected reference checks passed. Live save initially exposed duplicate nested names missed offline; unique-name enforcement was added. Generic writer connection-format failures required the existing solution clientdata format; the successful ETag-conditional definition/binding update preserved the owner and solution membership, and readback confirmed Stopped. This is definition deployment, not a successful triggered run or Outlook rendering/delivery test. Large-message client clipping and possible duplicate delivery on resubmission/ambiguous send outcomes remain acceptance risks; Outlook automatic send retries are disabled, not an exactly-once guarantee.
 
-### Editable existing Additional Details tax/freight (local source, not deployed)
+### Editable existing Additional Details tax/freight (historical 2026.10 source; superseded by pricing 2026.14)
 
 The existing Use tax (%) and Freight (%) controls in Additional Details are editable for standard estimates; no new controls or columns are added. New standard requests still start at 5% and 14%. Entered values, including zero, remain in the draft payload and survive Save/Load instead of being forced back to defaults. Existing 0-100% validation, required-field handling and review/submission/access locks remain. Help text explains that these rates apply to additional costs, not the standard package subtotal: standard package previews retain fixed 5% tax and 14% freight. Additional labor is not taxed; additional material and miscellaneous amounts use the edited rates. Total estimate cost/pricing can therefore change while the standard package subtotal does not.
 
@@ -792,7 +811,7 @@ The package dropdown already pages through all eligible Dataverse results and ex
 
 Import completed with independent full-field/provenance readback of all 280 CAD masters and unchanged USD verification. A separate native query confirmed exactly 280 active effective CAD packages for either Canadian Branch context, no duplicate IDs/numbers, one CSTM and one T&M; the currency-filter unit contract passed. Search and More results cover the loaded catalog; imported CSTM uses the existing separate custom editor. Existing selected/saved snapshots are not silently refreshed or rewritten. A newly loaded request/app session fetches the expanded catalog; an already cached catalog may require a safe reopen/refresh after preserving work. No UI filter bypass or frontend publication was needed for these master changes. Published-browser rendering/non-admin evidence remains unverified; native eligibility does not prove a cached browser refreshed. See [dataverse.md](dataverse.md).
 
-### Additional details independent of CSTM (2026-11-05)
+### Additional details independent of CSTM (historical 2026-11-05; rate behavior superseded by pricing 2026.14)
 
 The Additional details page now permits estimate-level additional labor hours, material, miscellaneous and scope for standard-only as well as CSTM requests. The former frontend-only CSTM gate on the three numeric additions and its misleading help/heading were removed. Package-specific labor/material still use the separate CSTM editor; entering the same work twice remains incorrect. Standard package tax/freight remain fixed at 5%/14%, custom-rate rules remain unchanged, and review/submitted/busy/export locks are retained. Existing persistence and server formulas already support these estimate-level additions independent of CSTM. This changes input availability, not pricing formulas or Dataverse mappings.
 
@@ -958,7 +977,11 @@ Full Save completion requires title, selected Account, customer name and valid e
 | Save Opportunity details action | Opens preset/reuse surface for current details | Preset save is separate from draft save |
 | Loader Retry | References/branches/location-choice failure recovery | Only retries reads |
 
-Branch defaults convert fractional `re_defaultusetax`/`re_defaultfreight` to UI percent by multiplying100. Time category defaults to regular choice. Province requiring French forces French proposal language. First addition of a CSTM package on a new request initializes shared tax5/freight10 once. This can override earlier branch rate defaults.
+Pricing 2026.14 does not initialize or consume Branch/Province tax and freight
+defaults for a request; blank Page 4 fields serialize as zero. Time category
+still defaults to the regular choice, and Province requiring French still forces
+French proposal language. Adding a CSTM package does not initialize or override
+Tax/Freight.
 
 Account/Contact IDs and Contact details persist through the draft API; Account number/name are returned on load. The picker only exposes source-imported records; server validation checks that the Contact is active and belongs to the selected Account and that the Account matches the estimate market. Account and Contact search controls share a desktop row and stack on narrow mobile screens; read-only contact details remain aligned in their own row. Customer selection does not populate building/site information, which remains manual.
 

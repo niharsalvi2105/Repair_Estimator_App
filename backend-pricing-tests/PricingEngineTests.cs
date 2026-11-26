@@ -272,7 +272,7 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
-        public void Entered_custom_material_rates_apply_to_catalog_cost_and_selling_without_changing_standard_packages()
+        public void Request_material_rates_apply_to_catalog_and_standard_package_costs()
         {
             var input = Baseline();
             input.IsCustomPath = true;
@@ -282,10 +282,10 @@ namespace RepairEstimator.Tests
                 IsKone = true, UnitSellingPrice = 20, MarkupPercent = 10,
                 TaxApplicable = true, FreightApplicable = true });
             var result = PricingEngine.Calculate(input);
-            Assert.Equal(1519.55m, result.TotalTrueCost);
+            Assert.Equal(1515.22m, result.TotalTrueCost);
             Assert.Equal(23m, result.KoneMaterialCost);
-            Assert.Equal(6.02m, result.UseTaxAmount);
-            Assert.Equal(17.57m, result.FreightAmount);
+            Assert.Equal(3.85m, result.UseTaxAmount);
+            Assert.Equal(15.40m, result.FreightAmount);
             Assert.Equal(Math.Round((result.TotalTrueCost - 23m) / (1m - result.RecommendedCmii.Value)
                 + 40m * 1.25m, 2, MidpointRounding.AwayFromZero), result.SuggestedPriceWithKoneMaterial);
         }
@@ -417,13 +417,13 @@ namespace RepairEstimator.Tests
             var result = PricingEngine.Calculate(input);
             Assert.Equal(401.21m, result.PackageLaborCost);
             Assert.Equal(40.04m, result.PackageMaterialCost);
-            Assert.Equal(449.06m, result.PackageEstimatedCost);
+            Assert.Equal(449.26m, result.PackageEstimatedCost);
             Assert.Equal(30.86m, result.AdditionalLaborCost);
             Assert.Equal(60m, result.CustomLaborCost);
-            Assert.Equal(4.77m, result.UseTaxAmount);
-            Assert.Equal(8.18m, result.FreightAmount);
+            Assert.Equal(5.37m, result.UseTaxAmount);
+            Assert.Equal(7.78m, result.FreightAmount);
             Assert.Equal(129.86m, result.TotalAdditionalCost);
-            Assert.Equal(578.92m, result.TotalTrueCost);
+            Assert.Equal(579.12m, result.TotalTrueCost);
             input.FixedTargetCmii = .4m;
             input.SellPrice = 1000m;
             result = PricingEngine.Calculate(input);
@@ -433,8 +433,8 @@ namespace RepairEstimator.Tests
                 (1m - Math.Max(input.Parameters.Get(ParamCode.MaterialMarginFloor),
                     result.RecommendedCmii.Value)), 2, MidpointRounding.AwayFromZero);
             Assert.Equal(expectedSelling, result.SuggestedPrice);
-            Assert.Equal(.4211m, result.ActualCmii);
-            Assert.Equal(.0211m, result.CmiiVariance);
+            Assert.Equal(.4209m, result.ActualCmii);
+            Assert.Equal(.0209m, result.CmiiVariance);
         }
 
         [Fact]
@@ -450,7 +450,7 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
-        public void Edited_additional_rates_do_not_change_standard_package_subtotal()
+        public void Request_rates_change_all_eligible_package_and_additional_material_once()
         {
             var input = Baseline();
             input.AdditionalLaborHours = 2m;
@@ -460,17 +460,17 @@ namespace RepairEstimator.Tests
             input.UseTaxPct = .08m;
             input.FreightPct = .20m;
             var after = PricingEngine.Calculate(input);
-            Assert.Equal(before.PackageEstimatedCost, after.PackageEstimatedCost);
+            Assert.Equal(before.PackageEstimatedCost + 9.76m, after.PackageEstimatedCost);
             Assert.Equal(before.PackageLaborCost, after.PackageLaborCost);
             Assert.Equal(before.AdditionalLaborCost, after.AdditionalLaborCost);
             Assert.Equal(before.TotalAdditionalCost + 13.50m, after.TotalAdditionalCost);
-            Assert.Equal(before.TotalTrueCost + 13.50m, after.TotalTrueCost);
-            Assert.Equal(before.UseTaxAmount + 4.50m, after.UseTaxAmount);
-            Assert.Equal(before.FreightAmount + 9m, after.FreightAmount);
+            Assert.Equal(before.TotalTrueCost + 23.26m, after.TotalTrueCost);
+            Assert.Equal(before.UseTaxAmount + 7.75m, after.UseTaxAmount);
+            Assert.Equal(before.FreightAmount + 15.50m, after.FreightAmount);
             input.UseTaxPct = 0m;
             input.FreightPct = 0m;
             var zero = PricingEngine.Calculate(input);
-            Assert.Equal(before.PackageEstimatedCost, zero.PackageEstimatedCost);
+            Assert.Equal(before.PackageEstimatedCost - 20.59m, zero.PackageEstimatedCost);
             Assert.Equal(before.TotalAdditionalCost - 28.50m, zero.TotalAdditionalCost);
         }
 
@@ -676,19 +676,19 @@ namespace RepairEstimator.Tests
         }
 
         [Fact]
-        public void Standard_rates_cannot_be_overridden_by_estimate_inputs()
+        public void Zero_request_rates_remove_tax_and_freight_from_standard_packages()
         {
             var i = Baseline();
             i.UseTaxPct = 0m;
             i.FreightPct = 0m;
             var r = PricingEngine.Calculate(i);
-            Assert.Equal(1496.55m, r.PackageEstimatedCost);
-            Assert.Equal(5.42m, r.UseTaxAmount);
-            Assert.Equal(15.17m, r.FreightAmount);
+            Assert.Equal(1475.96m, r.PackageEstimatedCost);
+            Assert.Equal(0m, r.UseTaxAmount);
+            Assert.Equal(0m, r.FreightAmount);
         }
 
         [Fact]
-        public void Standard_stated_rate_margin_is_unchanged_by_custom_rates_in_a_mixed_estimate()
+        public void Request_rates_update_standard_and_custom_stated_margin_material()
         {
             var i = Baseline();
             i.StatedLaborRate = 220m;
@@ -698,12 +698,12 @@ namespace RepairEstimator.Tests
             i.UseTaxPct = 0.08m;
             i.FreightPct = 0.20m;
             var mixed = PricingEngine.Calculate(i);
-            Assert.Equal(standard.StatedRateMargin, mixed.StatedRateMargin);
-            Assert.Equal(standard.PackageEstimatedCost, mixed.PackageEstimatedCost);
+            Assert.NotEqual(standard.StatedRateMargin, mixed.StatedRateMargin);
+            Assert.NotEqual(standard.PackageEstimatedCost, mixed.PackageEstimatedCost);
         }
 
         [Fact]
-        public void Mixed_rates_apply_fixed_standard_and_editable_custom_rates_separately()
+        public void Mixed_packages_use_one_request_level_material_rate_pair()
         {
             var i = Baseline();
             i.IsCustomPath = true;
@@ -715,10 +715,10 @@ namespace RepairEstimator.Tests
             i.Packages.Add(new PackageInput { IsCustom = true, MaterialCostPerUnit = 50m });
             i.MaterialLines.Add(new MaterialLineInput { Quantity = 1m, UnitCost = 25m, TaxApplicable = true, FreightApplicable = true });
             var r = PricingEngine.Calculate(i);
-            Assert.Equal(366m, r.PackageEstimatedCost); // 200 * 1.19 + 100 * 1.28
-            Assert.Equal(20m, r.UseTaxAmount);
-            Assert.Equal(53m, r.FreightAmount);
-            Assert.Equal(398m, r.TotalTrueCost);
+            Assert.Equal(384m, r.PackageEstimatedCost);
+            Assert.Equal(26m, r.UseTaxAmount);
+            Assert.Equal(65m, r.FreightAmount);
+            Assert.Equal(416m, r.TotalTrueCost);
         }
 
         [Fact]

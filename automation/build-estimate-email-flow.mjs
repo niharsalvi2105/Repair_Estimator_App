@@ -302,9 +302,9 @@ export function buildEstimateEmailFlow({ metadata, connectionReferences }) {
   }
   const packageItem = column => `items('For_each_package')?[${quote(column)}]`
   const packageTax = choose(eq(packageItem('re_packagepricedkone'), 'true'), '0',
-    choose(eq(packageItem('re_iscustompackage'), 'true'), val('re_usetax'), '0.05'))
+    val('re_usetax'))
   const packageFreight = choose(eq(packageItem('re_packagepricedkone'), 'true'), '0',
-    choose(eq(packageItem('re_iscustompackage'), 'true'), val('re_freight'), '0.14'))
+    val('re_freight'))
   const packageLabor = mul(packageItem('re_totalhours'), val('re_mechaniclaborrate'))
   const packageMaterial = packageItem('re_totalmaterial')
   const sum = name => choose(call('empty', `body('${name}')`), '0', call('float', call('xpath',

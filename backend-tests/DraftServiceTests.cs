@@ -1291,6 +1291,9 @@ static class DraftServiceTests
         public EntityCollection RetrieveMultiple(QueryBase query) {
             var q = (QueryExpression)query;
             if (q.EntityName == "re_laborrate") RateQueries++;
+            if (q.EntityName == "re_plannergroup" && q.Criteria.Conditions.Any(c =>
+                c.AttributeName == "re_mainbranch" && c.Values.Any(value => value is EntityReference)))
+                throw new InvalidPluginExecutionException("Planner Group lookup filters require a Guid value.");
             var rows = Rows.Values.Where(r => r.LogicalName == q.EntityName && Matches(r, q.Criteria));
             var all = rows.ToList();
             if (q.Distinct) all = all.GroupBy(r => string.Join("|", q.ColumnSet.Columns.Select(c =>

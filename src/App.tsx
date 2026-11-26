@@ -466,12 +466,7 @@ function App() {
   const [referenceAttempt, setReferenceAttempt] = useState(0)
   const [equipmentTypeId, setEquipmentTypeId] = useState('')
   const [jobTypeId, setJobTypeId] = useState('')
-  const [editableRequestInputs, setRequestInputs] = useState<RequestInputs>({})
-  const customRatesInitialized = useRef(false)
-  const requestInputs = useMemo<RequestInputs>(() => selectedPackages.some((p) => p.re_iscustompackage)
-    ? editableRequestInputs
-    : { ...editableRequestInputs, re_usetax: editableRequestInputs.re_usetax ?? '5',
-      re_freight: editableRequestInputs.re_freight ?? '14' }, [editableRequestInputs, selectedPackages])
+  const [requestInputs, setRequestInputs] = useState<RequestInputs>({})
   const [draftReferences, setDraftReferences] = useState<DraftReferences>()
   const [draftReferenceError, setDraftReferenceError] = useState('')
   const [stateId, setStateId] = useState('')
@@ -525,7 +520,6 @@ function App() {
     return () => { cancelled = true; clearTimeout(timer) }
   }, [draftId, deliveryState, language, view])
   function updateRequestInput(key: keyof RequestInputs, value: string) {
-    if (key === 're_usetax' || key === 're_freight') customRatesInitialized.current = true
     setRequestInputs((current) => ({ ...current, [key]: value }))
   }
 
@@ -543,7 +537,7 @@ function App() {
     equipmentTypeId, jobTypeId, market, requestInputs, selectedEquipment, selectedPackages, laborLines, materialLines])
   const draftDirty = savedSnapshot ? savedSnapshot !== currentSnapshot : Boolean(branchId || buildingName || estimateTitle
     || customerName || customerEmail || customerPhone || selectedAccount || selectedContact ||
-    equipmentTypeId || jobTypeId || Object.values(editableRequestInputs).some(Boolean))
+    equipmentTypeId || jobTypeId || Object.values(requestInputs).some(Boolean))
   const hasUnsavedChanges = Boolean(preferences.unsaved || preferences.busy || draftBusy || draftDirty || masterDirty || masterBusy || reuseBusy)
   const selectedBranch = branches.find((branch) => branch.re_branchid === branchId)
   const marketBranches = branches.filter((branch) => branch.re_market === market)
@@ -798,14 +792,11 @@ function App() {
     if (nextBranchId === branchId) return
     if ((selectedEquipment.length > 0 || selectedPackages.length > 0) && !window.confirm(t.branchChangeWarning)) return
     resetBranch(nextBranchId)
-    customRatesInitialized.current = false
     const branch = branches.find((row) => row.re_branchid === nextBranchId)
     setStateId(branch?._re_stateprovince_value ?? '')
     const province = draftReferences?.states.find((s) => s.id === branch?._re_stateprovince_value)
     setRequestInputs((current) => ({
       ...current,
-      re_usetax: '5',
-      re_freight: '14',
       re_timecategory: current.re_timecategory || '126110000',
       re_proposallanguage: province?.frenchRequired ? '126110001' : current.re_proposallanguage || (language === 'fr' ? '126110001' : '126110000'),
     }))
@@ -848,10 +839,6 @@ function App() {
       return
     }
     setPackageError('')
-    if (repairPackage.re_iscustompackage && !customRatesInitialized.current && !draftVersion) {
-      customRatesInitialized.current = true
-      setRequestInputs((current) => ({ ...current, re_usetax: '5', re_freight: '10' }))
-    }
     setSelectedPackages((current) => [...current, allEquipmentForCustomPackage(repairPackage)])
   }
 
@@ -860,7 +847,7 @@ function App() {
     save: 'Enregistrer le brouillon', saving: 'Enregistrement…', saved: 'Brouillon enregistré',
     open: 'Ouvrir le brouillon', working: 'Opération en cours…', new: 'Nouveau brouillon',
     warning: 'Des modifications ne sont pas enregistrées. Les abandonner ?',
-    required: 'Renseignez le nom de l’opportunité, le compte, le contact, le courriel du contact, la province, les équipements, les forfaits, la langue, la catégorie de temps, la taxe et le fret.',
+    required: 'Renseignez le nom de l’opportunité, le compte, le contact, le courriel du contact, la province, les équipements, les forfaits, la langue et la catégorie de temps.',
     note: 'Enregistrez un brouillon ou soumettez le devis depuis la vérification finale. La soumission valide les prix et verrouille les modifications, sans envoyer de courriel.',
     error: 'Opération impossible. Vérifiez que le service Dataverse re_DraftEstimate est déployé et que vos autorisations sont suffisantes. En cas de conflit ou de délai dépassé, rechargez le brouillon avant de réessayer.',
     reload: 'Recharger le brouillon', locked: 'La succursale reste fixe. Changer de marché démarre une nouvelle demande.',
@@ -869,7 +856,7 @@ function App() {
     save: 'Save draft', saving: 'Saving…', saved: 'Draft saved',
     open: 'Open draft', working: 'Operation in progress…', new: 'New draft',
     warning: 'There are unsaved changes. Discard them?',
-    required: 'Complete opportunity name, Account, Contact, Contact email, province, equipment, packages, proposal language, time category, use tax and freight.',
+    required: 'Complete opportunity name, Account, Contact, Contact email, province, equipment, packages, proposal language and time category.',
     note: 'Save a draft or submit from Review. Submission validates pricing and locks editing; no email is sent.',
     error: 'Operation failed. Check that the Dataverse re_DraftEstimate service is deployed and you have permission. After a conflict or timeout, reload the draft before retrying.',
     reload: 'Reload draft', locked: 'Branch stays fixed. Changing market starts a new request.',
@@ -884,7 +871,6 @@ function App() {
     && branchId && equipmentTypeId && selectedEquipment.length && selectedPackages.length
     && selectedPackages.every((item) => validPackageEquipment(item, selectedEquipment))
     && requestInputs.re_proposallanguage && requestInputs.re_timecategory
-    && requestInputs.re_usetax?.trim() && requestInputs.re_freight?.trim()
     && selectedBranch?._re_currency_value && draftReferences
     && !konePricingConflict(materialLines, requestInputs.re_konesparessalespricevk13, language)
     && !customCostsError(selectedPackages.filter((p) => p.re_iscustompackage).map((p) => p.re_repairpackageid),
@@ -934,7 +920,6 @@ function App() {
       ? record.contactMaster ?? { id: record.contactId, name: record.customer, email: record.email ?? '', phone: record.phone ?? '' } : null)
     setManualCustomer({ name: record.customer, email: record.email ?? '', phone: record.phone ?? '' })
     setEquipmentTypeId(record.equipmentTypeId); setJobTypeId(record.jobTypeId ?? '')
-    customRatesInitialized.current = true
     setMarket(record.market); setRequestInputs(inputs); setSelectedEquipment(equipment); setSelectedPackages(packages)
     setEquipmentQuery('')
     setSavedSnapshot(JSON.stringify({
@@ -976,7 +961,11 @@ function App() {
       customer: customerName, email: customerEmail, phone: customerPhone, market,
       accountId: selectedAccount?.id ?? '', accountNumber: selectedAccount?.number ?? '',
       accountName: selectedAccount?.name ?? '', contactId: selectedContact?.id ?? '',
-      fields: Object.entries(requestInputs).map(([key, value]) => ({ key, value: value ?? '' })),
+      fields: Object.entries({
+        ...requestInputs,
+        re_usetax: requestInputs.re_usetax?.trim() || '0',
+        re_freight: requestInputs.re_freight?.trim() || '0',
+      }).map(([key, value]) => ({ key, value: value ?? '' })),
       equipment: selectedEquipment.map(item => ({ ...item, id: item.matched ? item.id : '' })),
       packages: selectedPackages.map(item => ({ id: item.re_repairpackageid,
         number: item.re_packagenumber, nameEn: item.re_packagenameen, scopeEn: item.re_proposalscopeen ?? '',
@@ -1103,7 +1092,6 @@ function App() {
   }
 
   function resetDraftWorkspace() {
-    customRatesInitialized.current = false
     setDraftId(crypto.randomUUID()); setDraftVersion(null); setDraftNumber(''); setSavedSnapshot('')
     setSavedSalesperson('')
     setPricingUnavailable(false)

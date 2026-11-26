@@ -713,8 +713,7 @@ namespace RepairEstimator.Drafts
             query.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
             query.Criteria.AddCondition("re_ismainbranch", ConditionOperator.Equal, false);
             if (parentId.HasValue)
-                query.Criteria.AddCondition("re_mainbranch", ConditionOperator.Equal,
-                    new EntityReference("re_branch", parentId.Value));
+                query.Criteria.AddCondition("re_mainbranch", ConditionOperator.Equal, parentId.Value);
             else
                 query.Criteria.AddCondition("re_subbranchcode", ConditionOperator.Equal, branchNumber);
             query.AddOrder("re_plannergroupid", OrderType.Ascending);
@@ -947,7 +946,11 @@ namespace RepairEstimator.Drafts
                 }
                 else if (DecimalFields.Contains(key) || MoneyFields.Contains(key))
                 {
-                    if (string.IsNullOrEmpty(value)) { header[key] = null; continue; }
+                    if (string.IsNullOrEmpty(value))
+                    {
+                        header[key] = key == "re_usetax" || key == "re_freight" ? (object)0m : null;
+                        continue;
+                    }
                     decimal number;
                     if (!decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out number) || number < 0)
                         Fail("Invalid non-negative number: " + key);
@@ -960,7 +963,12 @@ namespace RepairEstimator.Drafts
                 }
                 else Fail("Unsupported draft field: " + key);
             }
-            foreach (var key in requirePricing ? new[] { "re_proposallanguage", "re_timecategory", "re_usetax", "re_freight" } : new[] { "re_proposallanguage" })
+            if (requirePricing)
+            {
+                if (!header.Contains("re_usetax") || header["re_usetax"] == null) header["re_usetax"] = 0m;
+                if (!header.Contains("re_freight") || header["re_freight"] == null) header["re_freight"] = 0m;
+            }
+            foreach (var key in requirePricing ? new[] { "re_proposallanguage", "re_timecategory" } : new[] { "re_proposallanguage" })
                 if (!header.Contains(key) || header[key] == null) Fail("Required input is missing: " + key);
         }
 

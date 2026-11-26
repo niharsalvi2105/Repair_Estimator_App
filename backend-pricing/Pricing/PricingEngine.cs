@@ -10,7 +10,7 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.13";
+        public const string Version = "2026.14";
 
         public static PricingResult Calculate(EstimateInput i)
         {
@@ -201,8 +201,8 @@ namespace RepairEstimator.Plugins.Pricing
             decimal customPackageMaterial = i.Packages.Where(x => x.IsCustom && !x.PackagePricedKone).Sum(x => x.MaterialCostPerUnit * PackageUnits(x, r));
             decimal standardPackageMaterial = i.Packages.Where(x => !x.IsCustom).Sum(x => x.MaterialCostPerUnit * PackageUnits(x, r));
             decimal packageMaterial = standardPackageMaterial + customPackageMaterial + packageKone;
-            decimal packageTax = standardPackageMaterial * EstimateInput.StandardUseTax + customPackageMaterial * tax;
-            decimal packageFreight = standardPackageMaterial * EstimateInput.StandardFreight + customPackageMaterial * freight;
+            decimal packageTax = (standardPackageMaterial + customPackageMaterial) * tax;
+            decimal packageFreight = (standardPackageMaterial + customPackageMaterial) * freight;
             decimal packageLabor = hours * rate;
             decimal additionalLabor = i.AdditionalLaborHours * rate;
             decimal labor = i.IsCustomPath ? i.LaborLines.Sum(l => l.Hours * (l.Rate ?? rate) * (l.Multiplier ?? 1m)) : 0m;
@@ -322,8 +322,7 @@ namespace RepairEstimator.Plugins.Pricing
         {
             if (!r.TargetCm2.HasValue) return null;
             decimal packageMaterial = i.Packages.Sum(x => (x.PackagePricedKone ? x.MaterialBeforeMarkup.Value : x.MaterialCostPerUnit *
-                (1m + (x.IsCustom ? i.UseTaxPct : EstimateInput.StandardUseTax)
-                    + (x.IsCustom ? i.FreightPct : EstimateInput.StandardFreight))) * PackageUnits(x, r));
+                (1m + i.UseTaxPct + i.FreightPct)) * PackageUnits(x, r));
             decimal hours, material, laborCost;
             if (i.IsCustomPath)
             {

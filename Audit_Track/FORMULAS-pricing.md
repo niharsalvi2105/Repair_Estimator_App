@@ -18,7 +18,7 @@ For material line `m`, `E = quantity * effective unit cost`; `mt = t` if tax fla
 | Ordinary CSTM package material `CM` | `sum(non-package-priced CSTM material/unit * Qp)` |
 | Package-priced KONE true material `KM` | `sum(package material-before-markup/unit * Qp)` |
 | Package material `PM` | `SM + CM + KM` |
-| Package tax `PT` and freight `PF` | `PT = SM * .05 + CM * t`; `PF = SM * .14 + CM * f`; no tax/freight on `KM` |
+| Package tax `PT` and freight `PF` | `PT = (SM + CM) * t`; `PF = (SM + CM) * f`; no tax/freight on `KM` |
 | Package estimated cost `PE` | `PL + PM + PT + PF` |
 | Additional labor `AL` | `AH * r` |
 | Custom labor `CL` | `sum(hours * (line rate ?? r) * (line multiplier ?? 1))` on CSTM; otherwise zero. The live loader supplies saved rate and no multiplier. |
@@ -43,9 +43,9 @@ Matrix match: type plus both inputs using trimmed case-insensitive text; duplica
 
 ## Recommended CMII, selling prices, and incentives
 
-**27–28, stated rate:** Only runs for a positive stated labor rate and a non-null target. `SH = PH + AH + (sum CSTM line hours on the custom path)`. `SB = SM*(1+.05+.14) + CM*(1+t+f) + KM + ML + AM + AX`. `StatedLaborCost = (PH+AH)*r + sum(CSTM line hours * (saved line rate ?? r) * (multiplier ?? 1))`; `StatedCost = StatedLaborCost + SB`; `StatedSell = SH*stated hourly rate + SB/(1-max(MATERIAL_MARGIN_FLOOR, Target))`; `StatedMargin = (StatedSell-StatedCost)/StatedSell`, null for zero stated sell. Floor and target must be `[0,1)`. Recommended is stated margin when stated rate is positive (even if null), else equipment-type fixed target if present, else adjusted target. Non-null recommendation outside `[0,1)` fails.
+**27–28, stated rate:** Only runs for a positive stated labor rate and a non-null target. `SH = PH + AH + (sum CSTM line hours on the custom path)`. `SB = (SM+CM)*(1+t+f) + KM + ML + AM + AX`. `StatedLaborCost = (PH+AH)*r + sum(CSTM line hours * (saved line rate ?? r) * (multiplier ?? 1))`; `StatedCost = StatedLaborCost + SB`; `StatedSell = SH*stated hourly rate + SB/(1-max(MATERIAL_MARGIN_FLOOR, Target))`; `StatedMargin = (StatedSell-StatedCost)/StatedSell`, null for zero stated sell. Floor and target must be `[0,1)`. Recommended is stated margin when stated rate is positive (even if null), else equipment-type fixed target if present, else adjusted target. Non-null recommendation outside `[0,1)` fails.
 
-Pricing 2026.13 uses each saved custom labor line rate in stated cost. Package labor and estimate-level additional labor still use the estimate mechanic rate. Stated cost includes additional material/misc without tax/freight on those two inputs, as shown by the workbook path; true cost taxes/freights those additions. This can therefore still differ from true cost independently of labor.
+Pricing 2026.14 uses each saved custom labor line rate in stated cost and one request-level tax/freight pair for all eligible package material. Package labor and estimate-level additional labor still use the estimate mechanic rate. Stated cost includes additional material/misc without tax/freight on those two inputs, as shown by the workbook path; true cost taxes/freights those additions. This can therefore still differ from true cost independently of labor.
 
 **29, suggested pricing:** Let `d = 1 - Recommended`. For all custom material lines classified Non-KONE, `NC = R2(sum(Landed))`; `NS = NC/(1-max(MATERIAL_MARGIN_FLOOR, Recommended))`; both are zero when there is no Non-KONE material. Classification uses the explicit part type, then legacy vendor/part heuristics. `MATERIAL_MARGIN_FLOOR` and the divisor must be valid only when `NC > 0`.
 

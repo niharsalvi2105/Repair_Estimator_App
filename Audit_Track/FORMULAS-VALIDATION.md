@@ -6,14 +6,14 @@
 
 The supplied `KTOC_PSR_Estimator_Complete_Calculation_Formula_Reference.docx` is **not formula-equivalent to the current app**. It is an audit summary, not a literal inventory: it explicitly says the source workbook has 5,041 formula cells while the audit records only the main paths. The original XLSM and the stated 12-case sample batch are not in this repository, so this comparison cannot prove PST parity or reconcile a user-entered case.
 
-The table below distinguishes agreement, deliberate/structural differences, and open workbook-policy questions. “App” below means the current workspace source (`PricingEngine` version `2026.13`), not proof of the currently deployed Dev assembly.
+The table below distinguishes agreement, deliberate/structural differences, and open workbook-policy questions. “App” below means the current workspace source (`PricingEngine` version `2026.14`), not proof of the currently deployed Dev assembly.
 
 ## Current-app versus sheet
 
 | Topic | Sheet formula/behavior | Current app behavior | Effect and status |
 |---|---|---|---|
 | Standard package labor | `package hours/unit * equipment count * mechanic rate` | `sum(package hours/unit * package assigned equipment quantity * estimate mechanic rate)`; quantity falls back to header equipment count when no subset is saved | Agree for one package assigned to all equipment. Independent package subsets can differ. |
-| Standard material, tax, freight | Quote amount/unit times equipment, then 5% use tax and 14% freight | `sum(material/unit * package quantity)`; standard package tax is exactly 5% and freight exactly 14% | Formula agrees. A double-tax concern remains if the master package “material” field already contains tax/markup; the app treats it as taxable material/freight base. |
+| Standard material, tax, freight | Quote amount/unit times equipment, then the workbook tax/freight rates | `sum(material/unit * package quantity)` times the one optional request-level rate pair; omitted/blank rates are zero | Structurally aligned with a single overall material-rate pair. The app treats the master package material field as the taxable base and does not use separate fixed 5%/14% package rates. |
 | Additional cost | labor at branch rate + material/misc, with tax and freight on material/misc | Same: `additional hours * mechanic rate + (additional material + additional misc)*(1+t+f)` | Agree, except source UI percentage is divided by 100 before server storage/use. |
 | Total true cost | package estimated + total additional | Same | Agree, but app rounds total from the unrounded aggregate; do not add separately rounded output components and expect identical cents in every case. |
 | Actual CMII | `(sell - true cost)/sell` | Same numerator, then **rounds to 4 decimal places** | Difference only after the fifth decimal. The rounded value is then used for incentive-band selection and displayed/stored actual CMII. |

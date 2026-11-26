@@ -42,13 +42,13 @@ const costFields = [
   { key: 're_additionallaborhours', en: 'Additional labor hours', fr: 'Heures de travail supplémentaires', type: 'number' },
   { key: 're_additionalmaterial', en: 'Additional material ($)', fr: 'Matériaux supplémentaires ($)', type: 'number' },
   { key: 're_additionalmiscellaneous', en: 'Additional miscellaneous ($)', fr: 'Frais divers supplémentaires ($)', type: 'number' },
-  { key: 're_usetax', en: 'Use tax (%)', fr: 'Taxe d’utilisation (%)', type: 'number', percent: true },
-  { key: 're_freight', en: 'Freight (%)', fr: 'Fret (%)', type: 'number', percent: true },
   { key: 're_additionalscope', en: 'Additional scope', fr: 'Portée supplémentaire', type: 'textarea' },
 ] as const satisfies readonly Field[]
 
 const pricingFields = [
   { key: 're_konesparessalespricevk13', en: 'KONE spares sales price (VK13, custom estimates only)', fr: 'Prix de vente des pièces KONE (VK13, devis personnalisés uniquement)', type: 'number' },
+  { key: 're_usetax', en: 'Use tax (%)', fr: 'Taxe d’utilisation (%)', type: 'number', percent: true },
+  { key: 're_freight', en: 'Freight (%)', fr: 'Fret (%)', type: 'number', percent: true },
   { key: 're_sellprice', en: 'Sell price ($, entered proposal price)', fr: 'Prix de vente ($, prix proposé saisi)', type: 'number' },
   { key: 're_billingplan', en: 'Billing plan', fr: 'Plan de facturation', choice: true },
   { key: 're_margincomments', en: 'Comments on booked vs recommended margin', fr: 'Commentaires sur la marge prévue et recommandée', type: 'textarea' },
@@ -93,7 +93,7 @@ function useDraftChoices(enabled: boolean) {
 }
 
 export function RequestFields({ stage, language, value, onChange, readOnly = false, custom = false, currency, errors = {} }: {
-  stage: 'request' | 'cost' | 'pricing' | 'partner' | 'materialrates' | 'labortime'
+  stage: 'request' | 'cost' | 'pricing' | 'partner' | 'labortime'
   language: 'en' | 'fr'
   value: RequestInputs
   onChange: (key: InputKey, value: string) => void
@@ -105,7 +105,6 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
   const [focusedKey, setFocusedKey] = useState<InputKey>()
   const fields: readonly (Omit<Field, 'key'> & { key: InputKey })[] = {
     request: requestFields, cost: costFields, pricing: pricingFields, partner: partnerFields,
-    materialrates: costFields.filter((field) => field.key === 're_usetax' || field.key === 're_freight'),
     labortime: costFields.filter((field) => field.key === 're_timecategory'),
   }[stage]
   const hasChoices = fields.some((field) => field.choice)
@@ -163,10 +162,10 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
         const rateField = key === 're_statedlaborrate'
         const taxOrFreight = key === 're_usetax' || key === 're_freight'
         const error = errors[id] ?? (rateField ? statedRateError(value[key], language) : undefined)
-        const required = ['re_proposallanguage', 're_timecategory', 're_usetax', 're_freight', 're_billingplan'].includes(key)
+        const required = ['re_proposallanguage', 're_timecategory', 're_billingplan'].includes(key)
         return (
           <div className="field-label" key={key}>
-            <label htmlFor={id}>{label}{taxOrFreight && custom ? ' (CSTM)' : ''}{required && <span className="required">*</span>}</label>
+            <label htmlFor={id}>{label}{required && <span className="required">*</span>}</label>
             <FieldError id={id} message={error} />
             {field.choice ? <ChoiceSelect id={id} language={language} value={value[key] ?? ''}
               options={choices.choices?.[key] ? choiceOptionsForField(key, choices.choices[key]) : undefined}
@@ -191,11 +190,9 @@ export function RequestFields({ stage, language, value, onChange, readOnly = fal
             )}
             {key === 're_billingplan' && paymentDetails}
             {taxOrFreight && <p className="field-help" id={`${id}-help`}>
-              {custom
-                ? (fr ? 'Taux modifiable pour CSTM et les coûts supplémentaires uniquement. Forfaits standard : taxe 5 %, fret 14 % (fixes).'
-                  : 'Editable for CSTM and additional costs only. Standard packages: fixed 5% tax and 14% freight.')
-                : (fr ? 'Taux modifiable pour les coûts supplémentaires uniquement. Le sous-total des forfaits standard conserve une taxe de 5 % et un fret de 14 %.'
-                  : 'Editable for additional costs only. Standard package subtotal keeps 5% tax and 14% freight.')}
+              {fr
+                ? 'Facultatif. Un seul taux pour toute la demande; vide est traité comme 0 %. Il s’applique une fois aux coûts de matériaux admissibles, y compris les forfaits et les ajouts.'
+                : 'Optional. One rate for the entire request; blank is treated as 0%. It is applied once to eligible material costs, including packages and additions.'}
             </p>}
             {rateField && <p className="field-help" id={`${id}-help`}>{language === 'fr'
               ? 'Facultatif. Taux horaire de vente négocié, et non le prix total du devis. Laissez vide (ou zéro) pour le calcul standard du CMII. Un taux faible peut empêcher le calcul des prix; le serveur valide la marge lors de l’enregistrement.'

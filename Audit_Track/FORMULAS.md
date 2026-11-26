@@ -1,9 +1,10 @@
 # Repair Estimator formula reference
 
-This reference describes the **current workspace source**, including pricing engine **2026.13** and local manual KONE changes. It is not proof that those assemblies or the matching frontend are deployed. It covers business calculations and their inputs, financial displays, and export calculations; incidental arithmetic for paging, layout, and file limits is intentionally outside scope. The original PST workbook/macros and original sample batch are not available here. Tenant-only formulas, rollups, flow revisions, data values, and original PST parity are not verified by this reference.
+This reference describes the **current workspace source**, including pricing engine **2026.14** and local manual KONE changes. It is not proof that those assemblies or the matching frontend are deployed. It covers business calculations and their inputs, financial displays, and export calculations; incidental arithmetic for paging, layout, and file limits is intentionally outside scope. The original PST workbook/macros and original sample batch are not available here. Tenant-only formulas, rollups, flow revisions, data values, and original PST parity are not verified by this reference.
 
 | File | What it covers |
 |---|---|
+| [Consolidated calculation audit](CALCULATION-AUDIT.md) | Complete formula inventory, dependency graph, Dataverse result map, authority layers, rounding, and repeatable Finance audit procedure |
 | [Server pricing](FORMULAS-pricing.md) | Engine rules, costs, selling prices, all CMII paths, bands, incentives, approval, validation, and persisted outputs |
 | [Dataverse inputs and draft formulas](FORMULAS-inputs.md) | Tables and columns, lookup precedence, equipment/package quantities, snapshots, conversion, custom material routes and rounding |
 | [Browser, reports, and export](FORMULAS-display-export.md) | Package and equipment previews, billing, dashboard, charts, Excel input/output, and email calculations |

@@ -2,6 +2,37 @@
 
 ## 1. Purpose, evidence and reading guide
 
+### Optional request-level tax and freight (pricing 2026.14, local source)
+
+`re_repairestimate.re_usetax` and `re_freight` remain the single persisted
+request-level rate columns. The Drafts API accepts omitted or blank values and
+writes decimal zero, so no value means 0% rather than Province/Branch/Pricing
+Parameter fallback. The frontend sends both values as `0` when Page 4 controls
+are blank. Pricing 2026.14 reads the estimate values first, then zero, and uses
+that same pair for standard package material, ordinary CSTM package material,
+eligible itemized material, additional material and miscellaneous. Package-
+priced KONE remains exempt from additional tax/freight under its existing route.
+`re_usetaxamount` and `re_freightamount` therefore summarize the global rates;
+there are no package-level or additional-cost percentage columns.
+
+No table, column, choice, permission, relationship or migration changed. The
+Drafts and Pricing assemblies must be deployed together with the frontend.
+Historical records retain saved header rates; an explicit recalculation is
+required after rollout, and records with null legacy rates resolve to zero.
+Local source tests passed for omitted rates, standard/custom/additional material,
+zero rates and save/load; no tenant metadata or business records were changed.
+
+### Planner Group scope query correction (local source, not deployed)
+
+The Drafts plugin's `re_plannergroup.re_mainbranch` lookup filter now uses the
+raw `re_branch` record ID (`Guid`), as required by Dataverse SDK query
+translation. It no longer sends an `EntityReference` object. This preserves the
+existing parent/subbranch scope behavior and field mappings; it changes no table,
+column, permission, record, API contract, formula or pricing output. The fix is
+for the save-time validation failure shown when the selected subbranch is mapped
+to a parent Branch. No Dataverse metadata or business data was changed and the
+updated Drafts assembly has not been deployed.
+
 ### Formula policy update (pricing 2026.13, local source)
 
 No Dataverse columns or relationships changed. Existing
@@ -196,7 +227,7 @@ The flow uses Outlook `OnNewEmailV3` on the connected user's Inbox, with a notif
 
 Initial offline definition validation and connection preflight passed, but failed to catch an incorrect scaffolded polling trigger: the user subsequently reported invalid `recurrence` during template validation. Live connector swagger identifies `x-ms-notification.operationId=CreateGraphOnNewEmailPokeSubscription`; the existing flow was surgically corrected to `OpenApiConnectionNotification` and both recurrence/evaluatedRecurrence removed. Corrected offline validation and live save succeeded; readback confirmed the corrected trigger, unchanged action/reference bindings and state Started (the user had enabled the flow since creation). Initial creation-off/15-minute claims are superseded by this correction. No new email/runtime delivery test was performed, so Teams delivery remains unverified. No estimate/master records, table/column metadata, pricing plugins, existing export automation, app UI or approval state changed. This standalone notification is not the HTML estimate-review email flow and does not replace export delivery.
 
-### Existing Additional Details rate editing (local source, not deployed)
+### Existing Additional Details rate editing (historical 2026.10 source; superseded by pricing 2026.14)
 
 No new Dataverse columns. Additional Details continues mapping UI percentages to `re_repairestimate.re_usetax` and `re_freight` as fractions (0-1); pricing also writes existing percentage aliases. Standard-estimate Save/Load now retains entered rates, including zero, instead of forcing 5%/14%. Pricing 2026.10 applies them to estimate-level additional material/miscellaneous only on the standard path; standard package snapshots/subtotal still use fixed 5% tax and 14% freight. Additional labor is untaxed. CSTM still shares its pre-existing rates across custom costs and additions; no independent custom/additional field is introduced.
 
@@ -676,7 +707,7 @@ Preflight passed against all source rows, numeric/range/text/category constraint
 
 **Dev import completed and verified:** all 280 CAD packages match every mapped field and normalized full source provenance in an independent final paged read. Exactly 277 new CAD masters were added and all three original CAD sample GUIDs retained. All 280 preexisting USD rows match their before-import attributes unchanged. A separate native query using the frontend country/currency and effective-date eligibility rules returned exactly 280 CAD packages for CKE/CKQ, with no duplicate IDs/numbers, one CSTM and one T&M. The currency-filter unit contract passed. This completes the CAD package catalog, not other master imports or tenant-wide pricing certification. Published-browser dropdown rendering/non-admin acceptance remains unverified; no real estimate Save/Submit/email occurred.
 
-### Additional details input availability (2026-11-05)
+### Additional details input availability (historical 2026-11-05; rate behavior superseded by pricing 2026.14)
 
 Frontend removes the CSTM-only edit restriction for existing estimate-header `re_additionallaborhours`, `re_additionalmaterial` and `re_additionalmiscellaneous`. `re_additionalscope` remains editable. These inputs persist through the existing explicit Draft Save and load; no new columns, schema, API or permissions. Additional labor uses the selected time-category mechanic rate and additional material/miscellaneous use existing standard/custom tax/freight calculations once per estimate, not per selected equipment. Standard package rates remain fixed at 5%/14%; CSTM package lines and snapshots are unchanged. Review/submitted/access locks are preserved.
 

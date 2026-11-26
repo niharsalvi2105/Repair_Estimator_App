@@ -2,6 +2,41 @@
 
 ## 1. Scope and evidence
 
+### Request-level Tax/Freight contract (pricing 2026.14, local source)
+
+Draft Save makes `re_usetax` and `re_freight` optional request fields. Omitted,
+blank or null values are written as decimal zero; supplied values remain
+percentage inputs in the Draft API and are divided by 100. Pricing 2026.14 no
+longer falls back to Branch, Province or `DEFAULT_USE_TAX` /
+`DEFAULT_FREIGHT`. It applies the persisted request pair to standard package
+material, ordinary CSTM package material, eligible itemized material,
+additional material and miscellaneous. Package-priced KONE keeps zero
+additional tax/freight and aggregate KONE continues to use its dedicated
+selling parameters. Standard 5%/14% constants were removed from true-cost and
+stated-rate-material paths.
+
+This changes Pricing Engine outputs and bumps `re_calculationversion` to
+`2026.14`; no custom API registration, image, schema, permission or locking
+change is required. Deploy the signed Drafts and Pricing assemblies together
+with the frontend. Local evidence: 164 .NET pricing/integration tests, the full
+Drafts harness, build/lint/225 Node tests and 19 focused browser scenarios
+passed. No assembly deployment, historical recalculation or tenant acceptance
+was performed.
+
+### Planner Group lookup query type fix (local source, not deployed)
+
+Draft Save's Planner Group parent filter now passes the raw branch `Guid` to the
+Dataverse lookup condition instead of an `EntityReference`. The real Dataverse
+SDK requires `System.Guid` for `re_mainbranch` comparisons and rejected the
+previous value before the scope query could run. This fixes the reported
+`expected argument(s) of type System.Guid but received
+Microsoft.Xrm.Sdk.EntityReference` failure for mapped subbranch equipment saves.
+The synthetic Drafts service now rejects EntityReference values for this specific
+lookup filter so the test harness cannot hide the real platform type requirement.
+No payload, formula, registration, permission, schema, locking or export behavior
+changed. Local Planner Group and Drafts regression validation is required; no
+plugin deployment or live tenant save was performed.
+
 ### Workbook policy corrections (pricing 2026.13, local source only)
 
 Pricing 2026.13 implements three Finance-approved changes from the supplied
@@ -129,7 +164,7 @@ Nine local synthetic renderer/contract cases passed, including all 111 tokens an
 
 The requested Inbox-to-Teams test flow was created in Dev and its membership in `RepairEstimatorApp` verified. Flow `c38153e4-bff7-472e-85d8-bee3dd650f71` uses Outlook V3 plus a Teams Flow bot chat, with new dedicated solution connection references. After the user's recurrence validation error, live connector metadata confirmed a notification-based trigger; a surgical edit replaced the incorrect scaffolded polling type and removed recurrence settings. Corrected validation/live save/readback passed and the flow was already Started by the user; no runtime email/delivery test was performed. Full behavior and deployment evidence are in the Dataverse reference. No plugin binaries, dispatch, registrations/images, permissions, pricing, locks or estimator export lifecycle were changed; existing export automation was not enabled.
 
-### Standard-estimate additional tax/freight edits (local source, not deployed)
+### Standard-estimate additional tax/freight edits (historical 2026.10 source; superseded by pricing 2026.14)
 
 Draft Save no longer replaces standard-estimate `re_usetax`/`re_freight` with 0.05/0.14 after writing packages. Existing validation still converts entered 0-100 percentage values to stored fractions and preserves explicit zero. The loader now resolves existing estimate/province/branch/parameter rates on both paths instead of forcing standard rates globally. Pricing 2026.10 uses those rates for additional material and miscellaneous costs; additional labor remains untaxed. Standard package tax/freight continue using the explicit fixed constants (5%/14%) in cost and stated-rate formulas, leaving their package subtotal unchanged. CSTM rate-sharing and KONE selling behavior are unchanged.
 

@@ -60,13 +60,13 @@ test('each custom package requires assigned positive labor or material entries',
   assert.equal(customCostsError([], [], [], 'en'), undefined)
 })
 
-test('standard previews always use fixed 5% tax and 14% freight regardless of CSTM inputs', () => {
+test('standard previews use one request-level tax and freight pair', () => {
   const p = { re_repairpackageid: 'standard', re_iscustompackage: false, re_mechanichours: 2, re_materialmisctaxcost: 50 }
   const rates = [{ role: 126110000, time: 126110000, rate: 100 }]
-  for (const [tax, freight] of [[0, 0], [8, 20], [NaN, NaN]]) {
-    assert.deepEqual(calculatePackageCost(p, 3, rates, 126110000, tax, freight, [], []),
-      { hours: 6, labor: 600, material: 150, rate: 100, total: 778.5 })
-  }
+  assert.deepEqual(calculatePackageCost(p, 3, rates, 126110000, 0, 0, [], []),
+    { hours: 6, labor: 600, material: 150, rate: 100, total: 750 })
+  assert.deepEqual(calculatePackageCost(p, 3, rates, 126110000, 8, 20, [], []),
+    { hours: 6, labor: 600, material: 150, rate: 100, total: 792 })
 })
 
 test('custom previews isolate packages, use branch role/time rates and count entered costs once', () => {
@@ -108,10 +108,10 @@ test('package KONE amounts scale once per equipment, not per descriptive part or
     2, rates, 126110000, 5, 10, labor, materials), /Before Markup/)
 })
 
-test('per-equipment package previews exclude custom rows and preserve standard fixed rates', () => {
+test('per-equipment package previews use request rates and exclude custom rows', () => {
   const rates = [{ role: 126110000, time: 126110000, rate: 187.65 }]
   const standard = { re_repairpackageid: 'psr', re_iscustompackage: false, re_mechanichours: 8, re_materialmisctaxcost: 123.39 }
-  const unit = calculatePackageUnitCost(standard, rates, 126110000, NaN, NaN, [])
+  const unit = calculatePackageUnitCost(standard, rates, 126110000, 5, 14, [])
   assert.equal(unit.total, 1648.0341)
   assert.equal(unit.hours, 8)
   assert.equal(unit.rate, 187.65)
@@ -122,7 +122,7 @@ test('per-equipment package previews exclude custom rows and preserve standard f
   assert.equal(unit.taxAmount, 6.1695)
   assert.ok(Math.abs(unit.freightAmount - 17.2746) < 1e-9)
   assert.ok(Math.abs(unit.total - (unit.labor + unit.material + unit.taxAmount + unit.freightAmount)) < 1e-9)
-  assert.ok(Math.abs(calculatePackageCost(standard, 11, rates, 126110000, 0, 0, [], []).total - unit.total * 11) < 1e-9)
+  assert.ok(Math.abs(calculatePackageCost(standard, 11, rates, 126110000, 5, 14, [], []).total - unit.total * 11) < 1e-9)
   const custom = { ...standard, re_repairpackageid: 'cstm', re_iscustompackage: true, re_mechanichours: 1, re_materialmisctaxcost: 10 }
   const materials = [{ id: 'm', packageId: 'cstm', part: 'MOTOR-1', description: 'Estimate-level motor', quantity: 2, unitCost: 50 }]
   const labor = [{ id: 'l', packageId: 'cstm', role: 126110000, time: 126110000, hours: 2 }]
@@ -202,6 +202,6 @@ test('CSTM equipment allocation preserves predefined costs, KONE exceptions and 
   assert.equal(unit.total, 996.2)
   assert.equal(unit.total * 2, calculatePackageCost(p, 2, rates, 126110000, 5, 10, labor, materials).total)
   const standard = { ...p, re_iscustompackage: false }
-  assert.deepEqual(calculateEquipmentPackageCost(standard, 2, rates, 126110000, NaN, NaN, labor, materials),
-    calculatePackageUnitCost(standard, rates, 126110000, NaN, NaN, materials))
+  assert.deepEqual(calculateEquipmentPackageCost(standard, 2, rates, 126110000, 5, 14, labor, materials),
+    calculatePackageUnitCost(standard, rates, 126110000, 5, 14, materials))
 })
