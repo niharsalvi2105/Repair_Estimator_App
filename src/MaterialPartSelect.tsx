@@ -209,7 +209,8 @@ export function MaterialPartSelect({ line, update, market, language, capability,
             return
           }
           update({ partType, vendor: partType === 'kone' ? 'KONE' : '', markupPercent: partType === 'kone' ? 10 : undefined,
-            pricingSource: partType === 'kone' || line.catalogPartId ? undefined : line.pricingSource })
+            pricingSource: line.catalogPartId ? undefined : line.pricingSource,
+            ...(!line.catalogPartId && partType !== line.partType ? { sellingPrice: undefined } : {}) })
         }}>
         {!line.partType && <option value="">{fr ? 'Choisir le type' : 'Select type'}</option>}
         <option value="kone">KONE</option><option value="non-kone">Non-KONE</option>

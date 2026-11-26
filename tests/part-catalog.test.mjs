@@ -83,6 +83,19 @@ test('KONE markup is fixed at ten, not a configurable cost uplift', () => {
   assert.ok(customCostsError(['p'], labor, [{ ...material(), partType: 'non-kone' }], 'en'))
 })
 
+test('manual KONE requires explicit selling price and does not accept catalog or VK13 snapshots', () => {
+  const line = { ...material(), pricingSource: 'manual', catalogPartId: undefined, catalogDetails: undefined,
+    uom: undefined, unitPrice: undefined, unitCost: 25, sellingPrice: 30 }
+  assert.equal(customCostsError(['p'], [], [line], 'en'), undefined)
+  assert.equal(parseDraft(record(line)).materialLines[0].sellingPrice, 30)
+  for (const change of [{ sellingPrice: undefined }, { sellingPrice: 0 }, { unitCost: 25.00000000001 },
+    { markupPercent: 9 }, { unitPrice: 30 }, { catalogPartId: part().id }, { partType: 'non-kone' }]) {
+    const invalid = { ...line, ...change }
+    assert.ok(customCostsError(['p'], [], [invalid], 'en'))
+    assert.throws(() => parseDraft(record(invalid)), /material/i)
+  }
+})
+
 test('save verification detects dropped manual completion and source evidence even with new server IDs', () => {
   const sent = material()
   const received = { ...sent, id: 'server' }

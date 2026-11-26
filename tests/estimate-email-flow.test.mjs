@@ -97,7 +97,7 @@ function evaluate(node, context) {
 
 function execute(definition, fixture) {
   const context = { outputs: {}, items: {}, variables: {}, header: fixture.header,
-    parameters: { ReviewRecipient: 'review@example.invalid' }, sent: [], executed: [] }
+    parameters: {}, sent: [], executed: [] }
   const resolve = value => {
     if (typeof value === 'string') return value.startsWith('@') && !value.startsWith('@{')
       ? evaluate(parse(value.slice(1)), context) : value
@@ -153,7 +153,7 @@ const choices = Object.fromEntries([
   ...[...source.matchAll(/(\w+): '(re_\w+)'/g)].map(match => `re_repairestimate.${match[2]}`),
   're_estimatelaborline.re_laborrole', 're_estimatelaborline.re_timecategory', 're_estimatematerialline.re_parttype',
 ].map(key => [key, [{ value: 126110000, en: 'English choice', fr: 'Choix francais' }]]))
-const make = () => buildEstimateEmailFlow({ recipient: 'review@example.invalid', metadata: { choices },
+const make = () => buildEstimateEmailFlow({ metadata: { choices },
   connectionReferences: Object.fromEntries(['shared_commondataserviceforapps', 'shared_office365'].map(connector => [connector, {
     connectionReferenceLogicalName: `re_${connector}`, source: 'Embedded',
     id: `/providers/Microsoft.PowerApps/apis/${connector}`,
@@ -294,7 +294,20 @@ test('definition has update-only/status filtering, pagination, sequential loops,
   assert.equal(trigger.inputs.parameters['subscriptionRequest/message'], 3)
   assert.equal(trigger.inputs.parameters['subscriptionRequest/filteringattributes'], 're_estimatestatus')
   assert.equal(trigger.inputs.host.connectionReferenceName, 're_shared_commondataserviceforapps')
-  assert.equal(definition.actions.Send_review_email.inputs.host.connectionReferenceName, 're_shared_office365')
+  const send = definition.actions.Send_review_email.inputs
+  assert.equal(send.host.connectionReferenceName, 're_shared_office365')
+  assert.equal(send.parameters['emailMessage/From'], 'SVC_AME_REPESTIMATOR@konenet.com')
+  assert.equal(send.parameters['emailMessage/To'], [
+    'erin.crowe2@kone.com', 'brittney.sullivan@kone.com', 'aniruddha.damle@kone.com',
+    'drew.evans@kone.com', 'neeraj.marwaha@kone.com',
+  ].join(';'))
+  assert.equal(send.parameters['emailMessage/Cc'],
+    "@body('Get_estimate')?['re_Salesperson']?['internalemailaddress']")
+  const routingFixture = fixture()
+  routingFixture.header.re_Salesperson = { internalemailaddress: 'salesperson@example.invalid' }
+  const routingResult = execute(definition, routingFixture)
+  assert.equal(routingResult.sent.length, 1)
+  assert.equal(routingResult.sent[0]['emailMessage/Cc'], 'salesperson@example.invalid')
   for (const name of ['equipment', 'packages', 'labor', 'materials']) {
     const action = definition.actions[`List_${name}`]
     assert.ok(action.inputs.parameters.$filter.startsWith('_re_repairestimate_value eq '))
@@ -305,16 +318,16 @@ test('definition has update-only/status filtering, pagination, sequential loops,
   assert.ok(!JSON.stringify(definition).includes('emailMessage/Attachments'))
   assert.ok(!JSON.stringify(definition).includes('"authentication"'))
   assert.ok(JSON.stringify(definition).includes('re_sellingprice'))
-  assert.throws(() => buildEstimateEmailFlow({ recipient: 'bad' }), /recipient/)
+  assert.throws(() => buildEstimateEmailFlow({ metadata: null, connectionReferences: {} }), /metadata/)
 })
 
-test('standard rates are isolated; package-priced KONE cost and final price are not double counted', () => {
+test('request rates apply globally; package-priced KONE cost and final price are not double counted', () => {
   const data = fixture()
   Object.assign(data.List_packages.value[0], { re_iscustompackage: false, re_totalmaterial: 100, re_totalhours: 2 })
   let result = execute(make(), data)
-  assert.equal(result.outputs.package_values.PackageEstimatedCost, '319.00')
-  assert.equal(result.outputs.package_values.PackageTaxPercent, '5.00%')
-  assert.equal(result.outputs.package_values.PackageFreightPercent, '14.00%')
+  assert.equal(result.outputs.package_values.PackageEstimatedCost, '300.00')
+  assert.equal(result.outputs.package_values.PackageTaxPercent, '0.00%')
+  assert.equal(result.outputs.package_values.PackageFreightPercent, '0.00%')
   Object.assign(data.List_packages.value[0], { re_iscustompackage: true, re_packagepricedkone: true,
     re_materialbeforemarkup: 100, re_materialcostperunit: 150 })
   result = execute(make(), data)

@@ -10,7 +10,7 @@ namespace RepairEstimator.Plugins.Pricing
     /// </summary>
     public static class PricingEngine
     {
-        public const string Version = "2026.11";
+        public const string Version = "2026.14";
 
         public static PricingResult Calculate(EstimateInput i)
         {
@@ -108,10 +108,17 @@ namespace RepairEstimator.Plugins.Pricing
             if (r.RecommendedCmii.HasValue && r.RecommendedCmii.Value < 1m)
             {
                 decimal rec = r.RecommendedCmii.Value;
-                var nonKoneCost = i.IsCustomPath ? R2(catalogNonKone.Sum(m => m.Quantity * m.UnitCost *
+                var nonKoneCost = i.IsCustomPath ? R2(i.MaterialLines.Where(m => !IsKoneMaterial(m)).Sum(m => m.Quantity * m.UnitCost *
                     (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m)))) : 0m;
-                var nonKoneSelling = i.IsCustomPath ? catalogNonKone.Sum(m => m.Quantity * m.UnitSellingPrice.Value *
-                    (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m))) : 0m;
+                decimal materialMarginFloor = 0m;
+                if (nonKoneCost > 0m)
+                {
+                    materialMarginFloor = p.Get(ParamCode.MaterialMarginFloor);
+                    if (materialMarginFloor < 0m || materialMarginFloor >= 1m)
+                        throw new PricingException("RE-111", "MARGIN_INVALID");
+                }
+                var nonKoneSelling = nonKoneCost > 0m
+                    ? nonKoneCost / (1m - Math.Max(materialMarginFloor, rec)) : 0m;
                 r.SuggestedPrice = R2((r.TotalTrueCost - nonKoneCost) / (1m - rec) + nonKoneSelling);
                 if (i.IsCustomPath && (i.KoneSparesSalesPrice > 0m || itemizedKone.Count > 0 || packageKone.Count > 0))
                 {
@@ -147,6 +154,11 @@ namespace RepairEstimator.Plugins.Pricing
                 {
                     r.AmIncentive = Math.Round(i.SellPrice * incentive.AmPayout, 0, MidpointRounding.AwayFromZero);
                     r.BdIncentive = Math.Round(i.SellPrice * incentive.BdPayout, 0, MidpointRounding.AwayFromZero);
+                    if (i.SellPrice >= 500m && i.SellPrice <= 5000m)
+                    {
+                        if (incentive.AmPayout > 0m) r.AmIncentive = Math.Max(75m, r.AmIncentive);
+                        if (incentive.BdPayout > 0m) r.BdIncentive = Math.Max(75m, r.BdIncentive);
+                    }
                 }
                 else if (!(r.ActualCmii.Value < 0m && i.IncentiveRates.Any(x =>
                     x.MinimumCmii == 0m && x.AmPayout == 0m && x.BdPayout == 0m)))
@@ -189,8 +201,8 @@ namespace RepairEstimator.Plugins.Pricing
             decimal customPackageMaterial = i.Packages.Where(x => x.IsCustom && !x.PackagePricedKone).Sum(x => x.MaterialCostPerUnit * PackageUnits(x, r));
             decimal standardPackageMaterial = i.Packages.Where(x => !x.IsCustom).Sum(x => x.MaterialCostPerUnit * PackageUnits(x, r));
             decimal packageMaterial = standardPackageMaterial + customPackageMaterial + packageKone;
-            decimal packageTax = standardPackageMaterial * EstimateInput.StandardUseTax + customPackageMaterial * tax;
-            decimal packageFreight = standardPackageMaterial * EstimateInput.StandardFreight + customPackageMaterial * freight;
+            decimal packageTax = (standardPackageMaterial + customPackageMaterial) * tax;
+            decimal packageFreight = (standardPackageMaterial + customPackageMaterial) * freight;
             decimal packageLabor = hours * rate;
             decimal additionalLabor = i.AdditionalLaborHours * rate;
             decimal labor = i.IsCustomPath ? i.LaborLines.Sum(l => l.Hours * (l.Rate ?? rate) * (l.Multiplier ?? 1m)) : 0m;
@@ -310,13 +322,15 @@ namespace RepairEstimator.Plugins.Pricing
         {
             if (!r.TargetCm2.HasValue) return null;
             decimal packageMaterial = i.Packages.Sum(x => (x.PackagePricedKone ? x.MaterialBeforeMarkup.Value : x.MaterialCostPerUnit *
-                (1m + (x.IsCustom ? i.UseTaxPct : EstimateInput.StandardUseTax)
-                    + (x.IsCustom ? i.FreightPct : EstimateInput.StandardFreight))) * PackageUnits(x, r));
-            decimal hours, material;
+                (1m + i.UseTaxPct + i.FreightPct)) * PackageUnits(x, r));
+            decimal hours, material, laborCost;
             if (i.IsCustomPath)
             {
                 hours = i.Packages.Sum(x => x.MechanicHoursPerUnit * PackageUnits(x, r))
                     + i.AdditionalLaborHours + i.LaborLines.Sum(l => l.Hours);
+                laborCost = (i.Packages.Sum(x => x.MechanicHoursPerUnit * PackageUnits(x, r))
+                    + i.AdditionalLaborHours) * i.MechanicLaborRate
+                    + i.LaborLines.Sum(l => l.Hours * (l.Rate ?? i.MechanicLaborRate) * (l.Multiplier ?? 1m));
                 material = i.MaterialLines.Sum(m => m.Quantity * m.UnitCost * (1m + (m.TaxApplicable ? i.UseTaxPct : 0m) + (m.FreightApplicable ? i.FreightPct : 0m)))
                     + packageMaterial
                     + i.AdditionalMaterial + i.AdditionalMisc;
@@ -324,10 +338,11 @@ namespace RepairEstimator.Plugins.Pricing
             else
             {
                 hours = i.Packages.Sum(x => x.MechanicHoursPerUnit * PackageUnits(x, r)) + i.AdditionalLaborHours;
+                laborCost = hours * i.MechanicLaborRate;
                 material = packageMaterial + i.AdditionalMaterial + i.AdditionalMisc;
             }
 
-            decimal cost = hours * i.MechanicLaborRate + material;
+            decimal cost = laborCost + material;
             decimal floor = i.Parameters.Get(ParamCode.MaterialMarginFloor);
             if (floor < 0 || floor >= 1 || r.TargetCm2 < 0 || r.TargetCm2 >= 1)
                 throw new PricingException("RE-111", "MARGIN_INVALID");

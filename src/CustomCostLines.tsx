@@ -6,7 +6,7 @@ import { getPartCatalog, type CatalogResult } from './data/partCatalogRepository
 import { MaterialPartSelect } from './MaterialPartSelect'
 import { calculateCustomMaterialTotal, isUnlistedKone, materialEntryError, validCatalogUnitAmount } from './data/customMaterialCosts'
 import { LABOR_COLUMNS, editLaborGridHours, laborGridCost, laborGridRows } from './data/laborGrid'
-import { RequestFields, type RequestInputs } from './RequestFields'
+import type { RequestInputs } from './RequestFields'
 import { CustomCostExcelUpload } from './CustomCostExcelUpload'
 import { MAX_DRAFT_CHILD_OPERATIONS } from './data/draftContract'
 import { FieldError } from './FieldError'
@@ -30,12 +30,11 @@ type Props = {
   currency?: string
   rates?: CostRate[]
   requestInputs: RequestInputs
-  updateRequestInput: (key: keyof RequestInputs, value: string) => void
 }
 
 export function CustomCostLines({ language, labor, materials, setLabor, setMaterials, canAdd, enabled, readOnly = false,
   packages = [], childCount = MAX_DRAFT_CHILD_OPERATIONS, showValidationErrors = false, validateImport, onPackageDetails, activePackageId,
-  market, currency, rates = [], requestInputs, updateRequestInput }: Props) {
+  market, currency, rates = [], requestInputs }: Props) {
   const fr = language === 'fr'
   const locked = readOnly || !enabled
   const [capabilityState, setCapabilityState] = useState<{ market: Market; result?: CatalogResult; error?: string }>()
@@ -131,8 +130,6 @@ export function CustomCostLines({ language, labor, materials, setLabor, setMater
     </div>)}
     <p>{fr ? 'Saisissez les heures et matériaux directement dans les cellules. Les taux de main-d’œuvre et les prix KONE sont vérifiés par le serveur.'
       : 'Enter hours and materials directly in the cells. Labor rates and KONE prices are verified by the server.'}</p>
-    {enabled && <RequestFields stage="materialrates" language={language} value={requestInputs}
-      onChange={updateRequestInput} readOnly={readOnly} custom />}
     <label className="field-label">{fr ? 'Matériau' : 'Material'}
       <input className="text-input custom-material-total" readOnly aria-live="polite" value={money(materialTotal)} />
     </label>

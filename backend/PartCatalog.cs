@@ -340,6 +340,11 @@ namespace RepairEstimator.Drafts
             };
         }
 
+        internal static bool IsManualKone(Entity row) =>
+            row.GetAttributeValue<OptionSetValue>("re_parttype")?.Value == 126110000 &&
+            row.GetAttributeValue<OptionSetValue>("re_materialsource")?.Value == 126110001 &&
+            row.GetAttributeValue<EntityReference>("re_sparepart") == null;
+
         internal static decimal Apply(IOrganizationService service, MaterialInput line, Entity previous,
             Entity row, Draft input, EntityReference currency, ref Entity configuration)
         {
@@ -356,6 +361,10 @@ namespace RepairEstimator.Drafts
             var type = line.partType == "kone" ? 126110000 : 126110001;
             Guid catalogId;
             var hasCatalog = !string.IsNullOrEmpty(line.catalogPartId);
+            var manualKone = line.pricingSource == "manual" && type == 126110000;
+            if (manualKone && (hasCatalog || line.refreshPart || line.unitPrice.HasValue ||
+                !Amount(line.sellingPrice, 10, true)))
+                Fail("Manual KONE requires a positive selling price up to 1000000000 with at most ten decimals, without catalog pricing.");
             if (!Guid.TryParse(line.catalogPartId, out catalogId) && hasCatalog) Fail("Invalid catalog part ID.");
             var sameCatalog = previous != null && hasCatalog &&
                 previous.GetAttributeValue<EntityReference>("re_sparepart")?.Id == catalogId && !line.refreshPart;
@@ -376,7 +385,7 @@ namespace RepairEstimator.Drafts
                     string.IsNullOrWhiteSpace(row.GetAttributeValue<string>("re_uom")))
                     Fail("Saved catalog material snapshot is incomplete or its currency has changed. Reselect the part.");
             }
-            if (!sameCatalog && !sameManual)
+            if (!sameCatalog && !sameManual && !manualKone)
             {
                 if (configuration == null) configuration = Configuration(service, input.market);
                 if (configuration == null) Fail("Parts catalog is not enabled. Existing manual material entry remains available.");
@@ -395,7 +404,7 @@ namespace RepairEstimator.Drafts
             }
             else if (!sameCatalog)
             {
-                if (type == 126110000) Fail("KONE material requires catalog selection.");
+                if (type == 126110000 && !manualKone) Fail("Select a catalog part or explicitly use manual KONE entry.");
                 if (line.refreshPart) Fail("Only catalog parts can be refreshed.");
                 foreach (var key in SnapshotColumns) row[key] = null;
                 row["re_materialsource"] = new OptionSetValue(126110001);
@@ -451,8 +460,8 @@ namespace RepairEstimator.Drafts
             row["re_materialscope"] = new OptionSetValue(126110000);
             if (line.sellingPrice.HasValue)
             {
-                if (!hasCatalog || !Amount(line.sellingPrice, 10, true))
-                    Fail("Selling price requires a catalog part and a positive amount up to 1000000000 with at most ten decimals.");
+                if ((!hasCatalog && !manualKone) || !Amount(line.sellingPrice, 10, true))
+                    Fail("Selling price requires a catalog or manual KONE part and a positive amount up to 1000000000 with at most ten decimals.");
                 row["re_sellingprice"] = line.sellingPrice.Value;
             }
             else

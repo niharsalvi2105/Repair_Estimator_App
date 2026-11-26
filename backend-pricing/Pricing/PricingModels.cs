@@ -191,8 +191,6 @@ namespace RepairEstimator.Plugins.Pricing
 
     public sealed class EstimateInput
     {
-        public const decimal StandardUseTax = 0.05m;
-        public const decimal StandardFreight = 0.14m;
         // Equipment
         public int EquipmentLineCount { get; set; }
         public int AdditionalEquipmentCount { get; set; }

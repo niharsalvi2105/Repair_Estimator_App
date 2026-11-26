@@ -243,8 +243,8 @@ export default function EstimatorWorkspace({
     (selectedBranch?._re_currency_value ?? marketCurrencyId))?.code
   const costInputs = {
     quantity: selectedEquipment.length, rates, time: Number(requestInputs.re_timecategory || NaN),
-    tax: requestInputs.re_usetax?.trim() ? Number(requestInputs.re_usetax) : NaN,
-    freight: requestInputs.re_freight?.trim() ? Number(requestInputs.re_freight) : NaN,
+    tax: requestInputs.re_usetax?.trim() ? Number(requestInputs.re_usetax) : 0,
+    freight: requestInputs.re_freight?.trim() ? Number(requestInputs.re_freight) : 0,
     labor: laborLines, materials: materialLines, language, currency,
   }
   const quantityFor = (p: RepairPackage | Omit<RepairPackage, 're_effectivefrom' | 're_effectiveto'>) =>
@@ -275,8 +275,6 @@ export default function EstimatorWorkspace({
     { id: 'package-search', step: 2, valid: !!selectedPackages.length && assignmentValid, navigation: true,
       message: selectedPackages.length ? language === 'fr' ? 'Affectez chaque forfait à au moins un équipement valide.' : 'Assign every package to at least one valid equipment unit.' : mandatory },
     { id: 'request-re_timecategory', step: 3, valid: !!requestInputs.re_timecategory },
-    { id: 'request-re_usetax', step: 3, valid: !!requestInputs.re_usetax?.trim() },
-    { id: 'request-re_freight', step: 3, valid: !!requestInputs.re_freight?.trim() },
     { id: 'request-re_sellprice', step: 4, valid: Number(requestInputs.re_sellprice) > 0, submitOnly: true,
       message: language === 'fr' ? 'Saisissez un prix de vente supérieur à zéro.' : 'Enter a selling price greater than zero.' },
     { id: 'request-re_billingplan', step: 4, valid: !!requestInputs.re_billingplan, submitOnly: true,
@@ -397,6 +395,14 @@ export default function EstimatorWorkspace({
   }
   function finishCustomPackage() {
     setShowCustomFieldErrors(true)
+    if (!requestInputs.re_timecategory) {
+      const fieldId = 'request-re_timecategory'
+      setAttemptedFields(previous => previous.includes(fieldId) ? previous : [...previous, fieldId])
+      pendingInvalidField.current = fieldId
+      setValidationAttempt(previous => previous + 1)
+      setCustomError('')
+      return
+    }
     if (reportFirstInvalidCustomField()) return
     if (customValidation) return
     try {
@@ -470,9 +476,7 @@ export default function EstimatorWorkspace({
         <dt>{language === 'fr' ? 'Coût de main-d’œuvre supplémentaire' : 'Additional labor cost'}</dt><dd>{costMoney(additions.labor)}</dd>
         <dt>{language === 'fr' ? 'Matériaux supplémentaires' : 'Additional material'}</dt><dd>{costMoney(additions.material)}</dd>
         <dt>{language === 'fr' ? 'Frais divers supplémentaires' : 'Additional miscellaneous'}</dt><dd>{costMoney(additions.miscellaneous)}</dd>
-        <dt>{language === 'fr' ? 'Taxe (%)' : 'Tax (%)'}</dt><dd>{costNumber(additions.tax)}%</dd>
         <dt>{language === 'fr' ? 'Montant de la taxe' : 'Tax amount'}</dt><dd>{costMoney(additions.taxAmount)}</dd>
-        <dt>{language === 'fr' ? 'Fret (%)' : 'Freight (%)'}</dt><dd>{costNumber(additions.freight)}%</dd>
         <dt>{language === 'fr' ? 'Montant du fret' : 'Freight amount'}</dt><dd>{costMoney(additions.freightAmount)}</dd>
         <dt className="package-cost-total">{language === 'fr' ? 'Total des coûts supplémentaires' : 'Total additional cost'}</dt>
         <dd className="package-cost-total">{costMoney(additions.total)}</dd>
@@ -977,6 +981,10 @@ export default function EstimatorWorkspace({
               </div>}
               <p className="draft-notice">{step === 3 ? t.costsUnavailable : t.pricingHint}</p>
             </section>}
+            {step === 3 && activeCustom && hasCustom && <section className="form-card">
+              <RequestFields stage="labortime" language={language} value={requestInputs}
+                onChange={updateRequestInput} errors={errors} />
+            </section>}
             {rateResult?.branchId === branchId && rateResult.error && <div role="alert" className="error-box">
               {rateResult.error}<button className="button secondary" onClick={() => setRateAttempt((n) => n + 1)}>{t.retry}</button>
             </div>}
@@ -986,7 +994,7 @@ export default function EstimatorWorkspace({
                 rates={rates}
                 childCount={selectedPackages.length + selectedEquipment.length + laborLines.length + materialLines.length}
                 validateImport={validateCostImport}
-                requestInputs={requestInputs} updateRequestInput={updateRequestInput}
+                requestInputs={requestInputs}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={canAdd}
                 readOnly={draftBusy || submitted || !canWork || !!exportDelivery}
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
@@ -1026,7 +1034,7 @@ export default function EstimatorWorkspace({
             {(hasCustom || laborLines.length > 0 || materialLines.length > 0) &&
               <CustomCostLines language={language} market={market} labor={laborLines} materials={materialLines}
                 rates={rates}
-                requestInputs={requestInputs} updateRequestInput={updateRequestInput}
+                requestInputs={requestInputs}
                 setLabor={setLaborLines} setMaterials={setMaterialLines} enabled={hasCustom} canAdd={false} readOnly
                 packages={customPackages.map((p) => ({ id: p.re_repairpackageid, name: p.re_packagenumber,
                   customName: language === 'fr' ? p.re_packagenamefr ?? p.re_packagenameen : p.re_packagenameen,

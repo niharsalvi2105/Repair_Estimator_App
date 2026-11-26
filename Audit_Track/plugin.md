@@ -2,6 +2,55 @@
 
 ## 1. Scope and evidence
 
+### Request-level Tax/Freight contract (pricing 2026.14, local source)
+
+Draft Save makes `re_usetax` and `re_freight` optional request fields. Omitted,
+blank or null values are written as decimal zero; supplied values remain
+percentage inputs in the Draft API and are divided by 100. Pricing 2026.14 no
+longer falls back to Branch, Province or `DEFAULT_USE_TAX` /
+`DEFAULT_FREIGHT`. It applies the persisted request pair to standard package
+material, ordinary CSTM package material, eligible itemized material,
+additional material and miscellaneous. Package-priced KONE keeps zero
+additional tax/freight and aggregate KONE continues to use its dedicated
+selling parameters. Standard 5%/14% constants were removed from true-cost and
+stated-rate-material paths.
+
+This changes Pricing Engine outputs and bumps `re_calculationversion` to
+`2026.14`; no custom API registration, image, schema, permission or locking
+change is required. Deploy the signed Drafts and Pricing assemblies together
+with the frontend. Local evidence: 164 .NET pricing/integration tests, the full
+Drafts harness, build/lint/225 Node tests and 19 focused browser scenarios
+passed. No assembly deployment, historical recalculation or tenant acceptance
+was performed.
+
+### Planner Group lookup query type fix (local source, not deployed)
+
+Draft Save's Planner Group parent filter now passes the raw branch `Guid` to the
+Dataverse lookup condition instead of an `EntityReference`. The real Dataverse
+SDK requires `System.Guid` for `re_mainbranch` comparisons and rejected the
+previous value before the scope query could run. This fixes the reported
+`expected argument(s) of type System.Guid but received
+Microsoft.Xrm.Sdk.EntityReference` failure for mapped subbranch equipment saves.
+The synthetic Drafts service now rejects EntityReference values for this specific
+lookup filter so the test harness cannot hide the real platform type requirement.
+No payload, formula, registration, permission, schema, locking or export behavior
+changed. Local Planner Group and Drafts regression validation is required; no
+plugin deployment or live tenant save was performed.
+
+### Workbook policy corrections (pricing 2026.13, local source only)
+
+Pricing 2026.13 implements three Finance-approved changes from the supplied
+calculation reference: CSTM Non-KONE landed cost is repriced with
+`1 - max(MATERIAL_MARGIN_FLOOR, recommended CMII)`, positive AM and BD payouts
+from $500 through $5,000 use a $75 minimum, and stated-rate true cost uses each
+saved custom labor line's rate while package/additional labor keeps the
+estimate mechanic rate. The previously proposed 65% Escalator fallback was
+explicitly retained as "current behavior": 65% is not hard-coded; the material
+floor remains Dataverse data. SPIF and separate over-$5,000 incentive formulas
+remain unimplemented because the source rows are not supplied. Focused local
+pricing tests cover these three changed paths. No tenant calculation,
+registration update, schema change or deployment was performed.
+
 ### Transparent catalog version 2 (2026-11-17, local source, not deployed)
 
 `partcapabilities`/`partcatalog` retain their existing dispatch but now identify
@@ -115,7 +164,7 @@ Nine local synthetic renderer/contract cases passed, including all 111 tokens an
 
 The requested Inbox-to-Teams test flow was created in Dev and its membership in `RepairEstimatorApp` verified. Flow `c38153e4-bff7-472e-85d8-bee3dd650f71` uses Outlook V3 plus a Teams Flow bot chat, with new dedicated solution connection references. After the user's recurrence validation error, live connector metadata confirmed a notification-based trigger; a surgical edit replaced the incorrect scaffolded polling type and removed recurrence settings. Corrected validation/live save/readback passed and the flow was already Started by the user; no runtime email/delivery test was performed. Full behavior and deployment evidence are in the Dataverse reference. No plugin binaries, dispatch, registrations/images, permissions, pricing, locks or estimator export lifecycle were changed; existing export automation was not enabled.
 
-### Standard-estimate additional tax/freight edits (local source, not deployed)
+### Standard-estimate additional tax/freight edits (historical 2026.10 source; superseded by pricing 2026.14)
 
 Draft Save no longer replaces standard-estimate `re_usetax`/`re_freight` with 0.05/0.14 after writing packages. Existing validation still converts entered 0-100 percentage values to stored fractions and preserves explicit zero. The loader now resolves existing estimate/province/branch/parameter rates on both paths instead of forcing standard rates globally. Pricing 2026.10 uses those rates for additional material and miscellaneous costs; additional labor remains untaxed. Standard package tax/freight continue using the explicit fixed constants (5%/14%) in cost and stated-rate formulas, leaving their package subtotal unchanged. CSTM rate-sharing and KONE selling behavior are unchanged.
 
@@ -386,7 +435,7 @@ Draft API transaction
 - Existing unchanged equipment/package/rate/material identities reuse snapshots; master changes are not silently reapplied on unrelated edit.
 - Packages validate currency/country/effective dates and nonnegative source hours/cost. Quantity scales with equipment.
 - Each CSTM needs at least one associated labor or material line; if both are absent, Save returns `Please enter either Labor or Material. At least one is required.` Every supplied line is still validated. Labor rate is exactly one active effective branch/role/time combination.
-- Material routes are distinct: legacy, approved catalog, manual non-KONE, package-priced KONE reference. Server resolves catalog conversion/snapshot, not client claimed values.
+- Material routes are distinct: legacy, approved catalog, manual Non-KONE, manual itemized KONE, and package-priced KONE reference. Server resolves catalog conversion/snapshot, not client claimed values. Manual KONE requires an explicit manual source, unit cost, unit selling price and fixed 10% markup; it has no catalog ID or VK13 snapshot. Pricing 2026.12 sends this line through the existing itemized KONE formula and preserves the existing package/aggregate conflict checks. Deploy Drafts and pricing together before enabling saved manual KONE entry in the app. No tenant change has been made.
 - Reconciles removed children and desired Create/Update rows; dependency checks prevent orphaned retained custom lines.
 - Input200000 UTF-8 bytes; response1000000 bytes; child mutation budget1000 includes deletes and retained writes. Child/pricing read budgets also apply. No silent truncation; large replacement can exceed budget despite smaller final count.
 
@@ -497,8 +546,11 @@ Actual only calculated if sell>0. Recommended must0..less than1. Negative actual
 For custom KONE alternative suggested price:
 
 ```text
-round2((total true cost-KONE material cost)/(1-recommended CMII)
-       + KONE selling contribution)
+round2((total true cost-KONE material cost-Non-KONE landed cost)
+       /(1-recommended CMII)
+       + KONE selling contribution
+       + Non-KONE landed cost
+         /(1-max(material margin floor,recommended CMII)))
 ```
 
 Contribution differs by mutually constrained route:
@@ -514,7 +566,9 @@ Mixed incompatible KONE routes, invalid classifications/zero package-reference c
 The engine derives a selling rate margin, not substitutes that rate as mechanic cost:
 
 ```text
-cost basis = combined hours × mechanic cost rate + stated-rate material basis
+cost basis = package/additional labor hours × mechanic cost rate
+            + custom line hours × each saved custom-line rate
+            + stated-rate material basis
 selling basis = combined hours × entered stated labor billing rate
               + material basis/(1-max(material margin floor,target CM2))
 stated-rate margin = (selling basis-cost basis)/selling basis
@@ -525,6 +579,9 @@ Material/hour basis follows standard/custom branches in `StatedRateMargin`, incl
 ### Incentives and approval
 
 - Choose highest incentive minimum<=actual CMII; AM/BD amounts=sell×payout, rounded whole units away from zero.
+- Pricing 2026.13 raises each positive AM/BD whole-unit payout to at least75 when
+  sell is inclusively500..5000. Zero-rate rows remain zero. This implements the
+  approved minimum only; SPIF and any separate over5000 formula are not present.
 - Below0% can retain zero incentive only when applicable configuration has explicit zero minimum/zero payout band; missing incentive config is still warning/unavailable.
 - Approval Regional if sell>=regional threshold, else District if >=district, elseNone. `requiresapproval` derives from that output; **no approval/reopen workflow is implemented by this level calculation**.
 - All warnings make pricing unavailable in the calculation plugin even where engine internally has provisional fallback bands.

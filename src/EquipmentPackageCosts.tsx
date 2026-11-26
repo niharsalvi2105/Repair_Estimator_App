@@ -80,9 +80,7 @@ export function EquipmentPackageCosts({ equipment, repairPackage, rates, time, t
                       : fr ? 'Taux de coût mécanicien' : 'Mechanic labor cost rate'}</dt><dd>{format(cost.rate)}</dd>
                     <dt>{fr ? 'Coût de main-d’œuvre' : 'Package labor cost'}</dt><dd>{format(cost.labor)}</dd>
                     <dt>{fr ? 'Matériaux (avant taxe et fret)' : 'Material (before tax and freight)'}</dt><dd>{format(cost.material)}</dd>
-                    <dt>{fr ? 'Taxe (%)' : 'Tax (%)'}</dt><dd>{number(cost.tax)}%</dd>
                     <dt>{fr ? 'Montant de la taxe' : 'Tax amount'}</dt><dd>{format(cost.taxAmount)}</dd>
-                    <dt>{fr ? 'Fret (%)' : 'Freight (%)'}</dt><dd>{number(cost.freight)}%</dd>
                     <dt>{fr ? 'Montant du fret' : 'Freight amount'}</dt><dd>{format(cost.freightAmount)}</dd>
                   </dl>
                   {cost.packagePriced && <p className="field-help">{fr

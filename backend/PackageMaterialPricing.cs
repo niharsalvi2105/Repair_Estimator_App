@@ -52,7 +52,9 @@ namespace RepairEstimator.Drafts
                 line.unitPrice.HasValue || line.refreshPart || (package && line.unitCost != 0) ||
                 (!unlistedKone && (line.markupPercent.HasValue || line.sellingPrice.HasValue)))
                 throw new InvalidPluginExecutionException("Package/manual material must not contain catalog prices or extra markup.");
-            if (previous?.GetAttributeValue<OptionSetValue>("re_parttype") != null &&
+            if (!package && previous != null && PartCatalog.IsManualKone(previous))
+                foreach (var column in PartCatalog.SnapshotColumns) row[column] = null;
+            else if (previous?.GetAttributeValue<OptionSetValue>("re_parttype") != null &&
                 (!unlistedKone || Source(previous) != "manual"))
                 throw new InvalidPluginExecutionException("Remove the catalog material line before replacing it with package/manual pricing.");
             row[Mode] = new OptionSetValue(package ? Package : Manual);

@@ -33,10 +33,6 @@ namespace RepairEstimator.Plugins.Data
 
             var countryRef = est.GetAttributeValue<EntityReference>(Names.Estimate.Country)
                 ?? branch?.GetAttributeValue<EntityReference>(Names.Branch.Country);
-            var provinceRef = est.GetAttributeValue<EntityReference>(Names.Estimate.BuildingProvince)
-                ?? branch?.GetAttributeValue<EntityReference>(Names.Branch.StateProvince);
-            var province = Retrieve(s, provinceRef, Names.StateProvince.DefaultUseTax, Names.StateProvince.DefaultFreight);
-
             var data = ReferenceData.Get(config, today);
             Guid? countryId = countryRef == null ? (Guid?)null : countryRef.Id;
             input.Parameters = data.ParametersFor(countryId);
@@ -86,7 +82,7 @@ namespace RepairEstimator.Plugins.Data
                 loaded.RedundancyCount = 1;
             }
 
-            var taxes = TaxDefaults.Resolve(est, province, branch, input.Parameters);
+            var taxes = TaxDefaults.Resolve(est);
             input.UseTaxPct = taxes.UseTax;
             input.FreightPct = taxes.Freight;
 
@@ -275,9 +271,15 @@ namespace RepairEstimator.Plugins.Data
                 if (partType.HasValue && partType != 126110000 && partType != 126110001)
                     throw new PricingException("RE-114", "MATERIAL_CLASSIFICATION_INVALID");
                 var pricedCatalog = hasCatalog && (overridePrice ?? catalogPrice) > 0;
+                var legacyManualKone = !mode.HasValue && !hasCatalog && partType == 126110000 &&
+                    row.GetAttributeValue<OptionSetValue>("re_materialsource")?.Value == 126110001;
+                if (legacyManualKone && (!ValidMaterialAmount(preciseCost) ||
+                    !ValidMaterialAmount(overridePrice) || catalogPrice.HasValue || markup != 10m))
+                    throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 if (hasCatalogDetails && (!pricedCatalog || !(preciseCost > 0) || (partType == 126110000 && markup != 10m)))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
-                if (overridePrice.HasValue && ((!hasCatalog && !unlistedKone) || !ValidMaterialAmount(overridePrice)))
+                if (overridePrice.HasValue &&
+                    ((!hasCatalog && !unlistedKone && !legacyManualKone) || !ValidMaterialAmount(overridePrice)))
                     throw new PricingException("RE-114", "MATERIAL_SNAPSHOT_INVALID");
                 loaded.Input.MaterialLines.Add(new MaterialLineInput {
                     IsPackageReference = packageReference,
@@ -306,7 +308,7 @@ namespace RepairEstimator.Plugins.Data
         }
     }
 
-    /// <summary>Use tax / freight: value on the estimate, else province, else branch, else Pricing Parameter.</summary>
+    /// <summary>Use tax / freight: request value or zero when omitted.</summary>
     internal static class TaxDefaults
     {
         public sealed class Result
@@ -315,20 +317,16 @@ namespace RepairEstimator.Plugins.Data
             public decimal Freight;
         }
 
-        public static Result Resolve(Entity est, Entity province, Entity branch, ParameterSet parameters)
+        public static Result Resolve(Entity est)
         {
             return new Result
             {
                 UseTax = Query.Dec(est, Names.Estimate.UseTax)
                     ?? Query.Dec(est, Names.Estimate.UseTaxPercentage)
-                    ?? (province == null ? null : Query.Dec(province, Names.StateProvince.DefaultUseTax))
-                    ?? (branch == null ? null : Query.Dec(branch, Names.Branch.DefaultUseTax))
-                    ?? parameters.Get(ParamCode.DefaultUseTax),
+                    ?? 0m,
                 Freight = Query.Dec(est, Names.Estimate.Freight)
                     ?? Query.Dec(est, Names.Estimate.FreightPercentage)
-                    ?? (province == null ? null : Query.Dec(province, Names.StateProvince.DefaultFreight))
-                    ?? (branch == null ? null : Query.Dec(branch, Names.Branch.DefaultFreight))
-                    ?? parameters.Get(ParamCode.DefaultFreight)
+                    ?? 0m
             };
         }
     }

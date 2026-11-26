@@ -40,8 +40,8 @@ function packageMaterialRates(p: CostPackage, tax: number, freight: number, mate
     throw new Error('Package Material Before Markup is missing or invalid.')
   return {
     material: packagePriced ? p.re_materialbeforemarkup ?? NaN : p.re_materialmisctaxcost ?? NaN,
-    tax: p.re_iscustompackage ? packagePriced ? 0 : tax : 5,
-    freight: p.re_iscustompackage ? packagePriced ? 0 : freight : 14,
+    tax: packagePriced ? 0 : tax,
+    freight: packagePriced ? 0 : freight,
     packagePriced,
   }
 }

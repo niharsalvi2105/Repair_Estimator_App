@@ -376,7 +376,7 @@ namespace RepairEstimator.Drafts
                     input.equipment.Select(e => e.number));
                 RepairEstimator.Shared.PackageEquipmentSnapshot.Write(package.equipmentNumbers);
             }
-            if (input.materialLines.Any(m => m.pricingSource != null))
+            if (input.materialLines.Any(m => m.pricingSource != null && !(m.pricingSource == "manual" && m.partType == "kone")))
                 PackageMaterialPricing.RequireSchema(service);
             var branch = service.Retrieve("re_branch", Guid.Parse(input.branchId),
                 new ColumnSet("re_country", "re_currency", "re_market", "re_branchnumber", "statecode"));
@@ -713,8 +713,7 @@ namespace RepairEstimator.Drafts
             query.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
             query.Criteria.AddCondition("re_ismainbranch", ConditionOperator.Equal, false);
             if (parentId.HasValue)
-                query.Criteria.AddCondition("re_mainbranch", ConditionOperator.Equal,
-                    new EntityReference("re_branch", parentId.Value));
+                query.Criteria.AddCondition("re_mainbranch", ConditionOperator.Equal, parentId.Value);
             else
                 query.Criteria.AddCondition("re_subbranchcode", ConditionOperator.Equal, branchNumber);
             query.AddOrder("re_plannergroupid", OrderType.Ascending);
@@ -870,7 +869,8 @@ namespace RepairEstimator.Drafts
                         (line.unitCost <= 0 || line.unitCost > 1000000000 || decimal.Round(line.unitCost, 2) != line.unitCost)))
                     Fail("Invalid material quantity or unit cost (two decimals required).");
                 var row = new Entity(Material, previous?.Id ?? Guid.NewGuid());
-                if (!string.IsNullOrEmpty(line.catalogPartId)) row[PackageMaterialPricing.Mode] = null;
+                var manualKone = line.pricingSource == "manual" && line.partType == "kone";
+                if (!string.IsNullOrEmpty(line.catalogPartId) || manualKone) row[PackageMaterialPricing.Mode] = null;
                 row["re_estimatepackage"] = packages.Single(p => Id(p, "re_repairpackage") == line.packageId).ToEntityReference();
                 SetLineEquipment(row, previous, line.equipmentNumber, line.packageId, input, equipment);
                 row["re_name"] = "Custom material";
@@ -879,7 +879,7 @@ namespace RepairEstimator.Drafts
                 row["re_vendor"] = Optional(line.vendor, 100);
                 row["re_partnumber"] = Required(line.part, 100, "Material part number");
                 row["re_quantity"] = line.quantity;
-                var unitCost = line.pricingSource != null
+                var unitCost = line.pricingSource != null && !manualKone
                     ? PackageMaterialPricing.Apply(line, previous, row)
                     : PartCatalog.Apply(service, line, previous, row, input, currency, ref partConfiguration);
                 row["re_unitcost"] = new Money(decimal.Round(unitCost, 2, MidpointRounding.AwayFromZero));
@@ -946,7 +946,11 @@ namespace RepairEstimator.Drafts
                 }
                 else if (DecimalFields.Contains(key) || MoneyFields.Contains(key))
                 {
-                    if (string.IsNullOrEmpty(value)) { header[key] = null; continue; }
+                    if (string.IsNullOrEmpty(value))
+                    {
+                        header[key] = key == "re_usetax" || key == "re_freight" ? (object)0m : null;
+                        continue;
+                    }
                     decimal number;
                     if (!decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out number) || number < 0)
                         Fail("Invalid non-negative number: " + key);
@@ -959,7 +963,12 @@ namespace RepairEstimator.Drafts
                 }
                 else Fail("Unsupported draft field: " + key);
             }
-            foreach (var key in requirePricing ? new[] { "re_proposallanguage", "re_timecategory", "re_usetax", "re_freight" } : new[] { "re_proposallanguage" })
+            if (requirePricing)
+            {
+                if (!header.Contains("re_usetax") || header["re_usetax"] == null) header["re_usetax"] = 0m;
+                if (!header.Contains("re_freight") || header["re_freight"] == null) header["re_freight"] = 0m;
+            }
+            foreach (var key in requirePricing ? new[] { "re_proposallanguage", "re_timecategory" } : new[] { "re_proposallanguage" })
                 if (!header.Contains(key) || header[key] == null) Fail("Required input is missing: " + key);
         }
 
@@ -1293,7 +1302,7 @@ namespace RepairEstimator.Drafts
                 vendor = e.GetAttributeValue<string>("re_vendor"), part = e.GetAttributeValue<string>("re_partnumber"),
                 quantity = e.GetAttributeValue<decimal>("re_quantity"),
                 unitCost = e.GetAttributeValue<decimal?>("re_unitcostprecise") ?? e.GetAttributeValue<Money>("re_unitcost").Value,
-                pricingSource = PackageMaterialPricing.Source(e),
+                pricingSource = PartCatalog.IsManualKone(e) ? "manual" : PackageMaterialPricing.Source(e),
                 partType = PackageMaterialPricing.Source(e) == "package" ? "kone" :
                     PartCatalog.TypeName(e.GetAttributeValue<OptionSetValue>("re_parttype")) ??
                     (PackageMaterialPricing.Source(e) == "manual" ? "non-kone" : null),

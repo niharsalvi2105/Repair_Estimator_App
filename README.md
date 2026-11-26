@@ -6,6 +6,9 @@ store, or selectable demo roles.
 
 ## App and Dataverse references and change tracking
 
+See the [Repair Estimator formula reference](Audit_Track/FORMULAS.md) for formulas,
+input dependencies, rounding rules, and the difference between saved pricing and previews.
+
 See [Audit_Track/app.md](Audit_Track/app.md) for UI controls, navigation,
 frontend preview/payment/chart calculations, server-result boundaries and UX gaps.
 Update it in the same change as frontend code, styles, assets or configuration.

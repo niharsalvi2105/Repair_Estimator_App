@@ -83,9 +83,16 @@ export function toSolutionClientData(generated, original) {
   }
 }
 
-export function buildEstimateEmailFlow({ recipient, metadata, connectionReferences }) {
-  if (!/^[^\s@<>;]+@[^\s@<>;]+\.[^\s@<>;]+$/.test(recipient ?? ''))
-    throw new Error('Provide exactly one internal test recipient.')
+const ReviewRecipients = [
+  'erin.crowe2@kone.com',
+  'brittney.sullivan@kone.com',
+  'aniruddha.damle@kone.com',
+  'drew.evans@kone.com',
+  'neeraj.marwaha@kone.com',
+].join(';')
+const ServiceAccount = 'SVC_AME_REPESTIMATOR@konenet.com'
+
+export function buildEstimateEmailFlow({ metadata, connectionReferences }) {
   if (!metadata?.choices) throw new Error('Live choice metadata is required.')
   const bindings = Object.fromEntries(Object.values(connectionReferences ?? {}).map(reference => {
     if (!reference.connectionReferenceLogicalName || reference.source !== 'Embedded')
@@ -295,9 +302,9 @@ export function buildEstimateEmailFlow({ recipient, metadata, connectionReferenc
   }
   const packageItem = column => `items('For_each_package')?[${quote(column)}]`
   const packageTax = choose(eq(packageItem('re_packagepricedkone'), 'true'), '0',
-    choose(eq(packageItem('re_iscustompackage'), 'true'), val('re_usetax'), '0.05'))
+    val('re_usetax'))
   const packageFreight = choose(eq(packageItem('re_packagepricedkone'), 'true'), '0',
-    choose(eq(packageItem('re_iscustompackage'), 'true'), val('re_freight'), '0.14'))
+    val('re_freight'))
   const packageLabor = mul(packageItem('re_totalhours'), val('re_mechaniclaborrate'))
   const packageMaterial = packageItem('re_totalmaterial')
   const sum = name => choose(call('empty', `body('${name}')`), '0', call('float', call('xpath',
@@ -405,7 +412,9 @@ export function buildEstimateEmailFlow({ recipient, metadata, connectionReferenc
       runError: { code: 'ESTIMATE_EMAIL_UNRESOLVED', message: 'Email template contains unresolved placeholders. No email sent.' } } } },
     else: { actions: {} } }
   actions.Send_review_email = connector('SendEmailV2', {
-    'emailMessage/To': "@parameters('ReviewRecipient')",
+    'emailMessage/From': ServiceAccount,
+    'emailMessage/To': ReviewRecipients,
+    'emailMessage/Cc': "@body('Get_estimate')?['re_Salesperson']?['internalemailaddress']",
     'emailMessage/Subject': `@${call('concat', local('Repair estimate review - ', 'Revision du devis - '),
       call('replace', call('replace', val('re_name'), "decodeUriComponent('%0D')", "''"), "decodeUriComponent('%0A')", "''"))}`,
     'emailMessage/Body': "@outputs('Email_HTML')",
@@ -416,7 +425,7 @@ export function buildEstimateEmailFlow({ recipient, metadata, connectionReferenc
     '$schema': 'https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#',
     contentVersion: '1.0.0.0',
     parameters: { '$authentication': { defaultValue: {}, type: 'SecureObject' },
-      '$connections': { defaultValue: {}, type: 'Object' }, ReviewRecipient: { defaultValue: recipient, type: 'String' } },
+      '$connections': { defaultValue: {}, type: 'Object' } },
     triggers: { When_estimate_submitted: {
       type: 'OpenApiConnectionWebhook',
       inputs: { host: { apiId: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
@@ -444,10 +453,10 @@ export function buildEstimateEmailFlow({ recipient, metadata, connectionReferenc
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [metadataPath, recipient, referencesPath, outputPath] = process.argv.slice(2)
-  if (!outputPath) throw new Error('Usage: node automation\\build-estimate-email-flow.mjs metadata.json recipient references.json output.json')
+  const [metadataPath, referencesPath, outputPath] = process.argv.slice(2)
+  if (!outputPath) throw new Error('Usage: node automation\\build-estimate-email-flow.mjs metadata.json references.json output.json')
   const json = path => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''))
-  const result = buildEstimateEmailFlow({ recipient, metadata: json(metadataPath), connectionReferences: json(referencesPath) })
+  const result = buildEstimateEmailFlow({ metadata: json(metadataPath), connectionReferences: json(referencesPath) })
   writeFileSync(outputPath, JSON.stringify(result, null, 2) + '\n')
   console.log(`Generated ${Object.keys(result.definition.actions).length} actions; no flow was updated.`)
 }
